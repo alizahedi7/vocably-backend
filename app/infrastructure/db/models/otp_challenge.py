@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 from app.infrastructure.db.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
+from app.infrastructure.db.types import UTCDateTime
 
 
 class OtpChallengeModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -16,6 +17,6 @@ class OtpChallengeModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     phone: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     code_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     attempts: Mapped[int] = mapped_column(default=0, nullable=False)
     consumed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
