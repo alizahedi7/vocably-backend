@@ -34,14 +34,44 @@ async def test_onboarding_completes_profile(
     response = await client.post(
         "/api/v1/users/me/onboarding",
         headers=bearer(user.id),
-        json={"name": "  Parisa ", "age_range": "25-34", "native_language": "Persian"},
+        json={"name": "  Parisa ", "age_range": "25–34", "native_language": "Persian"},
     )
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["name"] == "Parisa"
-    assert body["age_range"] == "25-34"
+    assert body["age_range"] == "25–34"
     assert body["native_language"] == "Persian"
     assert body["onboarded"] is True
+
+
+async def test_onboarding_accepts_all_app_age_options(
+    client: AsyncClient, make_user: UserFactory
+) -> None:
+    # The two additions beyond the numeric ranges; both exceed the old 16-char column.
+    for phone, age_range in (
+        ("+989121110001", "Under 13"),
+        ("+989121110002", "Prefer not to share"),
+    ):
+        user = await make_user(phone=phone, name="", onboarded=False)
+        response = await client.post(
+            "/api/v1/users/me/onboarding",
+            headers=bearer(user.id),
+            json={"name": "Kid", "age_range": age_range, "native_language": "English"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["age_range"] == age_range
+
+
+async def test_onboarding_rejects_unknown_age_range(
+    client: AsyncClient, make_user: UserFactory
+) -> None:
+    user = await make_user(name="", onboarded=False)
+    response = await client.post(
+        "/api/v1/users/me/onboarding",
+        headers=bearer(user.id),
+        json={"name": "Parisa", "age_range": "25-34", "native_language": "Persian"},
+    )
+    assert response.status_code == 422
 
 
 async def test_partial_profile_update(client: AsyncClient, auth_headers: dict[str, str]) -> None:

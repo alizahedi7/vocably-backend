@@ -11,15 +11,21 @@ class AuthMethod(StrEnum):
 
 
 class AgeRange(StrEnum):
-    """Age buckets offered during onboarding (mirrors the app UI)."""
+    """Age buckets offered during onboarding (mirrors the app UI).
 
-    TEEN = "13-17"
-    YOUNG_ADULT = "18-24"
-    ADULT_25 = "25-34"
-    ADULT_35 = "35-44"
-    ADULT_45 = "45-54"
-    ADULT_55 = "55-64"
+    Values are the app's exact display strings — note the en-dash (–) in the
+    numeric ranges, matching the option list the mobile client renders.
+    """
+
+    UNDER_13 = "Under 13"
+    TEEN = "13–17"
+    YOUNG_ADULT = "18–24"
+    ADULT_25 = "25–34"
+    ADULT_35 = "35–44"
+    ADULT_45 = "45–54"
+    ADULT_55 = "55–64"
     SENIOR = "65+"
+    PREFER_NOT_TO_SHARE = "Prefer not to share"
 
 
 class LeitnerBox(IntEnum):

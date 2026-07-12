@@ -20,7 +20,7 @@ class UserModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
 
     name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
-    age_range: Mapped[str | None] = mapped_column(String(16))
+    age_range: Mapped[str | None] = mapped_column(String(32))
     native_language: Mapped[str] = mapped_column(String(64), default="English", nullable=False)
     app_language: Mapped[str] = mapped_column(String(64), default="English", nullable=False)
 
