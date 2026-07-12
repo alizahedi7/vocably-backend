@@ -6,13 +6,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.schemas.user import UserOut
 
+# E.164: leading +, non-zero first digit, 8..15 digits total.
+_E164_PATTERN = r"^\+[1-9]\d{7,14}$"
+
 
 class RequestOTPIn(BaseModel):
-    phone: str = Field(min_length=5, max_length=32, examples=["5551234567"])
+    phone: str = Field(pattern=_E164_PATTERN, examples=["+989121234567"])
 
 
 class VerifyOTPIn(BaseModel):
-    phone: str = Field(min_length=5, max_length=32, examples=["5551234567"])
+    phone: str = Field(pattern=_E164_PATTERN, examples=["+989121234567"])
     code: str = Field(min_length=4, max_length=8, examples=["123456"])
 
 

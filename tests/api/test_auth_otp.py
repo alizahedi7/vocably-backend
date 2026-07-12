@@ -106,3 +106,19 @@ async def test_code_is_single_use(client: AsyncClient, otp_sender: RecordingOTPS
 
     replay = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": code})
     assert replay.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "phone",
+    [
+        "5551234567",  # missing +
+        "09121234567",  # national format, no country code
+        "+0912123456",  # leading zero after +
+        "+98912",  # too short
+        "+9891212345678901",  # too long
+        "+98 912 123 4567",  # spaces
+    ],
+)
+async def test_malformed_phone_numbers_are_rejected(client: AsyncClient, phone: str) -> None:
+    response = await client.post("/api/v1/auth/otp/request", json={"phone": phone})
+    assert response.status_code == 422
