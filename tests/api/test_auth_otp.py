@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
 from httpx import AsyncClient
 
+from app.core.config import settings
 from tests.api.conftest import RecordingOTPSender
 
 PHONE = "+989121234567"
@@ -67,6 +69,34 @@ async def test_verify_without_request_is_rejected(client: AsyncClient) -> None:
     )
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "invalid_otp"
+
+
+async def test_resend_within_cooldown_is_rate_limited(
+    client: AsyncClient, otp_sender: RecordingOTPSender, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "otp_resend_cooldown_seconds", 30)
+    code = await request_code(client, otp_sender, PHONE)
+
+    retry = await client.post("/api/v1/auth/otp/request", json={"phone": PHONE})
+    assert retry.status_code == 429
+    assert retry.json()["error"]["code"] == "rate_limited"
+
+    # The rejected resend must not invalidate the code already sent.
+    verify = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": code})
+    assert verify.status_code == 200
+
+
+async def test_consumed_challenge_does_not_block_new_request(
+    client: AsyncClient, otp_sender: RecordingOTPSender, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "otp_resend_cooldown_seconds", 30)
+    code = await request_code(client, otp_sender, PHONE)
+    verified = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": code})
+    assert verified.status_code == 200
+
+    # Signing in consumed the challenge, so a fresh request is allowed immediately.
+    response = await client.post("/api/v1/auth/otp/request", json={"phone": PHONE})
+    assert response.status_code == 202
 
 
 async def test_code_is_single_use(client: AsyncClient, otp_sender: RecordingOTPSender) -> None:

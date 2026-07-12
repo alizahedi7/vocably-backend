@@ -22,6 +22,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_otp_sender
 from app.application.ports.otp_sender import OTPSender
+from app.core.config import settings
 from app.core.database import Base, get_session
 from app.core.security import create_access_token
 from app.domain.enums import AuthMethod
@@ -44,6 +45,15 @@ class RecordingOTPSender(OTPSender):
         codes = [code for to, code in self.outbox if to == phone]
         assert codes, f"no OTP was sent to {phone}"
         return codes[-1]
+
+
+@pytest.fixture(autouse=True)
+def _no_otp_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Disable the resend cooldown so flow tests can request codes back to back.
+
+    The cooldown itself is exercised explicitly in ``test_auth_otp``.
+    """
+    monkeypatch.setattr(settings, "otp_resend_cooldown_seconds", 0)
 
 
 @pytest.fixture

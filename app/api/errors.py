@@ -16,6 +16,7 @@ from app.core.exceptions import (
     ExternalServiceError,
     NotFoundError,
     PermissionDeniedError,
+    RateLimitedError,
     ValidationError,
 )
 
@@ -25,6 +26,7 @@ _STATUS_MAP: dict[type[AppError], int] = {
     ValidationError: 422,  # Unprocessable Content
     PermissionDeniedError: status.HTTP_403_FORBIDDEN,
     AuthenticationError: status.HTTP_401_UNAUTHORIZED,
+    RateLimitedError: status.HTTP_429_TOO_MANY_REQUESTS,
     ExternalServiceError: status.HTTP_502_BAD_GATEWAY,
 }
 

@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     # ── Auth adapters ─────────────────────────────────────────
     otp_length: int = 6
     otp_ttl_seconds: int = 300
+    otp_resend_cooldown_seconds: int = 30
     otp_sender: Literal["console", "twilio"] = "console"
     google_verifier: Literal["stub", "google"] = "stub"
     google_client_id: str = ""

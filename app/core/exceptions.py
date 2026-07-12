@@ -55,6 +55,11 @@ class InvalidTokenError(AuthenticationError):
     message = "The token is invalid or has expired."
 
 
+class RateLimitedError(AppError):
+    code = "rate_limited"
+    message = "Too many requests. Please wait before retrying."
+
+
 class ExternalServiceError(AppError):
     code = "external_service_error"
     message = "An external service failed."

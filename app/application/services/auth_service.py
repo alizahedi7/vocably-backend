@@ -9,7 +9,7 @@ from app.application.dto import AuthResult, TokenPair
 from app.application.ports.google_verifier import GoogleVerifier
 from app.application.ports.otp_sender import OTPSender
 from app.core.config import settings
-from app.core.exceptions import InvalidOTPError, InvalidTokenError
+from app.core.exceptions import InvalidOTPError, InvalidTokenError, RateLimitedError
 from app.core.logging import get_logger
 from app.core.security import (
     TokenType,
@@ -48,6 +48,11 @@ class AuthService:
         phone = phone.strip()
         code = generate_otp()
         now = datetime.now(UTC)
+
+        latest = await self._otp_challenges.get_active_by_phone(phone)
+        cooldown = timedelta(seconds=settings.otp_resend_cooldown_seconds)
+        if latest is not None and now - latest.created_at < cooldown:
+            raise RateLimitedError("Please wait before requesting a new code.")
 
         await self._otp_challenges.invalidate_for_phone(phone)
         await self._otp_challenges.add(
