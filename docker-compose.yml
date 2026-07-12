@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vocably}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vocably}
+      POSTGRES_DB: ${POSTGRES_DB:-vocably}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vocably} -d ${POSTGRES_DB:-vocably}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Inside the compose network the DB host is the service name "db".
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:-vocably}@db:5432/${POSTGRES_DB:-vocably}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    ports:
+      - "8000:8000"
+    # Apply migrations then start the API.
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+volumes:
+  pgdata:

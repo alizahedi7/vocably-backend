@@ -1,0 +1,51 @@
+.DEFAULT_GOAL := help
+.PHONY: help install dev run migrate makemigration downgrade test lint format typecheck up down logs seed
+
+# System tools (e.g. a sourced ROS environment) may export PYTHONPATH, which leaks their
+# packages into uv's isolated venv and breaks pytest plugin autoload. Blank it for every
+# recipe so commands run against the project's venv only.
+export PYTHONPATH :=
+
+help: ## Show this help
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+install: ## Install runtime + dev dependencies with uv
+	uv sync --extra dev
+
+run: ## Run the API with autoreload
+	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+migrate: ## Apply all Alembic migrations
+	uv run alembic upgrade head
+
+makemigration: ## Autogenerate a migration (usage: make makemigration m="message")
+	uv run alembic revision --autogenerate -m "$(m)"
+
+downgrade: ## Roll back one migration
+	uv run alembic downgrade -1
+
+seed: ## Seed the database with demo data
+	uv run python -m app.scripts.seed
+
+test: ## Run the test suite
+	uv run pytest -q
+
+lint: ## Lint with ruff
+	uv run ruff check app tests
+
+format: ## Auto-format with ruff
+	uv run ruff format app tests
+	uv run ruff check --fix app tests
+
+typecheck: ## Static type checking with mypy
+	uv run mypy app
+
+up: ## Start Postgres + API via docker compose
+	docker compose up --build
+
+down: ## Stop docker compose services
+	docker compose down
+
+logs: ## Tail docker compose logs
+	docker compose logs -f
