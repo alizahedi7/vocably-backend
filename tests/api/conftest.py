@@ -1,12 +1,17 @@
 """Shared fixtures for API integration tests.
 
-The full FastAPI app runs against an in-memory SQLite database: ``get_session`` is
-overridden with a factory bound to a per-test engine, and outbound OTP delivery is
-captured in an in-memory outbox so tests can drive the real request→verify flow.
+The full FastAPI app runs against a per-test database: ``get_session`` is overridden
+with a factory bound to a per-test engine, and outbound OTP delivery is captured in an
+in-memory outbox so tests can drive the real request→verify flow.
+
+By default the database is in-memory SQLite. Set ``TEST_DATABASE_URL`` (an async DSN,
+e.g. ``postgresql+asyncpg://...``) to run the same suite against real Postgres, as CI
+does; the schema is created and dropped around every test.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
@@ -63,8 +68,22 @@ def _fresh_otp_ip_limiter() -> None:
     _otp_ip_limiter.reset()
 
 
+_TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
+
+
 @pytest.fixture
 async def engine() -> AsyncGenerator[AsyncEngine, None]:
+    if _TEST_DATABASE_URL:
+        engine = create_async_engine(_TEST_DATABASE_URL)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+        yield engine
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await engine.dispose()
+        return
+
     # StaticPool keeps the single in-memory database alive across sessions.
     engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
 
