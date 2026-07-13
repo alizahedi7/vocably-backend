@@ -10,6 +10,32 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
 
 ## [Unreleased]
 
+### Added
+
+- **OTP resend cooldown** — requesting a new code for the same phone within
+  `OTP_RESEND_COOLDOWN_SECONDS` (default 30 s, matching the app's resend timer)
+  returns `429 rate_limited`; the previously sent code stays valid.
+- **E.164 phone validation** — OTP endpoints reject phone numbers that are not
+  `+`-prefixed E.164 (8–15 digits).
+- **Kavenegar OTP sender** — real SMS delivery via Kavenegar's Verify Lookup API
+  (`OTP_SENDER=kavenegar` + `KAVENEGAR_API_KEY` / `KAVENEGAR_OTP_TEMPLATE`).
+- **Google id_token verification** — validates tokens against Google's JWKS with
+  audience/issuer checks (`GOOGLE_VERIFIER=google` + `GOOGLE_CLIENT_ID`).
+- Async API integration test harness (in-memory SQLite + httpx `ASGITransport`)
+  covering auth, users, decks, words, study, and AI lookup.
+
+### Changed
+
+- **BREAKING:** `age_range` values now use the app's display strings
+  (`Under 13`, `13–17`, …, `65+`, `Prefer not to share`) instead of hyphenated
+  codes; adds the two previously missing options. Migration widens
+  `users.age_range` and rewrites stored values.
+
+### Fixed
+
+- Datetimes read from SQLite are re-tagged as UTC so timezone-aware comparisons
+  behave the same across database backends.
+
 ## [0.1.0] - 2026-07-12
 
 ### Added
