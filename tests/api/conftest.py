@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -60,6 +61,15 @@ def _no_otp_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
 async def engine() -> AsyncGenerator[AsyncEngine, None]:
     # StaticPool keeps the single in-memory database alive across sessions.
     engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
+
+    # SQLite ships with foreign keys off; enable them so ON DELETE CASCADE
+    # behaves like Postgres does in production.
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_fks(dbapi_connection: Any, _record: Any) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine

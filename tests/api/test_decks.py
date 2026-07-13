@@ -61,6 +61,26 @@ async def test_deck_list_includes_stats(
     assert stats["progress_pct"] == 20  # both words in box 1 of 5
 
 
+async def test_deleting_a_deck_deletes_its_words(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    deck = await create_deck(client, auth_headers)
+    created = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={"deck_id": deck["id"], "term": "reliable", "meaning": "able to be trusted"},
+    )
+    word_id = created.json()["id"]
+
+    deleted = await client.delete(f"/api/v1/decks/{deck['id']}", headers=auth_headers)
+    assert deleted.status_code == 204
+
+    gone = await client.get(f"/api/v1/words/{word_id}", headers=auth_headers)
+    assert gone.status_code == 404
+    listed = await client.get("/api/v1/words", headers=auth_headers)
+    assert listed.json() == []
+
+
 async def test_deck_of_other_user_is_hidden(
     client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
 ) -> None:

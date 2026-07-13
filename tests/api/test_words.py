@@ -81,6 +81,55 @@ async def test_word_can_move_between_decks(
     assert moved.json()["deck_id"] == deck_b
 
 
+async def test_patch_updates_term_and_clears_example(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    deck_id = await create_deck(client, auth_headers)
+    created = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={
+            "deck_id": deck_id,
+            "term": "reliable",
+            "meaning": "able to be trusted",
+            "example": "She is a reliable friend.",
+        },
+    )
+    word_id = created.json()["id"]
+
+    patched = await client.patch(
+        f"/api/v1/words/{word_id}",
+        headers=auth_headers,
+        json={"term": " dependable ", "example": ""},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["term"] == "dependable"  # stripped
+    assert patched.json()["example"] is None  # empty string clears it
+
+
+async def test_cannot_move_word_into_another_users_deck(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    deck_id = await create_deck(client, auth_headers)
+    created = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={"deck_id": deck_id, "term": "deadline", "meaning": "latest time to finish"},
+    )
+    other = await make_user(phone="+989121110000")
+    foreign_deck = await client.post(
+        "/api/v1/decks", headers=bearer(other.id), json={"name": "Theirs", "hue": 25}
+    )
+
+    response = await client.patch(
+        f"/api/v1/words/{created.json()['id']}",
+        headers=auth_headers,
+        json={"deck_id": foreign_deck.json()["id"]},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "permission_denied"
+
+
 async def test_cannot_create_word_in_another_users_deck(
     client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
 ) -> None:
