@@ -41,9 +41,7 @@ async def test_deck_crud_roundtrip(client: AsyncClient, auth_headers: dict[str, 
     assert gone.json()["error"]["code"] == "not_found"
 
 
-async def test_deck_list_includes_stats(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
+async def test_deck_list_includes_stats(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     deck = await create_deck(client, auth_headers)
     for term in ("reliable", "improve"):
         response = await client.post(

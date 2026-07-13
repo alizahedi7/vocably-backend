@@ -13,9 +13,7 @@ async def test_lookup_requires_authentication(client: AsyncClient) -> None:
 async def test_lookup_returns_multiple_senses(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    response = await client.post(
-        "/api/v1/ai/lookup", headers=auth_headers, json={"term": "run"}
-    )
+    response = await client.post("/api/v1/ai/lookup", headers=auth_headers, json={"term": "run"})
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["term"] == "run"
@@ -48,9 +46,7 @@ async def test_story_requires_enough_learned_words(
     assert response.json()["error"]["code"] == "validation_error"
 
 
-async def test_story_uses_learned_words(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
+async def test_story_uses_learned_words(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     deck = await client.post(
         "/api/v1/decks", headers=auth_headers, json={"name": "Everyday English", "hue": 262}
     )

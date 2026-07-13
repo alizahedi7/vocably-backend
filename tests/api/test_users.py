@@ -26,9 +26,7 @@ async def test_me_returns_profile(
     assert body["streak"] == 0
 
 
-async def test_onboarding_completes_profile(
-    client: AsyncClient, make_user: UserFactory
-) -> None:
+async def test_onboarding_completes_profile(client: AsyncClient, make_user: UserFactory) -> None:
     user = await make_user(name="", onboarded=False)
 
     response = await client.post(

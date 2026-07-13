@@ -82,9 +82,7 @@ async def test_code_is_locked_after_max_wrong_attempts(
     wrong = "000000" if code != "000000" else "111111"
 
     for _ in range(MAX_OTP_ATTEMPTS):
-        attempt = await client.post(
-            "/api/v1/auth/otp/verify", json={"phone": PHONE, "code": wrong}
-        )
+        attempt = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": wrong})
         assert attempt.status_code == 401
 
     # The challenge is exhausted: even the correct code no longer signs in.
@@ -94,9 +92,7 @@ async def test_code_is_locked_after_max_wrong_attempts(
 
 
 async def test_verify_without_request_is_rejected(client: AsyncClient) -> None:
-    response = await client.post(
-        "/api/v1/auth/otp/verify", json={"phone": PHONE, "code": "123456"}
-    )
+    response = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": "123456"})
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "invalid_otp"
 
@@ -123,9 +119,7 @@ async def test_otp_requests_are_capped_per_ip(
 
     # Distinct phones: the cap must catch one caller rotating numbers.
     for i in range(3):
-        response = await client.post(
-            "/api/v1/auth/otp/request", json={"phone": f"+98912000000{i}"}
-        )
+        response = await client.post("/api/v1/auth/otp/request", json={"phone": f"+98912000000{i}"})
         assert response.status_code == 202
 
     blocked = await client.post("/api/v1/auth/otp/request", json={"phone": "+989120000009"})

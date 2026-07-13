@@ -36,9 +36,7 @@ async def test_word_crud_roundtrip(client: AsyncClient, auth_headers: dict[str, 
     assert word["box"] == 1
     assert word["sense_label"] == "adjective · character"
 
-    listed = await client.get(
-        "/api/v1/words", headers=auth_headers, params={"deck_id": deck_id}
-    )
+    listed = await client.get("/api/v1/words", headers=auth_headers, params={"deck_id": deck_id})
     assert listed.status_code == 200
     assert [w["id"] for w in listed.json()] == [word["id"]]
 
@@ -92,9 +90,7 @@ async def test_word_list_paginates(client: AsyncClient, auth_headers: dict[str, 
         assert response.status_code == 201
 
     first = await client.get("/api/v1/words", headers=auth_headers, params={"limit": 2})
-    rest = await client.get(
-        "/api/v1/words", headers=auth_headers, params={"limit": 2, "offset": 2}
-    )
+    rest = await client.get("/api/v1/words", headers=auth_headers, params={"limit": 2, "offset": 2})
     assert first.status_code == rest.status_code == 200
     first_ids = {w["id"] for w in first.json()}
     rest_ids = {w["id"] for w in rest.json()}
@@ -206,7 +202,5 @@ async def test_cannot_read_another_users_word(
     )
     other = await make_user(phone="+989121110000")
 
-    response = await client.get(
-        f"/api/v1/words/{created.json()['id']}", headers=bearer(other.id)
-    )
+    response = await client.get(f"/api/v1/words/{created.json()['id']}", headers=bearer(other.id))
     assert response.status_code == 403

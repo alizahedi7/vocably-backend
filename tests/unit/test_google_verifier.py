@@ -82,8 +82,13 @@ async def test_tampered_token_is_rejected(verifier: GoogleIdTokenVerifier) -> No
     other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     now = int(time.time())
     forged = jwt.encode(
-        {"iss": "https://accounts.google.com", "aud": CLIENT_ID, "sub": "x", "iat": now,
-         "exp": now + 300},
+        {
+            "iss": "https://accounts.google.com",
+            "aud": CLIENT_ID,
+            "sub": "x",
+            "iat": now,
+            "exp": now + 300,
+        },
         other_key,
         algorithm="RS256",
     )

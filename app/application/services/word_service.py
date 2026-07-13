@@ -26,9 +26,7 @@ class WordService:
     ) -> list[Word]:
         if deck_id is not None:
             await self._assert_owns_deck(deck_id, user_id)
-        return await self._words.list_for_user(
-            user_id, deck_id=deck_id, limit=limit, offset=offset
-        )
+        return await self._words.list_for_user(user_id, deck_id=deck_id, limit=limit, offset=offset)
 
     async def get_owned(self, word_id: UUID, user_id: UUID) -> Word:
         word = await self._words.get(word_id)
