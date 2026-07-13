@@ -6,6 +6,7 @@ declares. Everything above (domain/application) stays ignorant of these choices.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
 
@@ -33,6 +34,7 @@ from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.infrastructure.ai.stub_ai_service import StubAIService
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
+from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
 from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
 from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
 from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
@@ -87,7 +89,17 @@ def get_otp_sender() -> OTPSender:
     return ConsoleOTPSender()
 
 
+@lru_cache
+def _google_id_token_verifier() -> GoogleIdTokenVerifier:
+    # Memoized so the JWKS key cache survives across requests.
+    return GoogleIdTokenVerifier(client_id=settings.google_client_id)
+
+
 def get_google_verifier() -> GoogleVerifier:
+    if settings.google_verifier == "google":
+        if not settings.google_client_id:
+            raise RuntimeError("GOOGLE_VERIFIER=google requires GOOGLE_CLIENT_ID.")
+        return _google_id_token_verifier()
     return StubGoogleVerifier()
 
 
