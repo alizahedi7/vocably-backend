@@ -63,6 +63,17 @@ async def test_verify_with_wrong_code_is_rejected(
     assert response.json()["error"]["code"] == "invalid_otp"
 
 
+async def test_expired_code_is_rejected(
+    client: AsyncClient, otp_sender: RecordingOTPSender, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "otp_ttl_seconds", 0)
+    code = await request_code(client, otp_sender, PHONE)
+
+    response = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": code})
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_otp"
+
+
 async def test_verify_without_request_is_rejected(client: AsyncClient) -> None:
     response = await client.post(
         "/api/v1/auth/otp/verify", json={"phone": PHONE, "code": "123456"}

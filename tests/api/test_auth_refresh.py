@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 from httpx import AsyncClient
 
+from app.core.security import create_refresh_token
 from tests.api.conftest import RecordingOTPSender
 
 PHONE = "+989121234567"
@@ -45,6 +48,14 @@ async def test_access_token_is_rejected_as_refresh_token(
     response = await client.post(
         "/api/v1/auth/refresh", json={"refresh_token": tokens["access_token"]}
     )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_token"
+
+
+async def test_refresh_for_deleted_user_is_rejected(client: AsyncClient) -> None:
+    token = create_refresh_token(uuid4())
+
+    response = await client.post("/api/v1/auth/refresh", json={"refresh_token": token})
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "invalid_token"
 
