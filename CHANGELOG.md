@@ -10,8 +10,29 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
 
 ## [Unreleased]
 
+### Security
+
+- **OTP brute-force lockout now engages.** Failed verification attempts were
+  rolled back with the failed request, so the five-attempt cap never applied
+  and codes could be guessed without limit. Attempts are now counted with an
+  atomic increment and committed even when verification fails.
+- **Per-IP OTP request limit** — one client IP may request at most
+  `OTP_REQUESTS_PER_IP_PER_HOUR` codes (default 20/h, `<= 0` disables), so
+  rotating phone numbers can no longer drain the SMS budget.
+- **Word text fields are bounded** — `meaning` and `example` are capped at
+  2000 characters (the columns are unbounded `TEXT`).
+
 ### Added
 
+- **Word list pagination** — `GET /words` accepts `limit` (default 100,
+  max 500) and `offset`; ordering gained an id tie-break so page boundaries
+  are deterministic.
+- **CI pipeline** — lint, format check, mypy, and the suite on SQLite, plus a
+  Postgres job that round-trips the full migration chain and re-runs the suite
+  against a real server. `TEST_DATABASE_URL` selects the backend locally too.
+- 32 new tests: token expiry / deleted-user / wrong-token-type paths, OTP
+  expiry and lockout, ownership and cascade edges, `/ai/story`, `/health`,
+  error-envelope guarantees, composition-root wiring, and the rate limiter.
 - **OTP resend cooldown** — requesting a new code for the same phone within
   `OTP_RESEND_COOLDOWN_SECONDS` (default 30 s, matching the app's resend timer)
   returns `429 rate_limited`; the previously sent code stays valid.
