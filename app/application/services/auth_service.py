@@ -74,8 +74,7 @@ class AuthService:
             raise InvalidOTPError()
 
         if not verify_otp(code, challenge.code_hash):
-            challenge.attempts += 1
-            await self._otp_challenges.update(challenge)
+            await self._otp_challenges.record_failed_attempt(challenge.id)
             raise InvalidOTPError()
 
         challenge.consumed = True

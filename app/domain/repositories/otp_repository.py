@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from uuid import UUID
 
 from app.domain.entities.otp_challenge import OtpChallenge
 
@@ -17,6 +18,10 @@ class OTPChallengeRepository(ABC):
 
     @abstractmethod
     async def update(self, challenge: OtpChallenge) -> OtpChallenge: ...
+
+    @abstractmethod
+    async def record_failed_attempt(self, challenge_id: UUID) -> None:
+        """Atomically count one failed verification against a challenge."""
 
     @abstractmethod
     async def invalidate_for_phone(self, phone: str) -> None:

@@ -6,6 +6,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import settings
+from app.domain.entities.otp_challenge import MAX_OTP_ATTEMPTS
 from tests.api.conftest import RecordingOTPSender
 
 PHONE = "+989121234567"
@@ -69,6 +70,24 @@ async def test_expired_code_is_rejected(
     monkeypatch.setattr(settings, "otp_ttl_seconds", 0)
     code = await request_code(client, otp_sender, PHONE)
 
+    response = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": code})
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_otp"
+
+
+async def test_code_is_locked_after_max_wrong_attempts(
+    client: AsyncClient, otp_sender: RecordingOTPSender
+) -> None:
+    code = await request_code(client, otp_sender, PHONE)
+    wrong = "000000" if code != "000000" else "111111"
+
+    for _ in range(MAX_OTP_ATTEMPTS):
+        attempt = await client.post(
+            "/api/v1/auth/otp/verify", json={"phone": PHONE, "code": wrong}
+        )
+        assert attempt.status_code == 401
+
+    # The challenge is exhausted: even the correct code no longer signs in.
     response = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": code})
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "invalid_otp"

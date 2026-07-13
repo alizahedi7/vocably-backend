@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, status
 
-from app.api.deps import AuthServiceDep
+from app.api.deps import AuthServiceDep, SessionDep
 from app.api.v1.schemas.auth import (
     AuthOut,
     GoogleSignInIn,
@@ -14,6 +14,7 @@ from app.api.v1.schemas.auth import (
     TokenPairOut,
     VerifyOTPIn,
 )
+from app.core.exceptions import InvalidOTPError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -26,9 +27,15 @@ async def request_otp(payload: RequestOTPIn, auth: AuthServiceDep) -> MessageOut
 
 
 @router.post("/otp/verify", response_model=AuthOut)
-async def verify_otp(payload: VerifyOTPIn, auth: AuthServiceDep) -> AuthOut:
+async def verify_otp(payload: VerifyOTPIn, auth: AuthServiceDep, session: SessionDep) -> AuthOut:
     """Verify an OTP and sign in (creating the account if it's new)."""
-    result = await auth.verify_otp(payload.phone, payload.code)
+    try:
+        result = await auth.verify_otp(payload.phone, payload.code)
+    except InvalidOTPError:
+        # The request session rolls back when a handler raises; the failed-attempt
+        # counter must survive anyway or the brute-force lockout never engages.
+        await session.commit()
+        raise
     return AuthOut.model_validate(result)
 
 

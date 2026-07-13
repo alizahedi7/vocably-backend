@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +46,14 @@ class SqlAlchemyOTPChallengeRepository(OTPChallengeRepository):
         await self._session.flush()
         await self._session.refresh(model)
         return mappers.otp_to_entity(model)
+
+    async def record_failed_attempt(self, challenge_id: UUID) -> None:
+        # SQL-level increment so concurrent wrong guesses can't undercount each other.
+        await self._session.execute(
+            update(OtpChallengeModel)
+            .where(OtpChallengeModel.id == challenge_id)
+            .values(attempts=OtpChallengeModel.attempts + 1)
+        )
 
     async def invalidate_for_phone(self, phone: str) -> None:
         await self._session.execute(
