@@ -46,7 +46,9 @@ class Settings(BaseSettings):
     otp_length: int = 6
     otp_ttl_seconds: int = 300
     otp_resend_cooldown_seconds: int = 30
-    otp_sender: Literal["console", "twilio"] = "console"
+    otp_sender: Literal["console", "kavenegar"] = "console"
+    kavenegar_api_key: str = ""
+    kavenegar_otp_template: str = ""
     google_verifier: Literal["stub", "google"] = "stub"
     google_client_id: str = ""
 

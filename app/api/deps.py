@@ -22,6 +22,7 @@ from app.application.services.deck_service import DeckService
 from app.application.services.study_service import StudyService
 from app.application.services.user_service import UserService
 from app.application.services.word_service import WordService
+from app.core.config import settings
 from app.core.database import get_session
 from app.core.exceptions import AuthenticationError
 from app.core.security import TokenType, decode_token
@@ -32,6 +33,7 @@ from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.infrastructure.ai.stub_ai_service import StubAIService
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
+from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
 from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
 from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
 from app.infrastructure.db.repositories.otp_repository import (
@@ -73,6 +75,15 @@ def get_ai_service() -> AIService:
 
 
 def get_otp_sender() -> OTPSender:
+    if settings.otp_sender == "kavenegar":
+        if not settings.kavenegar_api_key or not settings.kavenegar_otp_template:
+            raise RuntimeError(
+                "OTP_SENDER=kavenegar requires KAVENEGAR_API_KEY and KAVENEGAR_OTP_TEMPLATE."
+            )
+        return KavenegarOTPSender(
+            api_key=settings.kavenegar_api_key,
+            template=settings.kavenegar_otp_template,
+        )
     return ConsoleOTPSender()
 
 
