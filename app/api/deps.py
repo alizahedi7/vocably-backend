@@ -10,7 +10,7 @@ from functools import lru_cache
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +25,8 @@ from app.application.services.user_service import UserService
 from app.application.services.word_service import WordService
 from app.core.config import settings
 from app.core.database import get_session
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import AuthenticationError, RateLimitedError
+from app.core.rate_limit import SlidingWindowRateLimiter
 from app.core.security import TokenType, decode_token
 from app.domain.entities.user import User
 from app.domain.repositories.deck_repository import DeckRepository
@@ -148,6 +149,25 @@ DeckServiceDep = Annotated[DeckService, Depends(get_deck_service)]
 WordServiceDep = Annotated[WordService, Depends(get_word_service)]
 StudyServiceDep = Annotated[StudyService, Depends(get_study_service)]
 AIStudioServiceDep = Annotated[AIStudioService, Depends(get_ai_studio_service)]
+
+
+# ── Abuse protection ─────────────────────────────────────────
+_otp_ip_limiter = SlidingWindowRateLimiter(window_seconds=3600.0)
+
+
+async def enforce_otp_request_ip_limit(request: Request) -> None:
+    """Cap OTP requests per client IP so one caller can't drain the SMS budget.
+
+    Uses the socket peer address; behind a reverse proxy, run uvicorn with
+    ``--proxy-headers`` (and ``--forwarded-allow-ips``) so it reflects the
+    real client rather than the proxy.
+    """
+    limit = settings.otp_requests_per_ip_per_hour
+    if limit <= 0:
+        return
+    client_ip = request.client.host if request.client else "unknown"
+    if not _otp_ip_limiter.allow(client_ip, limit):
+        raise RateLimitedError("Too many verification requests. Please try again later.")
 
 
 # ── Authentication ───────────────────────────────────────────

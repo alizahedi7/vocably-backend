@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
-from app.api.deps import AuthServiceDep, SessionDep
+from app.api.deps import AuthServiceDep, SessionDep, enforce_otp_request_ip_limit
 from app.api.v1.schemas.auth import (
     AuthOut,
     GoogleSignInIn,
@@ -19,7 +19,12 @@ from app.core.exceptions import InvalidOTPError
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/otp/request", response_model=MessageOut, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/otp/request",
+    response_model=MessageOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(enforce_otp_request_ip_limit)],
+)
 async def request_otp(payload: RequestOTPIn, auth: AuthServiceDep) -> MessageOut:
     """Send a one-time passcode to the given phone number."""
     await auth.request_otp(payload.phone)

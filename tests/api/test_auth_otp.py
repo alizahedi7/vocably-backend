@@ -116,6 +116,23 @@ async def test_resend_within_cooldown_is_rate_limited(
     assert verify.status_code == 200
 
 
+async def test_otp_requests_are_capped_per_ip(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "otp_requests_per_ip_per_hour", 3)
+
+    # Distinct phones: the cap must catch one caller rotating numbers.
+    for i in range(3):
+        response = await client.post(
+            "/api/v1/auth/otp/request", json={"phone": f"+98912000000{i}"}
+        )
+        assert response.status_code == 202
+
+    blocked = await client.post("/api/v1/auth/otp/request", json={"phone": "+989120000009"})
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "rate_limited"
+
+
 async def test_consumed_challenge_does_not_block_new_request(
     client: AsyncClient, otp_sender: RecordingOTPSender, monkeypatch: pytest.MonkeyPatch
 ) -> None:

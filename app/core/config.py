@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     otp_length: int = 6
     otp_ttl_seconds: int = 300
     otp_resend_cooldown_seconds: int = 30
+    # Cost-abuse backstop: SMS requests allowed per client IP per hour (<= 0 disables).
+    otp_requests_per_ip_per_hour: int = 20
     otp_sender: Literal["console", "kavenegar"] = "console"
     kavenegar_api_key: str = ""
     kavenegar_otp_template: str = ""
