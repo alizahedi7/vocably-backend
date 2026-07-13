@@ -81,6 +81,31 @@ async def test_word_can_move_between_decks(
     assert moved.json()["deck_id"] == deck_b
 
 
+async def test_oversized_text_fields_are_rejected(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    deck_id = await create_deck(client, auth_headers)
+
+    created = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={"deck_id": deck_id, "term": "flood", "meaning": "x" * 2001},
+    )
+    assert created.status_code == 422
+
+    word = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={"deck_id": deck_id, "term": "flood", "meaning": "an overflow of water"},
+    )
+    patched = await client.patch(
+        f"/api/v1/words/{word.json()['id']}",
+        headers=auth_headers,
+        json={"example": "y" * 2001},
+    )
+    assert patched.status_code == 422
+
+
 async def test_patch_updates_term_and_clears_example(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:

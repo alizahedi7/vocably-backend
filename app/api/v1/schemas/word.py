@@ -13,16 +13,16 @@ from app.domain.enums import LeitnerBox
 class WordCreateIn(BaseModel):
     deck_id: UUID
     term: str = Field(min_length=1, max_length=255)
-    meaning: str = Field(min_length=1)
-    example: str | None = None
+    meaning: str = Field(min_length=1, max_length=2000)
+    example: str | None = Field(default=None, max_length=2000)
     sense_label: str | None = Field(default=None, max_length=120)
 
 
 class WordUpdateIn(BaseModel):
     deck_id: UUID | None = None
     term: str | None = Field(default=None, min_length=1, max_length=255)
-    meaning: str | None = Field(default=None, min_length=1)
-    example: str | None = None
+    meaning: str | None = Field(default=None, min_length=1, max_length=2000)
+    example: str | None = Field(default=None, max_length=2000)
     sense_label: str | None = Field(default=None, max_length=120)
 
 
