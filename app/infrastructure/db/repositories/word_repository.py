@@ -28,11 +28,19 @@ class SqlAlchemyWordRepository(WordRepository):
         user_id: UUID,
         *,
         deck_id: UUID | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[Word]:
         stmt = select(WordModel).where(WordModel.user_id == user_id)
         if deck_id is not None:
             stmt = stmt.where(WordModel.deck_id == deck_id)
-        stmt = stmt.order_by(WordModel.created_at.desc())
+        # id as tie-breaker: created_at is second-granular, so bulk inserts would
+        # otherwise make page boundaries non-deterministic.
+        stmt = stmt.order_by(WordModel.created_at.desc(), WordModel.id.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        if offset:
+            stmt = stmt.offset(offset)
         models = (await self._session.execute(stmt)).scalars().all()
         return [mappers.word_to_entity(m) for m in models]
 

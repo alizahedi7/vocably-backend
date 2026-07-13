@@ -18,8 +18,10 @@ async def list_words(
     current_user: CurrentUser,
     words: WordServiceDep,
     deck_id: Annotated[UUID | None, Query(description="Filter by deck")] = None,
+    limit: Annotated[int, Query(ge=1, le=500, description="Page size")] = 100,
+    offset: Annotated[int, Query(ge=0, description="Rows to skip")] = 0,
 ) -> list[WordOut]:
-    items = await words.list_words(current_user.id, deck_id=deck_id)
+    items = await words.list_words(current_user.id, deck_id=deck_id, limit=limit, offset=offset)
     return [WordOut.model_validate(w) for w in items]
 
 

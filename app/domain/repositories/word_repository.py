@@ -20,6 +20,8 @@ class WordRepository(ABC):
         user_id: UUID,
         *,
         deck_id: UUID | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[Word]: ...
 
     @abstractmethod

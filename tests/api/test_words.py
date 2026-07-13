@@ -81,6 +81,31 @@ async def test_word_can_move_between_decks(
     assert moved.json()["deck_id"] == deck_b
 
 
+async def test_word_list_paginates(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+    deck_id = await create_deck(client, auth_headers)
+    for term in ("alpha", "bravo", "charlie"):
+        response = await client.post(
+            "/api/v1/words",
+            headers=auth_headers,
+            json={"deck_id": deck_id, "term": term, "meaning": f"meaning of {term}"},
+        )
+        assert response.status_code == 201
+
+    first = await client.get("/api/v1/words", headers=auth_headers, params={"limit": 2})
+    rest = await client.get(
+        "/api/v1/words", headers=auth_headers, params={"limit": 2, "offset": 2}
+    )
+    assert first.status_code == rest.status_code == 200
+    first_ids = {w["id"] for w in first.json()}
+    rest_ids = {w["id"] for w in rest.json()}
+    assert len(first_ids) == 2
+    assert len(rest_ids) == 1
+    assert first_ids.isdisjoint(rest_ids)
+
+    too_big = await client.get("/api/v1/words", headers=auth_headers, params={"limit": 501})
+    assert too_big.status_code == 422
+
+
 async def test_oversized_text_fields_are_rejected(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
