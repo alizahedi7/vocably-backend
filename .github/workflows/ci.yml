@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: Lint, typecheck, tests (SQLite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev
+      - run: uv run ruff check app tests
+      - run: uv run ruff format --check app tests
+      - run: uv run mypy app
+      - run: uv run pytest -q
+
+  postgres:
+    name: Migrations + tests (Postgres)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vocably
+          POSTGRES_PASSWORD: vocably
+          POSTGRES_DB: vocably
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vocably"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://vocably:vocably@localhost:5432/vocably
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra dev
+
+      # The full migration chain must apply, roll back, and re-apply cleanly.
+      - name: Migration round-trip
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+      - name: Test suite against Postgres
+        run: uv run pytest -q
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://vocably:vocably@localhost:5432/vocably
