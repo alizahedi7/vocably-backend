@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Annotated, Literal
 
@@ -13,7 +14,10 @@ Environment = Literal["development", "staging", "production", "test"]
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # ENV_FILE lets the test suite point this at os.devnull so a developer's
+        # local .env (e.g. real Google/Kavenegar credentials for manual testing)
+        # never leaks into test runs. See tests/conftest.py.
+        env_file=os.environ.get("ENV_FILE", ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
