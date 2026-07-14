@@ -64,7 +64,5 @@
   "62": "__init__.py",
   "63": "__init__.py",
   "64": "test_user_streak.py",
-  "65": "StubAIService",
-  "66": "OTPSender",
-  "67": "conftest.py"
+  "65": "StubAIService"
 }

@@ -1,16 +1,16 @@
-# Graph Report - vocably-backend  (2026-07-15)
+# Graph Report - vocably-backend  (2026-07-13)
 
 ## Corpus Check
-- 116 files · ~24,503 words
+- 113 files · ~23,989 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 841 nodes · 1971 edges · 68 communities (47 shown, 21 thin omitted)
-- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 184 edges (avg confidence: 0.56)
+- 826 nodes · 1941 edges · 66 communities (46 shown, 20 thin omitted)
+- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 181 edges (avg confidence: 0.56)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9475fd67`
+- Built from commit: `6c9e567b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -59,17 +59,15 @@
 - Words
 - test_user_streak.py
 - StubAIService
-- OTPSender
-- conftest.py
 
 ## God Nodes (most connected - your core abstractions)
 1. `LeitnerBox` - 47 edges
 2. `User` - 37 edges
 3. `WordRepository` - 29 edges
 4. `Word` - 27 edges
-5. `RecordingOTPSender` - 25 edges
-6. `UserRepository` - 24 edges
-7. `UserModel` - 24 edges
+5. `UserRepository` - 24 edges
+6. `UserModel` - 24 edges
+7. `RecordingOTPSender` - 24 edges
 8. `AuthService` - 22 edges
 9. `Deck` - 22 edges
 10. `OtpChallenge` - 20 edges
@@ -77,14 +75,14 @@
 ## Surprising Connections (you probably didn't know these)
 - `RecordingOTPSender` --uses--> `OTPSender`  [INFERRED]
   tests/api/conftest.py → app/application/ports/otp_sender.py
-- `_FailingOTPSender` --uses--> `OTPSender`  [INFERRED]
-  tests/api/test_app.py → app/application/ports/otp_sender.py
 - `RecordingOTPSender` --uses--> `Base`  [INFERRED]
   tests/api/conftest.py → app/core/database.py
 - `RecordingOTPSender` --uses--> `AuthMethod`  [INFERRED]
   tests/api/conftest.py → app/domain/enums.py
-- `test_google_verifier_is_selected_and_memoized()` --indirect_call--> `GoogleIdTokenVerifier`  [INFERRED]
-  tests/unit/test_deps_wiring.py → app/infrastructure/auth/google_id_token_verifier.py
+- `test_kavenegar_sender_is_selected_when_configured()` --indirect_call--> `KavenegarOTPSender`  [INFERRED]
+  tests/unit/test_deps_wiring.py → app/infrastructure/auth/kavenegar_otp_sender.py
+- `_FailingOTPSender` --uses--> `OTPSender`  [INFERRED]
+  tests/api/test_app.py → app/application/ports/otp_sender.py
 
 ## Import Cycles
 - None detected.
@@ -93,47 +91,47 @@
 - **Hexagonal Architecture Layer Stack** — readme_domain_layer, readme_application_layer, readme_infrastructure_layer, readme_api_layer, readme_core_layer [EXTRACTED 0.90]
 - **Application Outbound Ports** — readme_otpsender_port, readme_googleverifier_port, readme_aiservice_port, readme_application_layer [EXTRACTED 0.85]
 
-## Communities (68 total, 21 thin omitted)
+## Communities (66 total, 20 thin omitted)
 
 ### Community 0 - "Study & Words API"
-Cohesion: 0.05
-Nodes (74): Aggregates all v1 routers under a single APIRouter., build_session(), get_overview(), grade_word(), CurrentUser, description, ge, le (+66 more)
+Cohesion: 0.06
+Nodes (66): build_session(), get_overview(), grade_word(), CurrentUser, description, ge, le, Query (+58 more)
 
 ### Community 1 - "Deck Domain & Persistence"
-Cohesion: 0.10
-Nodes (15): DeckService, UUID, Deck use cases with ownership enforcement., Decks enriched with word/due counts and a progress percentage., Deck, DeckRepository, ABC, UUID (+7 more)
+Cohesion: 0.09
+Nodes (19): DeckService, UUID, Deck use cases with ownership enforcement., Decks enriched with word/due counts and a progress percentage., Apply a review grade to a card and advance the user's streak., UUID, Word (flashcard) use cases with ownership enforcement., WordService (+11 more)
 
 ### Community 2 - "Dependency Injection & Ports"
-Cohesion: 0.24
-Nodes (13): AuthenticationError, GoogleIdTokenVerifier, Any, make_token(), Any, MonkeyPatch, Google id_token verifier, exercised with locally-signed RS256 tokens., _SigningKey (+5 more)
+Cohesion: 0.10
+Nodes (34): get_google_verifier(), get_otp_sender(), _google_id_token_verifier(), GoogleIdentity, GoogleVerifier, ABC, Port: verification of a Google OAuth/OIDC id_token., Verified identity extracted from a Google id_token. (+26 more)
 
 ### Community 3 - "User Service & Domain"
-Cohesion: 0.09
-Nodes (21): UUID, User profile & settings use cases., UserService, User domain entity — a pure dataclass, independent of persistence., Update the study streak given that the user studied on ``today``.          Same, User, ABC, UUID (+13 more)
+Cohesion: 0.11
+Nodes (14): UUID, User profile & settings use cases., UserService, User domain entity — a pure dataclass, independent of persistence., User, ABC, UUID, Port: persistence contract for :class:`~app.domain.entities.user.User`. (+6 more)
 
 ### Community 4 - "AI Studio Feature"
-Cohesion: 0.06
-Nodes (41): AIStudioServiceDep, get_ai_service(), generate_story(), look_up_meanings(), CurrentUser, AI Studio endpoints: meaning lookup and story generation., Suggest candidate meanings/senses for a word, in the user's native language., Generate a short practice story from the user's mastered words. (+33 more)
+Cohesion: 0.21
+Nodes (17): AIStudioServiceDep, generate_story(), look_up_meanings(), CurrentUser, AI Studio endpoints: meaning lookup and story generation., Suggest candidate meanings/senses for a word, in the user's native language., Generate a short practice story from the user's mastered words., LookupIn (+9 more)
 
 ### Community 5 - "Auth Service & Config"
 Cohesion: 0.11
-Nodes (31): AuthResult, Result of a successful sign-in: tokens plus whether the user is new., TokenPair, AuthService, UUID, Authentication use cases: phone/OTP and Google sign-in, plus token refresh., Create and deliver a fresh OTP challenge for ``phone``., Verify an OTP; sign the user in, creating the account if new. (+23 more)
+Nodes (34): AuthResult, Result of a successful sign-in: tokens plus whether the user is new., TokenPair, AuthService, UUID, Authentication use cases: phone/OTP and Google sign-in, plus token refresh., Create and deliver a fresh OTP challenge for ``phone``., Verify an OTP; sign the user in, creating the account if new. (+26 more)
 
 ### Community 6 - "Word Domain & SRS Repository"
-Cohesion: 0.08
-Nodes (24): Apply a review grade to a card and advance the user's streak., UUID, Word (flashcard) use cases with ownership enforcement., WordService, NotFoundError, PermissionDeniedError, datetime, Word (+16 more)
+Cohesion: 0.10
+Nodes (17): datetime, Word, ABC, datetime, UUID, Return a ``{box: count}`` map across all of the user's words., Per deck: ``{deck_id: (word_count, summed_box_values)}`` for progress bars., Per deck: ``{deck_id: due_word_count}``. (+9 more)
 
 ### Community 7 - "Auth & Users API"
-Cohesion: 0.13
-Nodes (31): enforce_otp_request_ip_limit(), Cap OTP requests per client IP so one caller can't drain the SMS budget.      Us, SessionDep, Authentication endpoints: phone/OTP, Google, token refresh., Send a one-time passcode to the given phone number., Verify an OTP and sign in (creating the account if it's new)., refresh(), request_otp() (+23 more)
+Cohesion: 0.11
+Nodes (38): enforce_otp_request_ip_limit(), Cap OTP requests per client IP so one caller can't drain the SMS budget.      Us, Aggregates all v1 routers under a single APIRouter., SessionDep, Authentication endpoints: phone/OTP, Google, token refresh., Send a one-time passcode to the given phone number., Verify an OTP and sign in (creating the account if it's new)., refresh() (+30 more)
 
 ### Community 8 - "Deck & Word Services"
-Cohesion: 0.12
-Nodes (23): AIServiceDep, get_ai_studio_service(), get_auth_service(), get_current_user(), get_deck_repository(), get_deck_service(), get_otp_repository(), get_study_service() (+15 more)
+Cohesion: 0.13
+Nodes (22): AIServiceDep, get_ai_studio_service(), get_auth_service(), get_current_user(), get_deck_repository(), get_deck_service(), get_study_service(), get_user_repository() (+14 more)
 
 ### Community 9 - "OTP Challenge Flow"
-Cohesion: 0.11
-Nodes (18): OtpChallenge, datetime, OTP challenge entity — a pending phone-verification attempt., OTPChallengeRepository, ABC, UUID, Port: persistence contract for OTP challenges., Return the most recent non-consumed challenge for a phone, if any. (+10 more)
+Cohesion: 0.18
+Nodes (10): AIService, ABC, Port: AI capabilities used by the AI Studio use cases.  The application depends, Return candidate senses for ``term``, explained in ``native_language``., Write a short story that naturally uses the supplied ``words``., AIStudioService, UUID, AI Studio use cases: meaning lookup and story generation.  Business rules live h (+2 more)
 
 ### Community 10 - "Architecture Docs & Deployment"
 Cohesion: 0.15
@@ -144,8 +142,8 @@ Cohesion: 0.28
 Nodes (16): create_deck(), delete_deck(), get_deck(), list_decks(), CurrentUser, UUID, update_deck(), DeckCreateIn (+8 more)
 
 ### Community 12 - "App Bootstrap & Leitner"
-Cohesion: 0.09
-Nodes (45): bearer(), make_user(), Any, UserFactory, Auth headers for an arbitrary user id (e.g. a second user in ownership tests)., user(), create_deck(), AsyncClient (+37 more)
+Cohesion: 0.06
+Nodes (63): get_session(), AsyncSession, FastAPI dependency yielding a transactional session.      Commits on success, ro, async_sessionmaker, AsyncEngine, auth_headers(), bearer(), client() (+55 more)
 
 ### Community 33 - "Audit Playbook"
 Cohesion: 0.05
@@ -153,15 +151,15 @@ Nodes (33): 1. Correctness / Bugs, 2. Security, 3. Performance, 4. Test Coverage
 
 ### Community 34 - "Base"
 Cohesion: 0.06
-Nodes (48): do_run_migrations(), Alembic environment — async-aware, driven by application settings., run_migrations_online(), Application configuration, loaded from the environment via pydantic-settings., Base, get_session(), AsyncSession, Async SQLAlchemy engine, session factory, and the ORM declarative base. (+40 more)
+Nodes (46): do_run_migrations(), Alembic environment — async-aware, driven by application settings., run_migrations_online(), get_otp_repository(), Base, Async SQLAlchemy engine, session factory, and the ORM declarative base., Declarative base for all ORM models., OtpChallenge (+38 more)
 
 ### Community 35 - "RecordingOTPSender"
-Cohesion: 0.16
-Nodes (26): otp_sender(), Captures sent codes instead of delivering them., RecordingOTPSender, AsyncClient, MonkeyPatch, OTP sign-in flow: request a code, verify it, and use the issued tokens., request_code(), test_code_is_locked_after_max_wrong_attempts() (+18 more)
+Cohesion: 0.17
+Nodes (24): Captures sent codes instead of delivering them., RecordingOTPSender, AsyncClient, MonkeyPatch, OTP sign-in flow: request a code, verify it, and use the issued tokens., request_code(), test_code_is_locked_after_max_wrong_attempts(), test_code_is_single_use() (+16 more)
 
 ### Community 36 - "test_kavenegar_sender.py"
-Cohesion: 0.09
-Nodes (33): FastAPI, Maps domain exceptions to HTTP responses.  The API layer is the only place that, register_exception_handlers(), _status_for(), AlreadyExistsError, AppError, ExternalServiceError, Exception (+25 more)
+Cohesion: 0.05
+Nodes (50): FastAPI, Maps domain exceptions to HTTP responses.  The API layer is the only place that, register_exception_handlers(), _status_for(), OTPSender, ABC, Port: outbound delivery of one-time passcodes (SMS, etc.)., Deliver ``code`` to ``phone``. Raise on unrecoverable delivery failure. (+42 more)
 
 ### Community 37 - "[Unreleased]"
 Cohesion: 0.22
@@ -184,28 +182,24 @@ Cohesion: 0.50
 Nodes (4): AsyncClient, Google sign-in (through the dev stub verifier, which trusts sub:email:name token, test_google_sign_in_creates_user(), test_google_sign_in_reuses_existing_account()
 
 ### Community 64 - "test_user_streak.py"
-Cohesion: 0.17
-Nodes (15): get_google_verifier(), get_otp_sender(), _google_id_token_verifier(), ConsoleOTPSender, KavenegarOTPSender, Response, Extract ``return.status`` from Kavenegar's response envelope, if present., AsyncBaseTransport (+7 more)
+Cohesion: 0.31
+Nodes (7): Update the study streak given that the user studied on ``today``.          Same, date, Unit tests for the study-streak rules on the User entity., test_consecutive_days_increment_streak(), test_first_ever_study_starts_at_one(), test_gap_resets_streak_to_one(), test_same_day_is_noop()
 
 ### Community 65 - "StubAIService"
-Cohesion: 0.22
-Nodes (10): GoogleIdentity, GoogleVerifier, ABC, Port: verification of a Google OAuth/OIDC id_token., Verified identity extracted from a Google id_token., Verify a Google id_token and return the identity, or raise on failure., Google verifier that validates id_tokens against Google's published JWKS.  Selec, Dev Google verifier that trusts a fake token payload.  Accepts either:   * a pla (+2 more)
-
-### Community 66 - "OTPSender"
-Cohesion: 0.27
-Nodes (6): OTPSender, ABC, Port: outbound delivery of one-time passcodes (SMS, etc.)., Deliver ``code`` to ``phone``. Raise on unrecoverable delivery failure., Dev OTP sender that logs the code instead of sending an SMS.  In production swap, OTP sender backed by Kavenegar's Verify Lookup API (Iranian SMS provider).  Uses
+Cohesion: 0.38
+Nodes (3): get_ai_service(), A fake AI provider useful for local dev and tests., StubAIService
 
 ## Knowledge Gaps
 - **63 isolated node(s):** `vocably-backend`, `Hard Rules`, `Phase 1 — Recon (always)`, `Phase 2 — Audit (parallel)`, `Phase 3 — Vet, prioritize, confirm` (+58 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **21 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **20 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `LeitnerBox` connect `Study & Words API` to `Deck Domain & Persistence`, `Base`, `AI Studio Feature`, `Auth Service & Config`, `Word Domain & SRS Repository`, `OTP Challenge Flow`, `Decks API`?**
-  _High betweenness centrality (0.054) - this node is a cross-community bridge._
-- **Why does `User` connect `User Service & Domain` to `Study & Words API`, `Deck Domain & Persistence`, `Auth Service & Config`, `Deck & Word Services`, `OTP Challenge Flow`?**
+- **Why does `LeitnerBox` connect `Study & Words API` to `Deck Domain & Persistence`, `Base`, `Auth Service & Config`, `Word Domain & SRS Repository`, `OTP Challenge Flow`, `Decks API`?**
+  _High betweenness centrality (0.056) - this node is a cross-community bridge._
+- **Why does `User` connect `User Service & Domain` to `Study & Words API`, `test_user_streak.py`, `Deck Domain & Persistence`, `Base`, `Auth Service & Config`, `Auth & Users API`, `Deck & Word Services`?**
   _High betweenness centrality (0.039) - this node is a cross-community bridge._
 - **Why does `SlidingWindowRateLimiter` connect `test_study.py` to `Deck & Word Services`?**
   _High betweenness centrality (0.030) - this node is a cross-community bridge._
@@ -215,5 +209,5 @@ _Questions this graph is uniquely positioned to answer:_
   _`User` has 2 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 6 inferred relationships involving `WordRepository` (e.g. with `AIStudioService` and `DeckService`) actually correct?**
   _`WordRepository` has 6 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 3 inferred relationships involving `RecordingOTPSender` (e.g. with `OTPSender` and `Base`) actually correct?**
-  _`RecordingOTPSender` has 3 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 5 inferred relationships involving `UserRepository` (e.g. with `AIStudioService` and `AuthService`) actually correct?**
+  _`UserRepository` has 5 INFERRED edges - model-reasoned connections that need verification._
