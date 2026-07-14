@@ -6,7 +6,7 @@ import os
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, PostgresDsn, computed_field, field_validator
+from pydantic import Field, PostgresDsn, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production", "test"]
@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     otp_resend_cooldown_seconds: int = 30
     # Cost-abuse backstop: SMS requests allowed per client IP per hour (<= 0 disables).
     otp_requests_per_ip_per_hour: int = 20
+    # DEV/TEST ONLY: issue this exact code instead of a random one, for every phone
+    # number, so mobile/QA can sign in without reading server logs. Forbidden in
+    # production (validated below) — it disables OTP secrecy entirely while set.
+    otp_fixed_code: str = ""
     otp_sender: Literal["console", "kavenegar"] = "console"
     kavenegar_api_key: str = ""
     kavenegar_otp_template: str = ""
@@ -89,6 +93,21 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @model_validator(mode="after")
+    def _validate_fixed_otp_code(self) -> Settings:
+        if not self.otp_fixed_code:
+            return self
+        if self.is_production:
+            raise ValueError(
+                "OTP_FIXED_CODE must not be set when ENVIRONMENT=production — "
+                "it disables OTP secrecy for every phone number."
+            )
+        if not self.otp_fixed_code.isdigit() or len(self.otp_fixed_code) != self.otp_length:
+            raise ValueError(
+                f"OTP_FIXED_CODE must be exactly {self.otp_length} digits (OTP_LENGTH)."
+            )
+        return self
 
 
 @lru_cache

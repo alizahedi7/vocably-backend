@@ -82,6 +82,13 @@ def verify_otp(code: str, hashed: str) -> bool:
 
 
 def generate_otp(length: int | None = None) -> str:
-    """Generate a numeric OTP of the configured length."""
+    """Generate a numeric OTP of the configured length.
+
+    Returns ``settings.otp_fixed_code`` verbatim when set — a dev/test override
+    (validated at settings load to never apply in production) so mobile/QA can
+    sign in without reading server logs for the code.
+    """
+    if settings.otp_fixed_code:
+        return settings.otp_fixed_code
     n = length or settings.otp_length
     return "".join(secrets.choice("0123456789") for _ in range(n))

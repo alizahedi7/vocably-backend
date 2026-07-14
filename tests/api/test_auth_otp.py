@@ -91,6 +91,33 @@ async def test_code_is_locked_after_max_wrong_attempts(
     assert response.json()["error"]["code"] == "invalid_otp"
 
 
+async def test_fixed_otp_code_signs_in_any_phone(
+    client: AsyncClient, otp_sender: RecordingOTPSender, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "otp_fixed_code", "123456")
+    other_phone = "+989120000001"
+
+    for phone in (PHONE, other_phone):
+        request = await client.post("/api/v1/auth/otp/request", json={"phone": phone})
+        assert request.status_code == 202
+        assert otp_sender.last_code_for(phone) == "123456"
+
+        verify = await client.post(
+            "/api/v1/auth/otp/verify", json={"phone": phone, "code": "123456"}
+        )
+        assert verify.status_code == 200, verify.text
+
+    # The lockout/attempt-count path is untouched: a wrong guess is still rejected.
+    wrong = await client.post(
+        "/api/v1/auth/otp/request", json={"phone": "+989120000002"}
+    )
+    assert wrong.status_code == 202
+    bad_attempt = await client.post(
+        "/api/v1/auth/otp/verify", json={"phone": "+989120000002", "code": "000000"}
+    )
+    assert bad_attempt.status_code == 401
+
+
 async def test_verify_without_request_is_rejected(client: AsyncClient) -> None:
     response = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": "123456"})
     assert response.status_code == 401
