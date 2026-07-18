@@ -59,9 +59,17 @@ class StudyService:
         deck_id: UUID | None = None,
         limit: int = 20,
     ) -> list[Word]:
-        """Return the queue of due cards for a study session."""
+        """Return the queue of cards for a study session.
+
+        Due cards take priority; if nothing is due (the deck, or the whole
+        account, is fully caught up), fall back to the full word list so
+        "practice anyway" sessions always have something to show.
+        """
         now = datetime.now(UTC)
-        return await self._words.list_due(user_id, now, deck_id=deck_id, limit=limit)
+        due = await self._words.list_due(user_id, now, deck_id=deck_id, limit=limit)
+        if due:
+            return due
+        return await self._words.list_for_user(user_id, deck_id=deck_id, limit=limit)
 
     async def grade(self, user_id: UUID, word_id: UUID, grade: ReviewGrade) -> Word:
         """Apply a review grade to a card and advance the user's streak."""

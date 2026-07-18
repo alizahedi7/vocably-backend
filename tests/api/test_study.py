@@ -66,6 +66,27 @@ async def test_session_returns_due_words_and_respects_deck_filter(
     assert scoped.json()["words"][0]["id"] in word_ids
 
 
+async def test_session_falls_back_to_full_deck_when_nothing_is_due(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    deck_id, word_ids = await seed_deck_with_words(client, auth_headers, ["a", "b"])
+    for word_id in word_ids:
+        graded = await client.post(
+            f"/api/v1/study/words/{word_id}/grade", headers=auth_headers, json={"grade": "easy"}
+        )
+        assert graded.status_code == 200
+
+    overview = await client.get("/api/v1/study/overview", headers=auth_headers)
+    assert overview.json()["due_count"] == 0
+
+    session = await client.get(
+        "/api/v1/study/session", headers=auth_headers, params={"deck_id": deck_id}
+    )
+    assert session.status_code == 200
+    assert session.json()["count"] == 2
+    assert {w["id"] for w in session.json()["words"]} == set(word_ids)
+
+
 async def test_grading_moves_boxes_and_schedules_reviews(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
