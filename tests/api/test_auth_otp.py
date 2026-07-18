@@ -108,9 +108,7 @@ async def test_fixed_otp_code_signs_in_any_phone(
         assert verify.status_code == 200, verify.text
 
     # The lockout/attempt-count path is untouched: a wrong guess is still rejected.
-    wrong = await client.post(
-        "/api/v1/auth/otp/request", json={"phone": "+989120000002"}
-    )
+    wrong = await client.post("/api/v1/auth/otp/request", json={"phone": "+989120000002"})
     assert wrong.status_code == 202
     bad_attempt = await client.post(
         "/api/v1/auth/otp/verify", json={"phone": "+989120000002", "code": "000000"}
