@@ -18,7 +18,7 @@ jobs:
       - run: uv run ruff check app tests
       - run: uv run ruff format --check app tests
       - run: uv run mypy app
-      - run: uv run pytest -q
+      - run: uv run pytest -q --cov=app --cov-report=term-missing
 
   postgres:
     name: Migrations + tests (Postgres)
