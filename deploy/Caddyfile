@@ -1,0 +1,5 @@
+# Caddy obtains and renews the Let's Encrypt certificate for $DOMAIN
+# automatically; all it needs is ports 80+443 open and DNS pointing here.
+{$DOMAIN} {
+	reverse_proxy api:8000
+}
