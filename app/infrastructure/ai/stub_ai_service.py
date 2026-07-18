@@ -12,8 +12,35 @@ import asyncio
 from app.application.ports.ai_service import (
     AIService,
     GeneratedStory,
+    LearnerContext,
     MeaningSuggestion,
 )
+
+# Human-readable theme phrases per interest topic id, used to flavor stub output the way a
+# real model would weave the learner's interests into examples and stories.
+_TOPIC_PHRASES: dict[str, str] = {
+    "daily": "everyday life",
+    "travel": "a trip abroad",
+    "work": "a day at the office",
+    "movies": "a night at the movies",
+    "music": "a favorite song",
+    "food": "a delicious meal",
+    "tech": "a new gadget",
+    "sports": "a big match",
+    "health": "a healthy routine",
+    "science": "a curious experiment",
+    "gaming": "an epic game",
+    "news": "today's headlines",
+}
+
+
+def _theme(learner: LearnerContext) -> str | None:
+    for topic in learner.interests:
+        phrase = _TOPIC_PHRASES.get(topic)
+        if phrase:
+            return phrase
+    return None
+
 
 # Curated senses mirroring the design's AI_SENSES fixture.
 _CANNED_SENSES: dict[str, list[MeaningSuggestion]] = {
@@ -46,30 +73,38 @@ class StubAIService(AIService):
     async def look_up_meanings(
         self,
         term: str,
-        native_language: str,
+        learner: LearnerContext,
     ) -> list[MeaningSuggestion]:
         await self._delay()
         key = term.strip().lower()
         if key in _CANNED_SENSES:
             return _CANNED_SENSES[key]
+        theme = _theme(learner)
+        example = (
+            f"While thinking about {theme}, they used “{term}” naturally in a sentence."
+            if theme
+            else f"Here is “{term}” used naturally in a sentence."
+        )
         # Generic fallback so any word yields a usable suggestion.
         return [
             MeaningSuggestion(
-                meaning=f"a common sense of “{term}” (explained in {native_language})",
-                context="general",
-                example=f"Here is “{term}” used naturally in a sentence.",
+                meaning=f"a common sense of “{term}” (explained in {learner.native_language})",
+                context=theme or "general",
+                example=example,
             )
         ]
 
     async def generate_story(
         self,
         words: list[str],
-        native_language: str,
+        learner: LearnerContext,
     ) -> GeneratedStory:
         await self._delay()
         joined = ", ".join(words[:-1]) + (f" and {words[-1]}" if len(words) > 1 else "")
+        theme = _theme(learner)
+        opening = f"One quiet afternoon, dreaming of {theme}," if theme else "One quiet afternoon,"
         text = (
-            f"One quiet afternoon, a curious learner set out to use every word they had "
+            f"{opening} a curious learner set out to use every word they had "
             f"mastered — {joined}. By the end of the day, each one felt like an old friend, "
             f"and the story they made together was one worth remembering."
         )

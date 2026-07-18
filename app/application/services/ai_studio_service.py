@@ -11,6 +11,7 @@ from uuid import UUID
 from app.application.ports.ai_service import (
     AIService,
     GeneratedStory,
+    LearnerContext,
     MeaningSuggestion,
 )
 from app.core.exceptions import NotFoundError, ValidationError
@@ -45,11 +46,11 @@ class AIStudioService:
         term = term.strip()
         if not term:
             raise ValidationError("A term is required.")
-        native_language = await self._native_language(user_id)
-        return await self._ai.look_up_meanings(term, native_language)
+        learner = await self._learner_context(user_id)
+        return await self._ai.look_up_meanings(term, learner)
 
     async def generate_story(self, user_id: UUID) -> GeneratedStory:
-        native_language = await self._native_language(user_id)
+        learner = await self._learner_context(user_id)
         words = await self._words.list_for_user(user_id)
         learned = [w.term for w in words if w.box in STORY_ELIGIBLE_BOXES]
 
@@ -57,10 +58,14 @@ class AIStudioService:
             raise ValidationError(
                 f"Learn at least {MIN_WORDS_FOR_STORY} words before generating a story."
             )
-        return await self._ai.generate_story(learned[:MAX_STORY_WORDS], native_language)
+        return await self._ai.generate_story(learned[:MAX_STORY_WORDS], learner)
 
-    async def _native_language(self, user_id: UUID) -> str:
+    async def _learner_context(self, user_id: UUID) -> LearnerContext:
         user = await self._users.get(user_id)
         if user is None:
             raise NotFoundError("User not found.")
-        return user.native_language
+        return LearnerContext(
+            native_language=user.native_language,
+            age_range=user.age_range.value if user.age_range else None,
+            interests=tuple(user.interests),
+        )

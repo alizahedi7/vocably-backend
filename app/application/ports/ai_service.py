@@ -7,7 +7,21 @@ Claude/OpenAI adapter can be dropped in later without touching business logic.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True, slots=True)
+class LearnerContext:
+    """Profile facts the AI uses to personalize its output.
+
+    ``interests`` themes examples/stories to the learner's topics; ``age_range``
+    keeps content age-appropriate.
+    """
+
+    native_language: str = "English"
+    age_range: str | None = None
+    interests: Sequence[str] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,14 +46,22 @@ class AIService(ABC):
     async def look_up_meanings(
         self,
         term: str,
-        native_language: str,
+        learner: LearnerContext,
     ) -> list[MeaningSuggestion]:
-        """Return candidate senses for ``term``, explained in ``native_language``."""
+        """Return candidate senses for ``term``, explained in the learner's language.
+
+        Examples should be themed to ``learner.interests`` and appropriate for
+        ``learner.age_range`` when set.
+        """
 
     @abstractmethod
     async def generate_story(
         self,
         words: list[str],
-        native_language: str,
+        learner: LearnerContext,
     ) -> GeneratedStory:
-        """Write a short story that naturally uses the supplied ``words``."""
+        """Write a short story that naturally uses the supplied ``words``.
+
+        The story should be themed to ``learner.interests`` and appropriate for
+        ``learner.age_range`` when set.
+        """

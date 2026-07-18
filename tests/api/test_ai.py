@@ -33,6 +33,22 @@ async def test_lookup_unknown_word_falls_back_to_generic_sense(
     assert len(response.json()["suggestions"]) == 1
 
 
+async def test_lookup_fallback_is_themed_to_user_interests(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    patched = await client.patch(
+        "/api/v1/users/me", headers=auth_headers, json={"interests": ["travel"]}
+    )
+    assert patched.status_code == 200
+
+    response = await client.post(
+        "/api/v1/ai/lookup", headers=auth_headers, json={"term": "serendipity"}
+    )
+    assert response.status_code == 200
+    suggestion = response.json()["suggestions"][0]
+    assert suggestion["context"] == "a trip abroad"
+
+
 async def test_story_requires_authentication(client: AsyncClient) -> None:
     response = await client.post("/api/v1/ai/story")
     assert response.status_code == 401
