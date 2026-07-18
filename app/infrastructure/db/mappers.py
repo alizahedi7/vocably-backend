@@ -29,6 +29,8 @@ def user_to_entity(m: UserModel) -> User:
         age_range=AgeRange(m.age_range) if m.age_range else None,
         native_language=m.native_language,
         app_language=m.app_language,
+        interests=list(m.interests or []),
+        daily_goal=m.daily_goal,
         streak=m.streak,
         last_studied_on=m.last_studied_on,
         onboarded=m.onboarded,
@@ -46,6 +48,8 @@ def apply_user(entity: User, m: UserModel) -> None:
     m.age_range = entity.age_range.value if entity.age_range else None
     m.native_language = entity.native_language
     m.app_language = entity.app_language
+    m.interests = list(entity.interests)
+    m.daily_goal = entity.daily_goal
     m.streak = entity.streak
     m.last_studied_on = entity.last_studied_on
     m.onboarded = entity.onboarded

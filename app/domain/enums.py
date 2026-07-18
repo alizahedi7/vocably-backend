@@ -28,6 +28,27 @@ class AgeRange(StrEnum):
     PREFER_NOT_TO_SHARE = "Prefer not to share"
 
 
+class InterestTopic(StrEnum):
+    """Topics the learner can pick during onboarding; themes AI-generated content."""
+
+    DAILY = "daily"
+    TRAVEL = "travel"
+    WORK = "work"
+    MOVIES = "movies"
+    MUSIC = "music"
+    FOOD = "food"
+    TECH = "tech"
+    SPORTS = "sports"
+    HEALTH = "health"
+    SCIENCE = "science"
+    GAMING = "gaming"
+    NEWS = "news"
+
+
+#: Allowed values for the user's daily new-word goal.
+DAILY_GOAL_CHOICES = (5, 10, 15, 20)
+
+
 class LeitnerBox(IntEnum):
     """Leitner boxes 1..5. Higher box = better remembered, longer interval."""
 

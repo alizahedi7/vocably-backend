@@ -26,6 +26,8 @@ async def complete_onboarding(
         name=payload.name,
         age_range=payload.age_range,
         native_language=payload.native_language,
+        interests=[str(topic) for topic in payload.interests],
+        daily_goal=payload.daily_goal,
     )
     return UserOut.model_validate(user)
 
@@ -42,5 +44,9 @@ async def update_me(
         age_range=payload.age_range,
         native_language=payload.native_language,
         app_language=payload.app_language,
+        interests=(
+            None if payload.interests is None else [str(topic) for topic in payload.interests]
+        ),
+        daily_goal=payload.daily_goal,
     )
     return UserOut.model_validate(user)

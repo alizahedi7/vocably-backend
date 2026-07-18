@@ -25,6 +25,10 @@ class User:
     native_language: str = "English"
     app_language: str = "English"
 
+    # Learning preferences
+    interests: list[str] = field(default_factory=list)
+    daily_goal: int = 10
+
     # Gamification
     streak: int = 0
     last_studied_on: date | None = None

@@ -28,11 +28,17 @@ class UserService:
         name: str,
         age_range: AgeRange | None,
         native_language: str,
+        interests: list[str] | None = None,
+        daily_goal: int | None = None,
     ) -> User:
         user = await self.get(user_id)
         user.name = name.strip()
         user.age_range = age_range
         user.native_language = native_language
+        if interests is not None:
+            user.interests = list(interests)
+        if daily_goal is not None:
+            user.daily_goal = daily_goal
         user.onboarded = True
         user.updated_at = datetime.now(UTC)
         return await self._users.update(user)
@@ -45,6 +51,8 @@ class UserService:
         age_range: AgeRange | None = None,
         native_language: str | None = None,
         app_language: str | None = None,
+        interests: list[str] | None = None,
+        daily_goal: int | None = None,
     ) -> User:
         user = await self.get(user_id)
         if name is not None:
@@ -55,5 +63,9 @@ class UserService:
             user.native_language = native_language
         if app_language is not None:
             user.app_language = app_language
+        if interests is not None:
+            user.interests = list(interests)
+        if daily_goal is not None:
+            user.daily_goal = daily_goal
         user.updated_at = datetime.now(UTC)
         return await self._users.update(user)

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import Date, String
+from sqlalchemy import JSON, Date, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -23,6 +24,11 @@ class UserModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     age_range: Mapped[str | None] = mapped_column(String(32))
     native_language: Mapped[str] = mapped_column(String(64), default="English", nullable=False)
     app_language: Mapped[str] = mapped_column(String(64), default="English", nullable=False)
+
+    interests: Mapped[list[str]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), default=list, nullable=False
+    )
+    daily_goal: Mapped[int] = mapped_column(default=10, nullable=False)
 
     streak: Mapped[int] = mapped_column(default=0, nullable=False)
     last_studied_on: Mapped[date | None] = mapped_column(Date)
