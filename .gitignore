@@ -29,6 +29,17 @@ htmlcov/
 *.sqlite3
 *.db
 
+# Advisor implementation plans (local working docs, not part of the app)
+plans/
+
+# Claude Code / agent tooling (local, not part of the app)
+.claude/
+.agents/
+skills-lock.json
+
+# graphify knowledge graph output (generated)
+graphify-out/
+
 # IDE / OS
 .idea/
 .vscode/
