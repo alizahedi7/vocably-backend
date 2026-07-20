@@ -37,6 +37,7 @@ from app.infrastructure.ai.stub_ai_service import StubAIService
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
 from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
+from app.infrastructure.auth.sms_ir_otp_sender import SmsIrOTPSender
 from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
 from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
 from app.infrastructure.db.repositories.otp_repository import (
@@ -86,6 +87,13 @@ def get_otp_sender() -> OTPSender:
         return KavenegarOTPSender(
             api_key=settings.kavenegar_api_key,
             template=settings.kavenegar_otp_template,
+        )
+    if settings.otp_sender == "sms_ir":
+        if not settings.sms_ir_api_key or not settings.sms_ir_template_id:
+            raise RuntimeError("OTP_SENDER=sms_ir requires SMS_IR_API_KEY and SMS_IR_TEMPLATE_ID.")
+        return SmsIrOTPSender(
+            api_key=settings.sms_ir_api_key,
+            template_id=settings.sms_ir_template_id,
         )
     return ConsoleOTPSender()
 

@@ -56,9 +56,11 @@ class Settings(BaseSettings):
     # number, so mobile/QA can sign in without reading server logs. Forbidden in
     # production (validated below) — it disables OTP secrecy entirely while set.
     otp_fixed_code: str = ""
-    otp_sender: Literal["console", "kavenegar"] = "console"
+    otp_sender: Literal["console", "kavenegar", "sms_ir"] = "console"
     kavenegar_api_key: str = ""
     kavenegar_otp_template: str = ""
+    sms_ir_api_key: str = ""
+    sms_ir_template_id: int = 0
     google_verifier: Literal["stub", "google"] = "stub"
     google_client_id: str = ""
 

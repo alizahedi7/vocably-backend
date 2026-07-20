@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
 from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
+from app.infrastructure.auth.sms_ir_otp_sender import SmsIrOTPSender
 from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
 
 
@@ -35,6 +36,23 @@ def test_kavenegar_without_credentials_fails_fast(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(settings, "kavenegar_otp_template", "")
 
     with pytest.raises(RuntimeError, match="KAVENEGAR_API_KEY"):
+        get_otp_sender()
+
+
+def test_sms_ir_sender_is_selected_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "otp_sender", "sms_ir")
+    monkeypatch.setattr(settings, "sms_ir_api_key", "key")
+    monkeypatch.setattr(settings, "sms_ir_template_id", 123456)
+
+    assert isinstance(get_otp_sender(), SmsIrOTPSender)
+
+
+def test_sms_ir_without_credentials_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "otp_sender", "sms_ir")
+    monkeypatch.setattr(settings, "sms_ir_api_key", "")
+    monkeypatch.setattr(settings, "sms_ir_template_id", 0)
+
+    with pytest.raises(RuntimeError, match="SMS_IR_API_KEY"):
         get_otp_sender()
 
 
