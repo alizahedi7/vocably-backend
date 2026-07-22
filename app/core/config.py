@@ -111,6 +111,15 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_google_verifier(self) -> Settings:
+        if self.is_production and self.google_verifier != "google":
+            raise ValueError(
+                "GOOGLE_VERIFIER must be 'google' when ENVIRONMENT=production — the "
+                "'stub' verifier trusts any caller-supplied string as a Google identity."
+            )
+        return self
+
 
 @lru_cache
 def get_settings() -> Settings:
