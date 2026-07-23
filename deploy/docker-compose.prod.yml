@@ -42,8 +42,13 @@ services:
       - "443:443"
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      WEB_DOMAIN: ${WEB_DOMAIN:?set WEB_DOMAIN in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # The PWA (vocably-mobile), published as static files by that repo's
+      # own workflow. Caddy serves them as a second site; this container is
+      # the only thing on the host holding ports 80/443.
+      - /opt/vocably/web:/srv/vocably-web:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

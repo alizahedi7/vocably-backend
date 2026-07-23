@@ -1,5 +1,40 @@
-# Caddy obtains and renews the Let's Encrypt certificate for $DOMAIN
+# Caddy obtains and renews the Let's Encrypt certificate for each site
 # automatically; all it needs is ports 80+443 open and DNS pointing here.
 {$DOMAIN} {
 	reverse_proxy api:8000
+}
+
+# The PWA (vocably-mobile), a folder of static files rsynced to
+# /opt/vocably/web by that repo's workflow and mounted read-only into this
+# container. It is served here rather than by a second web server because
+# this container owns 80/443 on the host.
+#
+# Keep this block in sync with vocably-mobile's deploy/Caddyfile.web, which
+# is where it is documented.
+{$WEB_DOMAIN} {
+	root * /srv/vocably-web
+	encode gzip zstd
+
+	# NO single-page-app rewrite. The app has no URL routing, and a
+	# catch-all to index.html would swallow /google_redirect.html — the page
+	# Google returns the sign-in popup to.
+
+	# Flutter's output filenames are stable across builds, so the entry
+	# points must revalidate or users keep running the previous release.
+	@entry path /index.html / /flutter_bootstrap.js /flutter_service_worker.js /version.json /manifest.json
+	header @entry Cache-Control "no-cache, no-store, must-revalidate"
+
+	header /canvaskit/* Cache-Control "public, max-age=31536000, immutable"
+	header /assets/fonts/* Cache-Control "public, max-age=31536000, immutable"
+	header Cache-Control "no-cache"
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		# Deliberately NOT Cross-Origin-Opener-Policy "same-origin": that
+		# severs window.opener, which is how the Google sign-in popup posts
+		# its id_token back to the app.
+	}
+
+	file_server
 }
