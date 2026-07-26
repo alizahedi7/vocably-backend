@@ -40,9 +40,19 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    # Lets this container resolve the admin dashboard (vocably-admin), which
+    # runs as its own container on this same VPS bound to the host's
+    # loopback interface, not a service in this compose project.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
       WEB_DOMAIN: ${WEB_DOMAIN:?set WEB_DOMAIN in .env}
+      # Not required like the two above: the Caddyfile falls back to a
+      # never-resolvable placeholder when unset, so a VPS not yet set up for
+      # the admin dashboard still starts cleanly. Set this once the DNS
+      # record and the vocably-admin container both exist.
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # The PWA (vocably-mobile), published as static files by that repo's

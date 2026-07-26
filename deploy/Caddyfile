@@ -38,3 +38,18 @@
 
 	file_server
 }
+
+# The admin dashboard (vocably-admin) — unlike the PWA above, this is a live
+# Next.js server in its own container on this VPS, not a folder of static
+# files, so it's reached over the host loopback interface rather than a
+# mounted volume. `host-gateway` (below) makes that address resolve inside
+# this container.
+#
+# Keep this block in sync with vocably-admin's deploy/Caddyfile.admin, which
+# is where it is documented. Defaults to a reserved, never-resolvable
+# hostname (RFC 2606) when ADMIN_DOMAIN is unset, so a VPS that hasn't been
+# set up for the admin dashboard yet still starts cleanly — Caddy just fails
+# ACME for that one site instead of refusing to start at all.
+{$ADMIN_DOMAIN:admin.invalid} {
+	reverse_proxy host.docker.internal:3002
+}
