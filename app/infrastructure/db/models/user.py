@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, String
+from sqlalchemy import JSON, Boolean, Date, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 from app.infrastructure.db.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
+from app.infrastructure.db.types import UTCDateTime
 
 
 class UserModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -33,3 +34,6 @@ class UserModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     streak: Mapped[int] = mapped_column(default=0, nullable=False)
     last_studied_on: Mapped[date | None] = mapped_column(Date)
     onboarded: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime())

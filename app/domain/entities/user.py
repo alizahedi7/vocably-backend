@@ -34,6 +34,11 @@ class User:
     last_studied_on: date | None = None
 
     onboarded: bool = False
+
+    # Administration
+    is_admin: bool = False
+    last_login_at: datetime | None = None
+
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 

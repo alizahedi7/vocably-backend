@@ -34,6 +34,8 @@ def user_to_entity(m: UserModel) -> User:
         streak=m.streak,
         last_studied_on=m.last_studied_on,
         onboarded=m.onboarded,
+        is_admin=m.is_admin,
+        last_login_at=m.last_login_at,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -53,6 +55,8 @@ def apply_user(entity: User, m: UserModel) -> None:
     m.streak = entity.streak
     m.last_studied_on = entity.last_studied_on
     m.onboarded = entity.onboarded
+    m.is_admin = entity.is_admin
+    m.last_login_at = entity.last_login_at
 
 
 # ── Deck ─────────────────────────────────────────────────────

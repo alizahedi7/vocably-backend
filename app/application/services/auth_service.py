@@ -81,16 +81,18 @@ class AuthService:
         await self._otp_challenges.update(challenge)
 
         user = await self._users.get_by_phone(phone)
-        is_new = user is None
         if user is None:
-            user = await self._users.add(User(auth_method=AuthMethod.PHONE, phone=phone))
-        return self._issue(user, is_new)
+            user = await self._users.add(
+                User(auth_method=AuthMethod.PHONE, phone=phone, last_login_at=now)
+            )
+            return self._issue(user, is_new=True)
+        return await self._sign_in_existing(user, now)
 
     # ── Google ────────────────────────────────────────────────
     async def sign_in_with_google(self, id_token: str) -> AuthResult:
+        now = datetime.now(UTC)
         identity = await self._google.verify(id_token)
         user = await self._users.get_by_google_sub(identity.sub)
-        is_new = user is None
         if user is None:
             user = await self._users.add(
                 User(
@@ -98,9 +100,11 @@ class AuthService:
                     google_sub=identity.sub,
                     email=identity.email,
                     name=identity.name or "",
+                    last_login_at=now,
                 )
             )
-        return self._issue(user, is_new)
+            return self._issue(user, is_new=True)
+        return await self._sign_in_existing(user, now)
 
     # ── Tokens ────────────────────────────────────────────────
     async def refresh(self, refresh_token: str) -> TokenPair:
@@ -110,6 +114,12 @@ class AuthService:
         if user is None:
             raise InvalidTokenError("User no longer exists.")
         return self._tokens_for(user.id)
+
+    async def _sign_in_existing(self, user: User, now: datetime) -> AuthResult:
+        """Record the login timestamp for a returning user, then issue tokens."""
+        user.last_login_at = now
+        user = await self._users.update(user)
+        return self._issue(user, is_new=False)
 
     def _issue(self, user: User, is_new: bool) -> AuthResult:
         return AuthResult(user=user, tokens=self._tokens_for(user.id), is_new_user=is_new)
