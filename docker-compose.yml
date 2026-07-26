@@ -20,8 +20,20 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Load the local .env into the container's process environment so app
+    # settings (GOOGLE_VERIFIER, GOOGLE_CLIENT_ID, OTP_SENDER, …) are actually
+    # applied. Compose otherwise only uses .env for ${VAR} substitution in this
+    # file — it does NOT pass those values into the container. Without this the
+    # app falls back to defaults (e.g. GOOGLE_VERIFIER=stub), which treats the
+    # entire Google id_token as the user identity.
+    # Optional: .env is gitignored, so a fresh clone brings up defaults instead
+    # of failing. Copy .env.example to .env to override them.
+    env_file:
+      - path: .env
+        required: false
     environment:
       # Inside the compose network the DB host is the service name "db".
+      # These win over .env because the DB host differs inside the network.
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:-vocably}@db:5432/${POSTGRES_DB:-vocably}
       SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
       ENVIRONMENT: ${ENVIRONMENT:-development}
