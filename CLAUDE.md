@@ -69,6 +69,29 @@ test(services): cover duplicate-word handling in WordService
 - Before committing, review the full working tree (`git status`, `git diff`), plan the sequence of commits, and stage selectively (`git add <paths>` or `git add -p`) so each commit is self-contained, buildable, and reflects exactly one logical change.
 - Each commit should leave the project in a working state (tests passing, imports resolving).
 
+## Admin surface
+
+The read-only admin analytics API backing the standalone **vocably-admin** dashboard.
+
+- **Role**: `users.is_admin` (boolean, defaults false). Grant/revoke out of band —
+  `make grant-admin who="+989121234567"` (add `revoke=1` to remove). There is no
+  self-service path to admin and no endpoint that escalates a user.
+- **Gate**: every `/api/v1/admin/*` route depends on `CurrentAdmin` (`require_admin` in
+  [deps.py](app/api/deps.py)), which layers on `get_current_user`. Unauthenticated → **401**;
+  authenticated non-admin → **403** (the token is valid, the user just lacks access).
+  Gating is per-route by design — a new admin route MUST take `CurrentAdmin`, or it is public
+  to any signed-in user.
+- **Endpoints**: `overview`, `registrations?days=1..365`, `auth-methods`, `users`,
+  `categories`, `words`. All GET, all platform-wide, none mutate.
+- **Response contract**: schemas in [admin.py](app/api/v1/schemas/admin.py) serialise via
+  `serialization_alias` to **camelCase** to match vocably-admin's TypeScript types. Renaming a
+  field is a breaking change for that client — keep the aliases in sync with the dashboard.
+- **Layering** follows the rest of the app: router → `AdminService` → `AdminRepository` port →
+  `SqlAlchemyAdminRepository`. Aggregates are computed in SQL, not by loading rows into Python.
+- `users.last_login_at` is stamped on every OTP and Google sign-in (`AuthService`); it powers
+  the "Last Login" column and the active-users metric. `NULL` means never signed in since the
+  column was added.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
