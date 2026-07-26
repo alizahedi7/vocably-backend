@@ -14,9 +14,11 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.ports.admin_repository import AdminRepository
 from app.application.ports.ai_service import AIService
 from app.application.ports.google_verifier import GoogleVerifier
 from app.application.ports.otp_sender import OTPSender
+from app.application.services.admin_service import AdminService
 from app.application.services.ai_studio_service import AIStudioService
 from app.application.services.auth_service import AuthService
 from app.application.services.deck_service import DeckService
@@ -25,7 +27,11 @@ from app.application.services.user_service import UserService
 from app.application.services.word_service import WordService
 from app.core.config import settings
 from app.core.database import get_session
-from app.core.exceptions import AuthenticationError, RateLimitedError
+from app.core.exceptions import (
+    AuthenticationError,
+    PermissionDeniedError,
+    RateLimitedError,
+)
 from app.core.rate_limit import SlidingWindowRateLimiter
 from app.core.security import TokenType, decode_token
 from app.domain.entities.user import User
@@ -39,6 +45,7 @@ from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifi
 from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
 from app.infrastructure.auth.sms_ir_otp_sender import SmsIrOTPSender
 from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
+from app.infrastructure.db.repositories.admin_repository import SqlAlchemyAdminRepository
 from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
 from app.infrastructure.db.repositories.otp_repository import (
     SqlAlchemyOTPChallengeRepository,
@@ -66,10 +73,15 @@ def get_otp_repository(session: SessionDep) -> OTPChallengeRepository:
     return SqlAlchemyOTPChallengeRepository(session)
 
 
+def get_admin_repository(session: SessionDep) -> AdminRepository:
+    return SqlAlchemyAdminRepository(session)
+
+
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 DeckRepoDep = Annotated[DeckRepository, Depends(get_deck_repository)]
 WordRepoDep = Annotated[WordRepository, Depends(get_word_repository)]
 OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
+AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
 
 
 # ── Outbound adapters (selected by config) ───────────────────
@@ -151,12 +163,17 @@ def get_ai_studio_service(
     return AIStudioService(ai, words, users)
 
 
+def get_admin_service(admin_repo: AdminRepoDep) -> AdminService:
+    return AdminService(admin_repo)
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 DeckServiceDep = Annotated[DeckService, Depends(get_deck_service)]
 WordServiceDep = Annotated[WordService, Depends(get_word_service)]
 StudyServiceDep = Annotated[StudyService, Depends(get_study_service)]
 AIStudioServiceDep = Annotated[AIStudioService, Depends(get_ai_studio_service)]
+AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
 
 
 # ── Abuse protection ─────────────────────────────────────────
@@ -200,3 +217,19 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+# ── Authorization ────────────────────────────────────────────
+async def require_admin(current_user: CurrentUser) -> User:
+    """Gate a route behind the admin role.
+
+    Layers on top of ``get_current_user`` (so the caller is authenticated first)
+    and rejects non-admins with 403 rather than 401 — the token is valid, the
+    user simply lacks access.
+    """
+    if not current_user.is_admin:
+        raise PermissionDeniedError("Admin access required.")
+    return current_user
+
+
+CurrentAdmin = Annotated[User, Depends(require_admin)]

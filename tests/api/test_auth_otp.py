@@ -7,7 +7,7 @@ from httpx import AsyncClient
 
 from app.core.config import settings
 from app.domain.entities.otp_challenge import MAX_OTP_ATTEMPTS
-from tests.api.conftest import RecordingOTPSender
+from tests.api.conftest import RecordingOTPSender, UserFactory, bearer
 
 PHONE = "+989121234567"
 
@@ -51,6 +51,20 @@ async def test_verify_existing_user_is_not_new(
     assert second.status_code == 200
     assert second.json()["is_new_user"] is False
     assert second.json()["user"]["id"] == first.json()["user"]["id"]
+
+
+async def test_verify_records_last_login_at(
+    client: AsyncClient, otp_sender: RecordingOTPSender, make_user: UserFactory
+) -> None:
+    # Sign in via OTP, then observe the recorded login through the admin view.
+    code = await request_code(client, otp_sender, PHONE)
+    signed_in = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": code})
+    assert signed_in.status_code == 200
+
+    admin = await make_user(phone="+989120000777", name="Root", is_admin=True)
+    listing = await client.get("/api/v1/admin/users", headers=bearer(admin.id))
+    rows = {row["phone"]: row for row in listing.json()}
+    assert rows[PHONE]["lastLoginAt"] is not None
 
 
 async def test_verify_with_wrong_code_is_rejected(
