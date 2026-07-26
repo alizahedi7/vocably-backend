@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev run migrate makemigration downgrade test lint format typecheck up down logs seed
+.PHONY: help install dev run migrate makemigration downgrade test lint format typecheck up down logs seed grant-admin
 
 # System tools (e.g. a sourced ROS environment) may export PYTHONPATH, which leaks their
 # packages into uv's isolated venv and breaks pytest plugin autoload. Blank it for every
@@ -27,6 +27,9 @@ downgrade: ## Roll back one migration
 
 seed: ## Seed the database with demo data
 	uv run python -m app.scripts.seed
+
+grant-admin: ## Grant admin to a user (usage: make grant-admin who="+989121234567" [revoke=1])
+	uv run python -m app.scripts.grant_admin "$(who)" $(if $(revoke),--revoke,)
 
 test: ## Run the test suite
 	uv run pytest -q
