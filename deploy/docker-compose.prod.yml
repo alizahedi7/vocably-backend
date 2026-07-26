@@ -40,11 +40,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
-    # Lets this container resolve the admin dashboard (vocably-admin), which
-    # runs as its own container on this same VPS bound to the host's
-    # loopback interface, not a service in this compose project.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # `default` for db/api (as before); `vocably-net` is a shared external
+    # network joining this container with the admin dashboard's — a
+    # separate compose project (vocably-admin) on this same VPS. Create it
+    # once with `docker network create vocably-net` before the first deploy
+    # that includes ADMIN_DOMAIN.
+    networks:
+      - default
+      - vocably-net
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
       WEB_DOMAIN: ${WEB_DOMAIN:?set WEB_DOMAIN in .env}
@@ -68,3 +71,7 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+
+networks:
+  vocably-net:
+    external: true
