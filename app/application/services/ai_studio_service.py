@@ -6,13 +6,14 @@ model call is delegated to the :class:`AIService` port.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from uuid import UUID
 
 from app.application.ports.ai_service import (
     AIService,
     GeneratedStory,
     LearnerContext,
-    MeaningSuggestion,
+    LookupResult,
 )
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.enums import LeitnerBox
@@ -25,6 +26,10 @@ MIN_WORDS_FOR_STORY = 3
 STORY_ELIGIBLE_BOXES = (LeitnerBox.KNOWN, LeitnerBox.MASTERED)
 #: Cap how many words we feed the model to keep prompts tight.
 MAX_STORY_WORDS = 12
+#: The "AI Card Magic" deck renders at most this many card backs.
+MAX_LOOKUP_SUGGESTIONS = 4
+#: Longest raw input accepted for a lookup — a word, phrase, idiom, or short sentence.
+MAX_LOOKUP_CHARS = 200
 
 
 class AIStudioService:
@@ -42,12 +47,24 @@ class AIStudioService:
         self,
         user_id: UUID,
         term: str,
-    ) -> list[MeaningSuggestion]:
+    ) -> LookupResult:
         term = term.strip()
         if not term:
             raise ValidationError("A term is required.")
+        if len(term) > MAX_LOOKUP_CHARS:
+            # A cost/abuse backstop: the endpoint takes a word, phrase, or short
+            # sentence — anything longer is pasted prose, not a lookup.
+            raise ValidationError(
+                f"Keep the lookup under {MAX_LOOKUP_CHARS} characters — "
+                "enter a word, phrase, or short sentence."
+            )
         learner = await self._learner_context(user_id)
-        return await self._ai.look_up_meanings(term, learner)
+        result = await self._ai.look_up_meanings(term, learner)
+        # The card deck shows at most 4 backs; enforce it here so no provider can
+        # push the client past what the UI can render.
+        if len(result.suggestions) > MAX_LOOKUP_SUGGESTIONS:
+            return replace(result, suggestions=result.suggestions[:MAX_LOOKUP_SUGGESTIONS])
+        return result
 
     async def generate_story(self, user_id: UUID) -> GeneratedStory:
         learner = await self._learner_context(user_id)

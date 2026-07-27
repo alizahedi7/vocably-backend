@@ -17,10 +17,46 @@ async def test_lookup_returns_multiple_senses(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["term"] == "run"
+    assert body["status"] == "ok"
+    assert body["notice"] is None
     assert len(body["suggestions"]) == 3
     first = body["suggestions"][0]
-    assert set(first) == {"meaning", "context", "example"}
+    assert set(first) == {
+        "meaning",
+        "context",
+        "example",
+        "part_of_speech",
+        "native_meaning",
+        "definition",
+        "examples",
+        "synonyms",
+        "antonyms",
+        "collocations",
+    }
     assert first["context"] == "movement"
+
+
+async def test_lookup_card_back_carries_the_full_design_contract(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """Every field the "AI Card Magic" deck renders must be populated."""
+    response = await client.post("/api/v1/ai/lookup", headers=auth_headers, json={"term": "run"})
+    first = response.json()["suggestions"][0]
+    assert first["part_of_speech"] == "verb"
+    assert first["native_meaning"]
+    assert first["definition"].startswith("to move using your legs")
+    # The headline example is always the first of the full example list.
+    assert len(first["examples"]) >= 1
+    assert first["example"] == first["examples"][0]
+
+
+async def test_lookup_rejects_pasted_prose(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    response = await client.post(
+        "/api/v1/ai/lookup", headers=auth_headers, json={"term": "word " * 100}
+    )
+    assert response.status_code == 422
 
 
 async def test_lookup_unknown_word_falls_back_to_generic_sense(

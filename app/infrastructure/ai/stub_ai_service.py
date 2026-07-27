@@ -13,6 +13,8 @@ from app.application.ports.ai_service import (
     AIService,
     GeneratedStory,
     LearnerContext,
+    LookupResult,
+    LookupStatus,
     MeaningSuggestion,
 )
 
@@ -42,23 +44,102 @@ def _theme(learner: LearnerContext) -> str | None:
     return None
 
 
-# Curated senses mirroring the design's AI_SENSES fixture.
+# Curated senses mirroring the design's AI_SENSES fixture, including the learner-dictionary
+# definitions and multi-example card backs the "AI Card Magic" deck renders.
 _CANNED_SENSES: dict[str, list[MeaningSuggestion]] = {
     "run": [
-        MeaningSuggestion("to move fast on foot", "movement", "I run in the park every morning."),
-        MeaningSuggestion("to manage or operate", "business", "She runs a small bakery downtown."),
-        MeaningSuggestion("to work or function", "machines", "The engine runs smoothly now."),
+        MeaningSuggestion(
+            "to move fast on foot",
+            "movement",
+            "I run in the park every morning.",
+            part_of_speech="verb",
+            native_meaning="to run, to jog",
+            definition="to move using your legs, going faster than when you walk",
+            examples=("I run in the park every morning.", "She ran to catch the last bus."),
+            synonyms=("jog", "sprint"),
+            collocations=("run fast", "go for a run"),
+        ),
+        MeaningSuggestion(
+            "to manage or operate",
+            "business",
+            "She runs a small bakery downtown.",
+            part_of_speech="verb",
+            native_meaning="to manage, to operate",
+            definition="to be in charge of a business, organization, or activity",
+            examples=("She runs a small bakery downtown.", "Who runs this department now?"),
+            synonyms=("manage", "operate"),
+            collocations=("run a business", "run a team"),
+        ),
+        MeaningSuggestion(
+            "to work or function",
+            "machines",
+            "The engine runs smoothly now.",
+            part_of_speech="verb",
+            native_meaning="to work, to function",
+            definition="(of a machine or engine) to operate or work in the correct way",
+            examples=("The engine runs smoothly now.", "Leave the tap running for a minute."),
+            synonyms=("function", "operate"),
+        ),
     ],
     "light": [
         MeaningSuggestion(
-            "brightness that lets you see", "nature", "The light in this room is beautiful."
+            "brightness that lets you see",
+            "nature",
+            "The light in this room is beautiful.",
+            part_of_speech="noun",
+            native_meaning="light, brightness",
+            definition=(
+                "the brightness from the sun, a lamp, or a fire that makes it possible to "
+                "see things"
+            ),
+            examples=(
+                "The light in this room is beautiful.",
+                "There was not enough light to read.",
+            ),
+            antonyms=("darkness",),
         ),
-        MeaningSuggestion("not heavy", "weight", "This suitcase is surprisingly light."),
-        MeaningSuggestion("pale in color", "colors", "She wore a light blue dress."),
+        MeaningSuggestion(
+            "not heavy",
+            "weight",
+            "This suitcase is surprisingly light.",
+            part_of_speech="adjective",
+            native_meaning="not heavy",
+            definition="weighing little; easy to lift or carry",
+            examples=("This suitcase is surprisingly light.", "Pack light for the weekend."),
+            antonyms=("heavy",),
+        ),
+        MeaningSuggestion(
+            "pale in color",
+            "colors",
+            "She wore a light blue dress.",
+            part_of_speech="adjective",
+            native_meaning="pale in colour",
+            definition="pale, and closer to white than to black",
+            examples=("She wore a light blue dress.",),
+            antonyms=("dark",),
+        ),
     ],
     "book": [
-        MeaningSuggestion("printed pages you read", "reading", "This book is very interesting."),
-        MeaningSuggestion("to reserve in advance", "travel", "I booked a hotel room online."),
+        MeaningSuggestion(
+            "printed pages you read",
+            "reading",
+            "This book is very interesting.",
+            part_of_speech="noun",
+            native_meaning="a book",
+            definition="a set of printed pages held together in a cover, that you read",
+            examples=("This book is very interesting.", "She published her first book last year."),
+        ),
+        MeaningSuggestion(
+            "to reserve in advance",
+            "travel",
+            "I booked a hotel room online.",
+            part_of_speech="verb",
+            native_meaning="to reserve, to book",
+            definition="to arrange to have a seat, room, or ticket kept for you in advance",
+            examples=("I booked a hotel room online.", "We booked a table for eight o'clock."),
+            synonyms=("reserve",),
+            collocations=("book a flight", "book a table"),
+        ),
     ],
 }
 
@@ -74,11 +155,11 @@ class StubAIService(AIService):
         self,
         term: str,
         learner: LearnerContext,
-    ) -> list[MeaningSuggestion]:
+    ) -> LookupResult:
         await self._delay()
         key = term.strip().lower()
         if key in _CANNED_SENSES:
-            return _CANNED_SENSES[key]
+            return LookupResult(term=key, suggestions=_CANNED_SENSES[key])
         theme = _theme(learner)
         example = (
             f"While thinking about {theme}, they used “{term}” naturally in a sentence."
@@ -86,13 +167,21 @@ class StubAIService(AIService):
             else f"Here is “{term}” used naturally in a sentence."
         )
         # Generic fallback so any word yields a usable suggestion.
-        return [
-            MeaningSuggestion(
-                meaning=f"a common sense of “{term}” (explained in {learner.native_language})",
-                context=theme or "general",
-                example=example,
-            )
-        ]
+        return LookupResult(
+            term=term.strip(),
+            suggestions=[
+                MeaningSuggestion(
+                    meaning=f"a common sense of “{term}” (explained in {learner.native_language})",
+                    context=theme or "general",
+                    example=example,
+                    part_of_speech="noun",
+                    native_meaning=f"“{term}” in {learner.native_language}",
+                    definition=f"the most common everyday sense of “{term}”",
+                    examples=(example,),
+                )
+            ],
+            status=LookupStatus.OK,
+        )
 
     async def generate_story(
         self,

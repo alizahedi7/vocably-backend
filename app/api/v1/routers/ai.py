@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.deps import AIStudioServiceDep, CurrentUser
-from app.api.v1.schemas.ai import LookupIn, LookupOut, MeaningSuggestionOut, StoryOut
+from app.api.v1.schemas.ai import LookupIn, LookupOut, StoryOut
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -16,12 +16,14 @@ async def look_up_meanings(
     current_user: CurrentUser,
     ai: AIStudioServiceDep,
 ) -> LookupOut:
-    """Suggest candidate meanings/senses for a word, in the user's native language."""
-    suggestions = await ai.look_up_meanings(current_user.id, payload.term)
-    return LookupOut(
-        term=payload.term,
-        suggestions=[MeaningSuggestionOut.from_dto(s) for s in suggestions],
-    )
+    """Suggest candidate meanings/senses for a word, in the user's native language.
+
+    Powers the "AI Card Magic" deck: up to 4 card backs, each with a native-language
+    meaning, a learner-dictionary definition, and contextual examples. ``status``
+    reports how raw input was interpreted (typo corrected, keyword extracted from a
+    sentence, translated from the native language, or unsupported).
+    """
+    return LookupOut.from_dto(await ai.look_up_meanings(current_user.id, payload.term))
 
 
 @router.post("/story", response_model=StoryOut)
