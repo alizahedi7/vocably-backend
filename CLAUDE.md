@@ -92,6 +92,35 @@ The read-only admin analytics API backing the standalone **vocably-admin** dashb
   the "Last Login" column and the active-users metric. `NULL` means never signed in since the
   column was added.
 
+## AI surface
+
+`POST /api/v1/ai/lookup` backs the "AI Card Magic" deck; `POST /api/v1/ai/story`
+backs practice stories.
+
+- **Provider** is chosen by `AI_PROVIDER`: `stub` (default — deterministic, offline,
+  what the tests run against) or `anthropic`. Model, base URL, timeout, and extra
+  headers are all env config ([config.py](app/core/config.py)) because the right
+  model changes faster than this code does. `ANTHROPIC_BASE_URL` points the same
+  adapter at any gateway speaking the Anthropic protocol.
+- **Never commit a key.** `ANTHROPIC_API_KEY` is environment-only; startup fails if
+  `AI_PROVIDER=anthropic` without it.
+- **The prompt is the product surface.** [prompts.py](app/infrastructure/ai/prompts.py)
+  decides tone, dictionary register, and age-appropriateness of everything a learner
+  reads on a card. Review changes to it as a product change, not a refactor.
+- **Guardrails** live in the prompt + `LookupStatus`: a sentence is reduced to its key
+  item (`extracted`), a typo corrected (`corrected`), native-language input translated
+  (`translated`), and unintelligible input returns *no* senses (`unsupported`) rather
+  than an invented definition. Learner text is always wrapped in `<learner_input>` and
+  declared to be data, never instruction.
+- **Never trust the model's shape.** Responses are schema-constrained via
+  `output_config`, then re-validated with Pydantic; one retry, then
+  `ExternalServiceError` → **502**. Gateways that reject `output_config` fall back to
+  prompt-enforced JSON automatically.
+- **Response contract**: field-by-field mapping to the v7 design, and the client
+  wiring it implies, is in [ai-card-magic-contract.md](docs/ai-card-magic-contract.md).
+  Renaming a `MeaningSuggestion` field is a breaking change for that screen — update
+  the doc in the same commit.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
