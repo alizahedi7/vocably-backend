@@ -15,6 +15,7 @@ dependencies = [
     "pyjwt[crypto]>=2.10",
     "python-multipart>=0.0.17",
     "httpx>=0.28",
+    "anthropic>=0.69",
 ]
 
 [project.optional-dependencies]

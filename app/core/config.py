@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from functools import lru_cache
 from typing import Annotated, Literal
@@ -66,6 +67,23 @@ class Settings(BaseSettings):
 
     # ── AI services ───────────────────────────────────────────
     ai_provider: Literal["stub", "anthropic", "openai"] = "stub"
+    #: Required when AI_PROVIDER=anthropic. Never commit a value — set it in the
+    #: environment. Rotate immediately if it leaks.
+    anthropic_api_key: str = ""
+    #: Override to route through a gateway/proxy that speaks the Anthropic API
+    #: (e.g. https://agentrouter.org for dev). Empty = api.anthropic.com.
+    anthropic_base_url: str = ""
+    #: Extra headers sent on every provider request, as a JSON object. Some
+    #: gateways gate on headers the SDK does not set by default; keeping this in
+    #: config means swapping gateways never means editing the adapter.
+    anthropic_extra_headers: str = ""
+    #: Kept configurable because the right model changes faster than this code does.
+    anthropic_model: str = "claude-opus-4-8"
+    #: Lookup is interactive — the client shows a spinner, so fail fast rather than
+    #: leaving the "Writing the back…" state up indefinitely.
+    anthropic_timeout_seconds: float = 30.0
+    #: Ceiling per lookup/story response. Generous enough for 4 full card backs.
+    anthropic_max_tokens: int = 4096
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod
@@ -119,6 +137,30 @@ class Settings(BaseSettings):
                 "'stub' verifier trusts any caller-supplied string as a Google identity."
             )
         return self
+
+    @model_validator(mode="after")
+    def _validate_ai_provider(self) -> Settings:
+        if self.ai_provider == "anthropic" and not self.anthropic_api_key:
+            raise ValueError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
+        if self.ai_provider == "openai":
+            raise ValueError("AI_PROVIDER=openai is not implemented — use 'stub' or 'anthropic'.")
+        self.anthropic_header_map  # noqa: B018 — fail fast on malformed JSON at startup
+        return self
+
+    @property
+    def anthropic_header_map(self) -> dict[str, str]:
+        """``anthropic_extra_headers`` parsed, or ``{}`` when unset."""
+        if not self.anthropic_extra_headers.strip():
+            return {}
+        try:
+            parsed = json.loads(self.anthropic_extra_headers)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"ANTHROPIC_EXTRA_HEADERS must be a JSON object: {exc}") from None
+        if not isinstance(parsed, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()
+        ):
+            raise ValueError("ANTHROPIC_EXTRA_HEADERS must be a JSON object of string values.")
+        return parsed
 
 
 @lru_cache

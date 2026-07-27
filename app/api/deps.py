@@ -86,8 +86,27 @@ AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
 
 # ── Outbound adapters (selected by config) ───────────────────
 def get_ai_service() -> AIService:
-    # Only the stub ships today. Add anthropic/openai branches here later.
+    if settings.ai_provider == "anthropic":
+        if not settings.anthropic_api_key:
+            raise RuntimeError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
+        return _anthropic_ai_service()
     return StubAIService()
+
+
+@lru_cache
+def _anthropic_ai_service() -> AIService:
+    # Cached so one HTTP client (and its connection pool) is shared across
+    # requests instead of being rebuilt per lookup.
+    from app.infrastructure.ai.anthropic_ai_service import AnthropicAIService
+
+    return AnthropicAIService(
+        api_key=settings.anthropic_api_key,
+        model=settings.anthropic_model,
+        base_url=settings.anthropic_base_url,
+        timeout_seconds=settings.anthropic_timeout_seconds,
+        max_tokens=settings.anthropic_max_tokens,
+        extra_headers=settings.anthropic_header_map,
+    )
 
 
 def get_otp_sender() -> OTPSender:
