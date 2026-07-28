@@ -98,24 +98,30 @@ The read-only admin analytics API backing the standalone **vocably-admin** dashb
 backs practice stories.
 
 - **Provider** is chosen by `AI_PROVIDER`: `stub` (default — deterministic, offline,
-  what the tests run against) or `anthropic`. Model, base URL, timeout, and extra
-  headers are all env config ([config.py](app/core/config.py)) because the right
-  model changes faster than this code does. `ANTHROPIC_BASE_URL` points the same
-  adapter at any gateway speaking the Anthropic protocol.
-- **Never commit a key.** `ANTHROPIC_API_KEY` is environment-only; startup fails if
-  `AI_PROVIDER=anthropic` without it.
+  what the tests run against), `anthropic`, or `avalai`. Model, base URL, timeout,
+  and max tokens are all env config ([config.py](app/core/config.py)) because the
+  right model changes faster than this code does. `ANTHROPIC_BASE_URL` points the
+  Anthropic adapter at any gateway speaking the Anthropic protocol; `avalai`
+  ([avalai_ai_service.py](app/infrastructure/ai/avalai_ai_service.py)) talks to
+  AvalAI's OpenAI-protocol gateway instead, via the `openai` SDK.
+- **Never commit a key.** `ANTHROPIC_API_KEY`/`AVALAI_API_KEY` are environment-only;
+  startup fails if `AI_PROVIDER` selects a provider without its key (and, for
+  `avalai`, without `AVALAI_MODEL` — there is no sane default across an arbitrary
+  gateway's model catalogue).
 - **The prompt is the product surface.** [prompts.py](app/infrastructure/ai/prompts.py)
   decides tone, dictionary register, and age-appropriateness of everything a learner
-  reads on a card. Review changes to it as a product change, not a refactor.
+  reads on a card. Review changes to it as a product change, not a refactor. Both
+  providers share it and the response payload models in
+  [payloads.py](app/infrastructure/ai/payloads.py).
 - **Guardrails** live in the prompt + `LookupStatus`: a sentence is reduced to its key
   item (`extracted`), a typo corrected (`corrected`), native-language input translated
   (`translated`), and unintelligible input returns *no* senses (`unsupported`) rather
   than an invented definition. Learner text is always wrapped in `<learner_input>` and
   declared to be data, never instruction.
-- **Never trust the model's shape.** Responses are schema-constrained via
-  `output_config`, then re-validated with Pydantic; one retry, then
-  `ExternalServiceError` → **502**. Gateways that reject `output_config` fall back to
-  prompt-enforced JSON automatically.
+- **Never trust the model's shape.** Responses are schema-constrained (`output_config`
+  for Anthropic, `response_format` for AvalAI), then re-validated with Pydantic; one
+  retry, then `ExternalServiceError` → **502**. Gateways that reject the
+  schema parameter fall back to prompt-enforced JSON automatically.
 - **Response contract**: field-by-field mapping to the v7 design, and the client
   wiring it implies, is in [ai-card-magic-contract.md](docs/ai-card-magic-contract.md).
   Renaming a `MeaningSuggestion` field is a breaking change for that screen — update

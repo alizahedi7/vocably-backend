@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
 
     # ── AI services ───────────────────────────────────────────
-    ai_provider: Literal["stub", "anthropic", "openai"] = "stub"
+    ai_provider: Literal["stub", "anthropic", "openai", "avalai"] = "stub"
     #: Required when AI_PROVIDER=anthropic. Never commit a value — set it in the
     #: environment. Rotate immediately if it leaks.
     anthropic_api_key: str = ""
@@ -84,6 +84,18 @@ class Settings(BaseSettings):
     anthropic_timeout_seconds: float = 30.0
     #: Ceiling per lookup/story response. Generous enough for 4 full card backs.
     anthropic_max_tokens: int = 4096
+
+    #: Required when AI_PROVIDER=avalai. Never commit a value — set it in the
+    #: environment. Rotate immediately if it leaks.
+    avalai_api_key: str = ""
+    #: AvalAI (https://avalai.ir) speaks the OpenAI protocol, not Anthropic's.
+    avalai_base_url: str = "https://api.avalai.ir/v1"
+    #: No sensible default across an arbitrary gateway's model catalogue —
+    #: required explicitly when AI_PROVIDER=avalai (validated below).
+    avalai_model: str = ""
+    avalai_timeout_seconds: float = 30.0
+    #: Ceiling per lookup/story response. Generous enough for 4 full card backs.
+    avalai_max_tokens: int = 4096
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod
@@ -143,7 +155,13 @@ class Settings(BaseSettings):
         if self.ai_provider == "anthropic" and not self.anthropic_api_key:
             raise ValueError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
         if self.ai_provider == "openai":
-            raise ValueError("AI_PROVIDER=openai is not implemented — use 'stub' or 'anthropic'.")
+            raise ValueError(
+                "AI_PROVIDER=openai is not implemented — use 'stub', 'anthropic', or 'avalai'."
+            )
+        if self.ai_provider == "avalai" and not self.avalai_api_key:
+            raise ValueError("AI_PROVIDER=avalai requires AVALAI_API_KEY.")
+        if self.ai_provider == "avalai" and not self.avalai_model:
+            raise ValueError("AI_PROVIDER=avalai requires AVALAI_MODEL.")
         self.anthropic_header_map  # noqa: B018 — fail fast on malformed JSON at startup
         return self
 

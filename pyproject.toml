@@ -16,6 +16,7 @@ dependencies = [
     "python-multipart>=0.0.17",
     "httpx>=0.28",
     "anthropic>=0.69",
+    "openai>=1.54",
 ]
 
 [project.optional-dependencies]

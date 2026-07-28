@@ -9,8 +9,16 @@ from __future__ import annotations
 
 import pytest
 
-from app.api.deps import _google_id_token_verifier, get_google_verifier, get_otp_sender
+from app.api.deps import (
+    _avalai_ai_service,
+    _google_id_token_verifier,
+    get_ai_service,
+    get_google_verifier,
+    get_otp_sender,
+)
 from app.core.config import settings
+from app.infrastructure.ai.avalai_ai_service import AvalAIService
+from app.infrastructure.ai.stub_ai_service import StubAIService
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
 from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
@@ -54,6 +62,33 @@ def test_sms_ir_without_credentials_fails_fast(monkeypatch: pytest.MonkeyPatch) 
 
     with pytest.raises(RuntimeError, match="SMS_IR_API_KEY"):
         get_otp_sender()
+
+
+def test_stub_ai_service_is_the_default() -> None:
+    assert isinstance(get_ai_service(), StubAIService)
+
+
+def test_avalai_service_is_selected_and_memoized(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ai_provider", "avalai")
+    monkeypatch.setattr(settings, "avalai_api_key", "key")
+    monkeypatch.setattr(settings, "avalai_model", "gpt-4o-mini")
+    _avalai_ai_service.cache_clear()
+    try:
+        service = get_ai_service()
+        assert isinstance(service, AvalAIService)
+        # Cached so one HTTP client (and its connection pool) is shared.
+        assert get_ai_service() is service
+    finally:
+        _avalai_ai_service.cache_clear()
+
+
+def test_avalai_without_credentials_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ai_provider", "avalai")
+    monkeypatch.setattr(settings, "avalai_api_key", "")
+    monkeypatch.setattr(settings, "avalai_model", "")
+
+    with pytest.raises(RuntimeError, match="AVALAI_API_KEY"):
+        get_ai_service()
 
 
 def test_stub_verifier_is_the_default() -> None:

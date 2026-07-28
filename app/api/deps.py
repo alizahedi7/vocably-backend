@@ -90,6 +90,10 @@ def get_ai_service() -> AIService:
         if not settings.anthropic_api_key:
             raise RuntimeError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
         return _anthropic_ai_service()
+    if settings.ai_provider == "avalai":
+        if not settings.avalai_api_key or not settings.avalai_model:
+            raise RuntimeError("AI_PROVIDER=avalai requires AVALAI_API_KEY and AVALAI_MODEL.")
+        return _avalai_ai_service()
     return StubAIService()
 
 
@@ -106,6 +110,21 @@ def _anthropic_ai_service() -> AIService:
         timeout_seconds=settings.anthropic_timeout_seconds,
         max_tokens=settings.anthropic_max_tokens,
         extra_headers=settings.anthropic_header_map,
+    )
+
+
+@lru_cache
+def _avalai_ai_service() -> AIService:
+    # Cached so one HTTP client (and its connection pool) is shared across
+    # requests instead of being rebuilt per lookup.
+    from app.infrastructure.ai.avalai_ai_service import AvalAIService
+
+    return AvalAIService(
+        api_key=settings.avalai_api_key,
+        model=settings.avalai_model,
+        base_url=settings.avalai_base_url,
+        timeout_seconds=settings.avalai_timeout_seconds,
+        max_tokens=settings.avalai_max_tokens,
     )
 
 
