@@ -44,3 +44,8 @@ graphify-out/
 .idea/
 .vscode/
 .DS_Store
+
+# Ad-hoc provider benchmarking (local scratch, not part of the app)
+benchmarks/
+benchmark_report*.json
+benchmark_report*.md
