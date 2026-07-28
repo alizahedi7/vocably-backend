@@ -204,6 +204,44 @@ async def test_lookup_falls_back_when_the_gateway_rejects_output_config() -> Non
     assert "output_config" not in calls[2]
 
 
+async def test_lookup_falls_back_when_the_gateway_ignores_output_config() -> None:
+    """A proxying gateway takes ``output_config`` with a 200 and drops it.
+
+    This is the failure mode observed against a real gateway: the parameter is
+    accepted, so the 400 path above never fires, but the body comes back
+    off-schema. Because the system prompt never says "return JSON" — it was
+    written against an enforced schema — the model had no shape instruction at
+    all, so roughly one lookup in three failed validation and 502'd. The
+    adapter must treat an off-schema 200 as proof the schema isn't enforced,
+    and put the contract into the prompt on the retry.
+    """
+    calls: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        calls.append(body)
+        # Honours the schema only when told to in the prompt — never via the
+        # parameter, which it silently discards.
+        if "OUTPUT FORMAT" in body["system"]:
+            return httpx.Response(200, json=_message(_OK_PAYLOAD))
+        return httpx.Response(200, json=_message({"word": "run", "definitions": []}))
+
+    service = _service(handler)
+    result = await service.look_up_meanings("run", LEARNER)
+
+    assert len(result.suggestions) == 1, "the retry must recover the lookup"
+    # First attempt trusted the parameter; the retry states the shape instead.
+    assert "output_config" in calls[0]
+    assert "OUTPUT FORMAT" not in calls[0]["system"]
+    assert "output_config" not in calls[1]
+    assert "OUTPUT FORMAT" in calls[1]["system"]
+
+    # And the process does not pay that failed attempt again on every lookup.
+    await service.look_up_meanings("light", LEARNER)
+    assert "output_config" not in calls[2]
+    assert "OUTPUT FORMAT" in calls[2]["system"]
+
+
 async def test_lookup_maps_provider_failure_to_external_service_error() -> None:
     with pytest.raises(ExternalServiceError):
         await _service(_responder(_message({}), status=503)).look_up_meanings("run", LEARNER)

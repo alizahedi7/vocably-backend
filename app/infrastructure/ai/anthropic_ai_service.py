@@ -86,7 +86,14 @@ class _LookupPayload(BaseModel):
     status: LookupStatus = LookupStatus.OK
     term: str = ""
     notice: str | None = None
-    senses: list[_SensePayload] = Field(default_factory=list)
+    #: Required, unlike its siblings, because its absence is the one reliable
+    #: sign that the body is not a lookup response at all. Every real answer
+    #: carries it — `unsupported` sends an explicit empty list. When it
+    #: defaulted, an off-schema body (`{"word": "run", …}` from a gateway that
+    #: ignores `output_config`) validated cleanly into a payload with no senses
+    #: and was reported to the learner as "no suggestions for this word",
+    #: hiding a transport bug behind a plausible-looking empty state.
+    senses: list[_SensePayload]
 
 
 class _StoryPayload(BaseModel):
@@ -135,9 +142,17 @@ class AnthropicAIService(AIService):
                 _forced_header_client(extra_headers, timeout_seconds) if extra_headers else None
             ),
         )
-        #: Flipped off permanently the first time the endpoint rejects
-        #: `output_config`, so a gateway without structured-output support costs
-        #: one failed request per process rather than one per lookup.
+        #: Flipped off permanently the first time the endpoint proves it does not
+        #: enforce `output_config`, so a gateway without structured-output support
+        #: costs one failed request per process rather than one per lookup.
+        #:
+        #: There are two ways it can prove that, and only the first is obvious:
+        #: rejecting the parameter with a 400, or *accepting* it with a 200 and
+        #: answering off-schema anyway. A proxying gateway does the second — it
+        #: forwards the request, drops the parameter it doesn't implement, and
+        #: returns whatever the model wrote. Handling only the 400 left us
+        #: trusting a guarantee we weren't getting, and the lookup then failed
+        #: whenever the model didn't land on the right shape unaided.
         self._structured_output = True
 
     async def look_up_meanings(
@@ -234,6 +249,17 @@ class AnthropicAIService(AIService):
             except (ValueError, ValidationError) as exc:
                 # Never log `raw` — it embeds learner input.
                 last_error = type(exc).__name__
+                if self._structured_output:
+                    # We asked for a schema, got a 200, and the body does not
+                    # match it — so the endpoint is not enforcing `output_config`
+                    # even though it accepted the parameter. Stop relying on it
+                    # and state the shape in the prompt instead, which is the
+                    # only lever left. The retry below uses the new mode.
+                    self._structured_output = False
+                    logger.warning(
+                        "Endpoint accepted output_config but answered off-schema; "
+                        "falling back to prompt-enforced JSON"
+                    )
                 logger.warning(
                     "Anthropic returned an unparsable payload (attempt %s/%s): %s",
                     attempt,
@@ -243,11 +269,31 @@ class AnthropicAIService(AIService):
         logger.error("Anthropic payload failed validation after %s attempts", _MAX_ATTEMPTS)
         raise ExternalServiceError("The AI service returned an unexpected response.")
 
+    @staticmethod
+    def _json_instruction(schema: dict[str, object]) -> str:
+        """The shape instruction to append when `output_config` isn't enforcing it.
+
+        The system prompts describe the *fields* but never say "return JSON" —
+        they were written against a schema-constrained response, which made
+        saying so redundant. Without `output_config` actually in force that
+        leaves the model no instruction at all, so it answers in prose. This
+        puts the contract back into the prompt.
+        """
+        return (
+            "\n\nOUTPUT FORMAT:\n"
+            "Reply with a single JSON object and nothing else — no prose before "
+            "or after it, and no markdown code fence. It must validate against "
+            "this JSON Schema exactly, including every required property:\n"
+            f"{json.dumps(schema)}"
+        )
+
     async def _request(self, system: str, user: str, schema: dict[str, object]) -> str:
         kwargs: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self._max_tokens,
-            "system": system,
+            "system": (
+                system if self._structured_output else system + self._json_instruction(schema)
+            ),
             "messages": [{"role": "user", "content": user}],
         }
         if self._structured_output:
