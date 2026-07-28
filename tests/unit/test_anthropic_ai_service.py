@@ -210,8 +210,9 @@ async def test_lookup_maps_provider_failure_to_external_service_error() -> None:
 
 
 async def test_lookup_maps_a_refusal_to_external_service_error() -> None:
-    handler = _responder(_message({"status": "ok", "term": "x", "notice": None, "senses": []},
-                                  stop_reason="refusal"))
+    handler = _responder(
+        _message({"status": "ok", "term": "x", "notice": None, "senses": []}, stop_reason="refusal")
+    )
     with pytest.raises(ExternalServiceError):
         await _service(handler).look_up_meanings("run", LEARNER)
 

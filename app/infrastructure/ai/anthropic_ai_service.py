@@ -261,9 +261,7 @@ class AnthropicAIService(AIService):
                 raise ExternalServiceError("The AI service rejected the request.") from None
             # Most likely the endpoint does not implement `output_config`. Drop to
             # prompt-enforced JSON for the rest of this process and retry once.
-            logger.warning(
-                "Endpoint rejected output_config; falling back to prompt-enforced JSON"
-            )
+            logger.warning("Endpoint rejected output_config; falling back to prompt-enforced JSON")
             self._structured_output = False
             return await self._request(system=system, user=user, schema=schema)
         except anthropic.APIStatusError as exc:
