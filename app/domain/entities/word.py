@@ -18,6 +18,10 @@ class Word:
     # Content
     term: str = ""
     meaning: str = ""
+    # Plain-language dictionary definition of the chosen sense — the "DEFINITION"
+    # body of the card back. Filled in by AI Card Magic
+    # (``MeaningSuggestion.definition``) or written by the learner.
+    definition: str | None = None
     example: str | None = None
     # e.g. "verb · progress" or "my definition" — mirrors the design's senseLabel.
     sense_label: str | None = None

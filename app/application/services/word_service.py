@@ -45,6 +45,7 @@ class WordService:
         meaning: str,
         example: str | None,
         sense_label: str | None,
+        definition: str | None = None,
     ) -> Word:
         await self._assert_owns_deck(deck_id, user_id)
         word = Word(
@@ -52,6 +53,7 @@ class WordService:
             deck_id=deck_id,
             term=term.strip(),
             meaning=meaning.strip(),
+            definition=(definition or "").strip() or None,
             example=(example or "").strip() or None,
             sense_label=sense_label,
         )
@@ -64,6 +66,7 @@ class WordService:
         *,
         term: str | None = None,
         meaning: str | None = None,
+        definition: str | None = None,
         example: str | None = None,
         sense_label: str | None = None,
         deck_id: UUID | None = None,
@@ -76,6 +79,10 @@ class WordService:
             word.term = term.strip()
         if meaning is not None:
             word.meaning = meaning.strip()
+        # Clearing is expressed as "" — an omitted field leaves the definition
+        # alone, which is what keeps a client that predates it from wiping one.
+        if definition is not None:
+            word.definition = definition.strip() or None
         if example is not None:
             word.example = example.strip() or None
         if sense_label is not None:

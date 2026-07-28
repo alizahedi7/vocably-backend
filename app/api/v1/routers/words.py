@@ -36,6 +36,7 @@ async def create_word(
         deck_id=payload.deck_id,
         term=payload.term,
         meaning=payload.meaning,
+        definition=payload.definition,
         example=payload.example,
         sense_label=payload.sense_label,
     )
@@ -64,6 +65,7 @@ async def update_word(
         current_user.id,
         term=payload.term,
         meaning=payload.meaning,
+        definition=payload.definition,
         example=payload.example,
         sense_label=payload.sense_label,
         deck_id=payload.deck_id,

@@ -85,6 +85,7 @@ def word_to_entity(m: WordModel) -> Word:
         user_id=m.user_id,
         term=m.term,
         meaning=m.meaning,
+        definition=m.definition,
         example=m.example,
         sense_label=m.sense_label,
         box=LeitnerBox(m.box),
@@ -101,6 +102,7 @@ def apply_word(entity: Word, m: WordModel) -> None:
     m.deck_id = entity.deck_id
     m.term = entity.term
     m.meaning = entity.meaning
+    m.definition = entity.definition
     m.example = entity.example
     m.sense_label = entity.sense_label
     m.box = int(entity.box)

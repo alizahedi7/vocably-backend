@@ -29,6 +29,7 @@ class WordModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     term: Mapped[str] = mapped_column(String(255), nullable=False)
     meaning: Mapped[str] = mapped_column(Text, nullable=False)
+    definition: Mapped[str | None] = mapped_column(Text)
     example: Mapped[str | None] = mapped_column(Text)
     sense_label: Mapped[str | None] = mapped_column(String(120))
 

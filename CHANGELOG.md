@@ -24,6 +24,11 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
 
 ### Added
 
+- **`words.definition`** — the dictionary definition on the AI Card Magic card
+  back is now persisted. Optional on `POST /words` and `PATCH /words/{id}`
+  (max 2000 chars) and returned on every word. Omitting it in a `PATCH` leaves
+  the stored value alone, so a client that predates the field cannot wipe one;
+  sending `""` clears it. Migration `b7c1e93a4d20`.
 - **Word list pagination** — `GET /words` accepts `limit` (default 100,
   max 500) and `offset`; ordering gained an id tie-break so page boundaries
   are deterministic.

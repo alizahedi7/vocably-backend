@@ -187,6 +187,35 @@ definition: opt.definition,
 examples: (opt.examples || []).map(text => ({ text })),
 ```
 
+## Saving the card
+
+The back the learner keeps is persisted by `POST /api/v1/words`, which carries
+`definition` alongside `meaning` and `example`:
+
+```json
+{
+  "deck_id": "…",
+  "term": "run",
+  "meaning": "دویدن",
+  "definition": "to move quickly using your legs, faster than walking",
+  "example": "I run along the beach every morning before breakfast.",
+  "sense_label": "sense · movement"
+}
+```
+
+`definition` is optional on create and on `PATCH /api/v1/words/{id}`, max 2000
+characters, and returned on every `WordOut`. Three rules:
+
+- A card written by hand has `definition: null`, not `""` — the server folds
+  blank input to `NULL` so "absent" has one representation.
+- **Omitting** it in a `PATCH` leaves the stored value alone; sending `""` is
+  how the learner clears it. That distinction is what keeps a client older than
+  the field from silently wiping a definition it never knew about — which
+  matters, because Android installs lag the web build by weeks.
+- Nothing else derives from it. `sense_label` still carries which sense was
+  chosen (`sense · <context>`), and the study screen does not render the
+  definition today.
+
 ## Failure modes
 
 | Status | Cause | Client behaviour |

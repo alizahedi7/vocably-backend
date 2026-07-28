@@ -56,6 +56,52 @@ async def test_word_crud_roundtrip(client: AsyncClient, auth_headers: dict[str, 
     assert gone.status_code == 404
 
 
+async def test_definition_round_trips_and_is_optional(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """The AI Card Magic definition is stored, editable, and never required."""
+    deck_id = await create_deck(client, auth_headers)
+
+    with_definition = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={
+            "deck_id": deck_id,
+            "term": "run",
+            "meaning": "دویدن",
+            "definition": "  to move quickly using your legs, faster than walking  ",
+            "example": "I run every morning.",
+        },
+    )
+    assert with_definition.status_code == 201, with_definition.text
+    word = with_definition.json()
+    assert word["definition"] == "to move quickly using your legs, faster than walking"
+
+    # A card written by hand carries no definition — not an empty string.
+    plain = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={"deck_id": deck_id, "term": "reliable", "meaning": "able to be trusted"},
+    )
+    assert plain.status_code == 201, plain.text
+    assert plain.json()["definition"] is None
+
+    # Omitting the field leaves it alone; that is what stops a client older than
+    # the field from wiping a definition it never knew about.
+    untouched = await client.patch(
+        f"/api/v1/words/{word['id']}", headers=auth_headers, json={"meaning": "دویدن، دو"}
+    )
+    assert untouched.status_code == 200
+    assert untouched.json()["definition"] == word["definition"]
+
+    # Sending it empty is how the learner clears it.
+    cleared = await client.patch(
+        f"/api/v1/words/{word['id']}", headers=auth_headers, json={"definition": ""}
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["definition"] is None
+
+
 async def test_word_can_move_between_decks(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
