@@ -24,7 +24,7 @@ from typing import Any, Final
 
 import anthropic
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.application.ports.ai_service import (
     AIService,
@@ -32,10 +32,10 @@ from app.application.ports.ai_service import (
     LearnerContext,
     LookupResult,
     LookupStatus,
-    MeaningSuggestion,
 )
 from app.core.exceptions import ExternalServiceError
 from app.core.logging import get_logger
+from app.infrastructure.ai.payloads import LookupPayload, StoryPayload
 from app.infrastructure.ai.prompts import (
     LOOKUP_JSON_SCHEMA,
     LOOKUP_SYSTEM_PROMPT,
@@ -50,55 +50,6 @@ _MAX_SENSES: Final = 4
 #: One retry only. A second malformed reply means the model or gateway is wrong
 #: for this schema, and retrying further just burns the learner's spinner time.
 _MAX_ATTEMPTS: Final = 2
-
-
-class _SensePayload(BaseModel):
-    context: str = ""
-    part_of_speech: str = ""
-    native_meaning: str = ""
-    meaning: str = ""
-    definition: str = ""
-    examples: list[str] = Field(default_factory=list)
-    synonyms: list[str] = Field(default_factory=list)
-    antonyms: list[str] = Field(default_factory=list)
-    collocations: list[str] = Field(default_factory=list)
-
-    def to_dto(self) -> MeaningSuggestion:
-        examples = [e.strip() for e in self.examples if e.strip()]
-        return MeaningSuggestion(
-            # `meaning` and `example` are the original narrow contract; keep them
-            # populated even when the model leans on the richer fields, so older
-            # clients never render a blank card.
-            meaning=self.meaning.strip() or self.definition.strip(),
-            context=self.context.strip(),
-            example=examples[0] if examples else "",
-            part_of_speech=self.part_of_speech.strip(),
-            native_meaning=self.native_meaning.strip(),
-            definition=self.definition.strip(),
-            examples=tuple(examples),
-            synonyms=tuple(s.strip() for s in self.synonyms if s.strip()),
-            antonyms=tuple(a.strip() for a in self.antonyms if a.strip()),
-            collocations=tuple(c.strip() for c in self.collocations if c.strip()),
-        )
-
-
-class _LookupPayload(BaseModel):
-    status: LookupStatus = LookupStatus.OK
-    term: str = ""
-    notice: str | None = None
-    #: Required, unlike its siblings, because its absence is the one reliable
-    #: sign that the body is not a lookup response at all. Every real answer
-    #: carries it — `unsupported` sends an explicit empty list. When it
-    #: defaulted, an off-schema body (`{"word": "run", …}` from a gateway that
-    #: ignores `output_config`) validated cleanly into a payload with no senses
-    #: and was reported to the learner as "no suggestions for this word",
-    #: hiding a transport bug behind a plausible-looking empty state.
-    senses: list[_SensePayload]
-
-
-class _StoryPayload(BaseModel):
-    text: str
-    words_used: list[str] = Field(default_factory=list)
 
 
 def _forced_header_client(headers: dict[str, str], timeout_seconds: float) -> httpx.AsyncClient:
@@ -164,7 +115,7 @@ class AnthropicAIService(AIService):
             system=LOOKUP_SYSTEM_PROMPT,
             user=self._lookup_user_prompt(term, learner),
             schema=LOOKUP_JSON_SCHEMA,
-            model_type=_LookupPayload,
+            model_type=LookupPayload,
         )
 
         suggestions = [s.to_dto() for s in payload.senses[:_MAX_SENSES]]
@@ -191,7 +142,7 @@ class AnthropicAIService(AIService):
             system=STORY_SYSTEM_PROMPT,
             user=self._story_user_prompt(words, learner),
             schema=STORY_JSON_SCHEMA,
-            model_type=_StoryPayload,
+            model_type=StoryPayload,
         )
         text = payload.text.strip()
         if not text:
