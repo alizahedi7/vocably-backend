@@ -19,10 +19,10 @@ Content-Type: application/json
 ```
 
 `term` is whatever the learner typed in the `addForm.term` input: a word, a phrase,
-an idiom, a full sentence, or a word in their own language. Max 200 characters — a
-longer body is rejected with `422` before any model call. Do **not** pre-clean,
-translate, or lowercase it on the client; the server needs the raw text to detect a
-typo or a native-language input.
+an idiom, or a full sentence, in **any language** — English, Persian, Spanish,
+Chinese, or anything else. Max 200 characters — a longer body is rejected with
+`422` before any model call. Do **not** pre-clean, translate, or lowercase it on
+the client; the server needs the raw text to detect its language and any typo.
 
 Native language, age range, and interests are read server-side from the
 authenticated user's profile. Do not send them.
@@ -67,8 +67,8 @@ Each entry of `suggestions` is one card back, in deck order. `aiOptions[i]` maps
 | `c.context` | `context` | The uppercase chip. Already capitalised; the design applies `text-transform`. |
 | `c.pos` | `part_of_speech` | Italic label beside the chip. |
 | `c.native` / `opt.native` | `native_meaning` | The 26px card headline. **Always in the user's own native language** — the prototype's `nativeLang === 'Persian' ? opt.native : opt.nativeEn` branch disappears; the server has already picked the language. |
-| `c.gloss` / `opt.meaning` | `meaning` | Sub-headline under the native meaning. |
-| `c.definition` | `definition` | The "DEFINITION" body. |
+| `c.gloss` / `opt.meaning` | `meaning` | Sub-headline under the native meaning. **In the detected language of the input**, not a fixed language — see below. |
+| `c.definition` | `definition` | The "DEFINITION" body. Same detected-language rule as `meaning`. |
 | `c.examples[].text` | `examples[]` | Map to `{ text }`: `examples.map(t => ({ text: t }))`. |
 | `c.counter` | — | Client-computed: `` `${i + 1} / ${suggestions.length}` ``. |
 | `c.defLabel`, `c.exLabel` | — | Client-side i18n strings; unchanged. |
@@ -85,12 +85,21 @@ assuming presence.
 line above the deck. `notice` is a ready-to-display sentence; it is `null` exactly
 when `status` is `"ok"`.
 
+**The input is not assumed to be any particular language.** The server detects
+whatever language the learner typed in — English, Persian, Spanish, Chinese,
+anything — and every field except `native_meaning` (`meaning`, `definition`,
+`examples`, `synonyms`, `antonyms`, `collocations`) is written in *that* detected
+language, at the register of that language's standard dictionary (Longman/Oxford/
+Merriam-Webster for English, and the equivalent authoritative reference for
+others). `native_meaning` is always translated into the learner's own native
+language, even when the input already was in that language.
+
 | `status` | What happened | What the client shows |
 |---|---|---|
-| `ok` | Clean target-language input. | The deck. No notice. |
-| `corrected` | Typo resolved. `term` is the corrected spelling. | Notice + deck. |
-| `extracted` | A sentence was submitted; the key word or idiom was pulled out. | Notice + deck. |
-| `translated` | Input was in the learner's native language. `term` is the English word. | Notice + deck. |
+| `ok` | Clean input in whatever language it was written, including the learner's own native language. | The deck. No notice. |
+| `corrected` | Typo resolved, in the language it was written. `term` is the corrected spelling. | Notice + deck. |
+| `extracted` | A sentence was submitted; the key word or idiom was pulled out, in the sentence's own language. | Notice + deck. |
+| `translated` | **Legacy — no longer emitted.** Previously fired when the input was in the learner's native language and got pivoted to English; native-language input is now a normal `ok` lookup defined in that language. Kept in the schema for older clients only. | Notice + deck, if an old server build ever sends it. |
 | `unsupported` | Not a recognisable lexical item. `suggestions` is `[]`. | The existing `aiNoResults` empty state, using `notice` as the message. |
 
 Two consequences for the prototype's logic:

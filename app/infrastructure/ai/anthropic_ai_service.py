@@ -157,7 +157,7 @@ class AnthropicAIService(AIService):
 
     @staticmethod
     def _learner_block(learner: LearnerContext) -> str:
-        lines = [f"Native language: {learner.native_language}", "Target language: English"]
+        lines = [f"Native language: {learner.native_language}"]
         if learner.age_range:
             lines.append(f"Age range: {learner.age_range}")
         if learner.interests:
