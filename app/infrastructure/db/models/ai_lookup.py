@@ -62,6 +62,13 @@ class AILookupEntryModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     provider: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
 
+    #: Updated by ``SqlAlchemyLookupCacheRepository.get`` on every hit that
+    #: resolves to this entry — i.e. how many times the cache has stood in for
+    #: a provider call. Best-effort: a failed update never turns a hit into a
+    #: miss, so this can lag reality but never overcounts.
+    hit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_accessed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
 
 class AILookupAliasModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """The cheap half: one row per distinct thing a learner typed."""

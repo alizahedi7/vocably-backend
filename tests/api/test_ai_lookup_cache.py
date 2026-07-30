@@ -307,6 +307,39 @@ async def test_a_cached_row_this_deploy_cannot_read_is_treated_as_a_miss(
     assert response.json()["suggestions"][0]["definition"].startswith("to move using your legs")
 
 
+async def test_repeat_hits_increment_the_entrys_hit_count(
+    cached_client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    for _ in range(3):
+        response = await cached_client.post(
+            "/api/v1/ai/lookup", headers=auth_headers, json={"term": "run"}
+        )
+        assert response.status_code == 200
+
+    async with session_factory() as session:
+        entry = (await session.execute(select(AILookupEntryModel))).scalars().one()
+
+    # The write on miss doesn't count as a hit; the two repeats do.
+    assert entry.hit_count == 2
+    assert entry.last_accessed_at is not None
+
+
+async def test_a_cache_miss_never_touches_hit_count(
+    cached_client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await cached_client.post("/api/v1/ai/lookup", headers=auth_headers, json={"term": "run"})
+
+    async with session_factory() as session:
+        entry = (await session.execute(select(AILookupEntryModel))).scalars().one()
+
+    assert entry.hit_count == 0
+    assert entry.last_accessed_at is None
+
+
 async def test_disabling_the_cache_restores_a_provider_call_per_lookup(
     cached_client: AsyncClient,
     auth_headers: dict[str, str],

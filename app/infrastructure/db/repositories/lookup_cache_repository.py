@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,12 +71,31 @@ class SqlAlchemyLookupCacheRepository(LookupCacheRepository):
             # no senses. Either way the learner must not see an empty deck.
             return None
 
+        await self._record_hit(entry.id)
+
         return LookupResult(
             term=alias.resolved_term,
             suggestions=suggestions,
             status=status,
             notice=alias.notice,
         )
+
+    async def _record_hit(self, entry_id: UUID) -> None:
+        """Best-effort: a failed counter update must never turn a hit into a
+        miss, so this is never allowed to raise into the caller.
+        """
+        try:
+            stmt = (
+                update(AILookupEntryModel)
+                .where(AILookupEntryModel.id == entry_id)
+                .values(
+                    hit_count=AILookupEntryModel.hit_count + 1,
+                    last_accessed_at=datetime.now(UTC),
+                )
+            )
+            await self._session.execute(stmt)
+        except Exception:
+            logger.warning("Failed to record lookup cache hit", exc_info=True)
 
     async def put(
         self,
