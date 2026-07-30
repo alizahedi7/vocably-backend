@@ -21,15 +21,11 @@ from app.infrastructure.ai.avalai_ai_service import AvalAIService
 LEARNER = LearnerContext(native_language="Persian", age_range="19-29", interests=("travel",))
 
 _SENSE: dict[str, Any] = {
+    "native_meaning": "دویدن",
+    "definition": "to move using your legs, going faster than when you walk",
+    "example": "I run in the park every morning.",
     "context": "Movement",
     "part_of_speech": "verb",
-    "native_meaning": "دویدن",
-    "meaning": "to move fast on foot",
-    "definition": "to move using your legs, going faster than when you walk",
-    "examples": ["I run in the park every morning.", "She ran to catch the last bus."],
-    "synonyms": ["jog"],
-    "antonyms": [],
-    "collocations": ["run fast"],
 }
 
 
@@ -88,15 +84,13 @@ async def test_lookup_maps_a_well_formed_payload_to_card_backs() -> None:
     assert result.term == "run"
     assert result.notice is None
     (sense,) = result.suggestions
+    # Three fields, three languages: native meaning in the learner's language,
+    # definition in English whatever the term's language, example in the term's.
     assert sense.native_meaning == "دویدن"
-    assert sense.part_of_speech == "verb"
     assert sense.definition.startswith("to move using your legs")
-    assert sense.examples == (
-        "I run in the park every morning.",
-        "She ran to catch the last bus.",
-    )
-    assert sense.meaning == "to move fast on foot"
     assert sense.example == "I run in the park every morning."
+    assert sense.context == "Movement"
+    assert sense.part_of_speech == "verb"
 
 
 async def test_lookup_sends_learner_context_and_delimits_raw_input() -> None:

@@ -81,7 +81,7 @@ class AvalAIService(AIService):
 
         suggestions = [s.to_dto() for s in payload.senses[:_MAX_SENSES]]
         # Drop half-built cards rather than rendering an empty card back.
-        suggestions = [s for s in suggestions if s.meaning or s.definition]
+        suggestions = [s for s in suggestions if s.definition or s.native_meaning]
         status = payload.status
         if status is not LookupStatus.UNSUPPORTED and not suggestions:
             # The model claimed success but gave us nothing usable — present it to

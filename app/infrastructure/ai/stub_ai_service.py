@@ -2,7 +2,7 @@
 
 Returns canned-but-plausible data with no external calls, so the whole app runs offline.
 Swap this for a Claude/OpenAI adapter (same interface) when wiring a real provider — see
-``app.api.deps.get_ai_service``.
+``app.api.deps.get_ai_provider``.
 """
 
 from __future__ import annotations
@@ -44,101 +44,72 @@ def _theme(learner: LearnerContext) -> str | None:
     return None
 
 
-# Curated senses mirroring the design's AI_SENSES fixture, including the learner-dictionary
-# definitions and multi-example card backs the "AI Card Magic" deck renders.
+# Curated senses mirroring the design's AI_SENSES fixture: a native-language headline, an
+# English learner-dictionary definition, and one reusable sentence per sense.
 _CANNED_SENSES: dict[str, list[MeaningSuggestion]] = {
     "run": [
         MeaningSuggestion(
-            "to move fast on foot",
-            "movement",
-            "I run in the park every morning.",
-            part_of_speech="verb",
             native_meaning="to run, to jog",
+            context="Movement",
+            part_of_speech="verb",
             definition="to move using your legs, going faster than when you walk",
-            examples=("I run in the park every morning.", "She ran to catch the last bus."),
-            synonyms=("jog", "sprint"),
-            collocations=("run fast", "go for a run"),
+            example="I run in the park every morning.",
         ),
         MeaningSuggestion(
-            "to manage or operate",
-            "business",
-            "She runs a small bakery downtown.",
-            part_of_speech="verb",
             native_meaning="to manage, to operate",
+            context="Business",
+            part_of_speech="verb",
             definition="to be in charge of a business, organization, or activity",
-            examples=("She runs a small bakery downtown.", "Who runs this department now?"),
-            synonyms=("manage", "operate"),
-            collocations=("run a business", "run a team"),
+            example="She runs a small bakery downtown.",
         ),
         MeaningSuggestion(
-            "to work or function",
-            "machines",
-            "The engine runs smoothly now.",
-            part_of_speech="verb",
             native_meaning="to work, to function",
+            context="Machines",
+            part_of_speech="verb",
             definition="(of a machine or engine) to operate or work in the correct way",
-            examples=("The engine runs smoothly now.", "Leave the tap running for a minute."),
-            synonyms=("function", "operate"),
+            example="The engine runs smoothly now.",
         ),
     ],
     "light": [
         MeaningSuggestion(
-            "brightness that lets you see",
-            "nature",
-            "The light in this room is beautiful.",
-            part_of_speech="noun",
             native_meaning="light, brightness",
+            context="Nature",
+            part_of_speech="noun",
             definition=(
                 "the brightness from the sun, a lamp, or a fire that makes it possible to "
                 "see things"
             ),
-            examples=(
-                "The light in this room is beautiful.",
-                "There was not enough light to read.",
-            ),
-            antonyms=("darkness",),
+            example="The light in this room is beautiful.",
         ),
         MeaningSuggestion(
-            "not heavy",
-            "weight",
-            "This suitcase is surprisingly light.",
-            part_of_speech="adjective",
             native_meaning="not heavy",
+            context="Weight",
+            part_of_speech="adjective",
             definition="weighing little; easy to lift or carry",
-            examples=("This suitcase is surprisingly light.", "Pack light for the weekend."),
-            antonyms=("heavy",),
+            example="This suitcase is surprisingly light.",
         ),
         MeaningSuggestion(
-            "pale in color",
-            "colors",
-            "She wore a light blue dress.",
-            part_of_speech="adjective",
             native_meaning="pale in colour",
+            context="Colours",
+            part_of_speech="adjective",
             definition="pale, and closer to white than to black",
-            examples=("She wore a light blue dress.",),
-            antonyms=("dark",),
+            example="She wore a light blue dress.",
         ),
     ],
     "book": [
         MeaningSuggestion(
-            "printed pages you read",
-            "reading",
-            "This book is very interesting.",
-            part_of_speech="noun",
             native_meaning="a book",
+            context="Reading",
+            part_of_speech="noun",
             definition="a set of printed pages held together in a cover, that you read",
-            examples=("This book is very interesting.", "She published her first book last year."),
+            example="This book is very interesting.",
         ),
         MeaningSuggestion(
-            "to reserve in advance",
-            "travel",
-            "I booked a hotel room online.",
-            part_of_speech="verb",
             native_meaning="to reserve, to book",
+            context="Travel",
+            part_of_speech="verb",
             definition="to arrange to have a seat, room, or ticket kept for you in advance",
-            examples=("I booked a hotel room online.", "We booked a table for eight o'clock."),
-            synonyms=("reserve",),
-            collocations=("book a flight", "book a table"),
+            example="I booked a hotel room online.",
         ),
     ],
 }
@@ -171,13 +142,11 @@ class StubAIService(AIService):
             term=term.strip(),
             suggestions=[
                 MeaningSuggestion(
-                    meaning=f"a common sense of “{term}” (explained in {learner.native_language})",
-                    context=theme or "general",
-                    example=example,
-                    part_of_speech="noun",
                     native_meaning=f"“{term}” in {learner.native_language}",
+                    context=(theme or "general").title(),
+                    part_of_speech="noun",
                     definition=f"the most common everyday sense of “{term}”",
-                    examples=(example,),
+                    example=example,
                 )
             ],
             status=LookupStatus.OK,

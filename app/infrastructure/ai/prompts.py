@@ -18,6 +18,17 @@ Two rules hold across both prompts:
 
 from __future__ import annotations
 
+from typing import Final
+
+#: Bump on **every** change to ``LOOKUP_SYSTEM_PROMPT`` or ``LOOKUP_JSON_SCHEMA``.
+#:
+#: It is part of the lookup cache key, so bumping it retires every card the old
+#: prompt wrote — no purge, no migration, no window where learners are served
+#: text from a prompt this repo no longer contains. Forgetting to bump it is the
+#: one way a prompt improvement silently fails to reach anybody who has already
+#: looked the word up.
+PROMPT_VERSION: Final = 2
+
 #: Valid values for the ``status`` field — mirrors :class:`LookupStatus`.
 LOOKUP_STATUSES = ("ok", "corrected", "extracted", "translated", "unsupported")
 
@@ -27,12 +38,18 @@ You turn one piece of learner input into up to 4 dictionary-quality "card backs"
 one per distinct meaning.
 
 LANGUAGE DETECTION — the input may be written in any language (English, Persian, \
-Spanish, Chinese, or any other): first identify which one. That detected language \
-— never a fixed "target language" — is what every field below is written in, \
-with the single exception of `native_meaning`. This holds even when the detected \
-language happens to be the learner's own native language: a Persian-native \
-learner typing a Persian word gets a normal "ok" lookup defined in Persian, not a \
-translation into anything else.
+Spanish, Chinese, or any other): first identify which one. Call it the DETECTED \
+LANGUAGE. It decides `term` and `example`; it never decides `definition`. This \
+holds even when the detected language happens to be the learner's own native \
+language: a Persian-native learner typing a Persian word gets a normal "ok" \
+lookup, not a translation into anything else.
+
+FIELD LANGUAGES — each field has its own fixed language. Getting these wrong is \
+the single worst failure mode here, worse than a mediocre definition:
+- `native_meaning` → the LEARNER'S NATIVE LANGUAGE, always.
+- `definition`, `context`, `part_of_speech` → ENGLISH, always, whatever language \
+the term is in.
+- `example` → the DETECTED LANGUAGE of the term, always.
 
 INPUT HANDLING — decide exactly one status before writing any sense:
 - "ok": the input is a well-formed word, phrase, or idiom, in whatever language \
@@ -57,41 +74,55 @@ Return an EMPTY `senses` array, set `term` to the input unchanged, and set \
 `notice` to one short sentence telling the learner what to try instead. Never \
 invent a definition to avoid this status.
 
-WRITING THE SENSES:
+WRITING THE SENSES — every field below is required on every sense:
 - One sense per genuinely distinct meaning, ordered most common first. A \
 monosemous word gets exactly 1 sense; never pad to reach 4.
-- Every field below is written in the DETECTED LANGUAGE of the input — never \
-English by default, and never the learner's native language — except \
-`native_meaning`, which is always in the learner's native language.
-- `context`: a 1-2 word label that tells senses apart at a glance ("Movement", \
-"Business", "Machines"). Capitalised. Not a definition.
-- `part_of_speech`: "noun", "verb", "adjective", "adverb", "phrasal verb", \
-"idiom", etc.
+- `context`: a 1-2 word label IN ENGLISH that tells senses apart at a glance \
+("Movement", "Business", "Machines"). Capitalised. Not a definition. Any two \
+senses of the same term must get visibly different labels; if two would read the \
+same, they are one sense.
+- `part_of_speech`: IN ENGLISH — "noun", "verb", "adjective", "adverb", "phrasal \
+verb", "idiom", etc. Use these standard English grammatical names even for a \
+non-English term.
 - `native_meaning`: the meaning written IN THE LEARNER'S NATIVE LANGUAGE, in that \
 language's own script. This is the headline of the card — make it the natural \
 phrasing a native speaker would use, not a literal gloss. If several short \
 equivalents are idiomatic, separate them with a comma. If the detected language \
-already IS the learner's native language, this will naturally be close to \
-`meaning`/`definition` — that is expected, do not force artificial variety.
-- `meaning`: a very short gloss (under 8 words) in the detected language, used as \
-a subtitle under the native meaning.
-- `definition`: a learner-dictionary definition, in the detected language, \
-written in the register of that language's standard learner/general dictionary — \
-e.g. Longman, Oxford, or Merriam-Webster for English; Real Academia Española \
-(DRAE) for Spanish; 现代汉语词典 for Chinese; دهخدا or معین for Persian; Duden for \
-German; Larousse for French; the equivalent standard reference for any other \
-language. Define using simpler words than the headword. No circular definitions. \
-Do not repeat the headword's own form where avoidable. Add a parenthesised usage \
-restriction where a real dictionary would, e.g. "(of a machine or engine) to \
-operate correctly".
-- `examples`: 1-2 natural sentences, in the detected language, that make THIS \
-sense unambiguous. They must be sentences a learner could reuse. Where it fits \
-naturally, theme one example to the learner's interests; never force it, and \
-never mention the interest itself as a topic.
-- `synonyms`, `antonyms`, `collocations`: in the detected language, only entries \
-that are true for THIS sense specifically. Return an empty array rather than a \
-loose association. Collocations are the fixed word partnerships a learner should \
-memorise ("run a business"), not free combinations.
+already IS the learner's native language, this will naturally be close to the \
+definition — that is expected, do not force artificial variety.
+- `definition`: a real dictionary definition of THIS sense, always in English. \
+See DEFINITION STYLE below — it is the field learners judge the app on.
+- `example`: exactly ONE natural sentence, IN THE DETECTED LANGUAGE of the term \
+(not English, unless the term itself is English), that makes THIS sense \
+unambiguous. It must be a sentence a learner could reuse, and it must actually \
+contain the term. Where it fits naturally, theme it to the learner's interests; \
+never force it, and never mention the interest itself as a topic.
+
+DEFINITION STYLE — aim for the overall feel of a good learner's dictionary \
+(Longman, Merriam-Webster Learner's): a definition, not a chat reply. These are \
+guides to that style, not a rulebook to satisfy — WHEN A CONVENTION WOULD MAKE \
+THE DEFINITION HARDER FOR A LEARNER TO UNDERSTAND, DROP THE CONVENTION. A \
+learner who understands the word has been served; a technically perfect entry \
+they have to decode has not.
+- Plain, common words. If someone would need a dictionary for a word inside your \
+definition, use an easier one.
+- Usually one sentence, roughly 8-25 words, covering only the sense at hand.
+- Let the definition fit the headword's grammar where that reads naturally — a \
+verb explained as "to …", a noun as "a person who …" or "the act of …", an \
+adjective as a description. Do not contort a sentence to obey this.
+- Never explain a word with itself or its own root.
+- A short "(of a machine)" or "(informal)" style note is welcome when it genuinely \
+helps; skip it otherwise. Do not pile up dictionary labels a learner will not \
+recognise.
+- Define an idiom or phrasal verb as a whole expression, never word by word.
+- Start lowercase (unless the word itself is a proper noun) and do not end with a \
+full stop. No quotation marks, no "Definition:" prefix, no markdown.
+- NON-ENGLISH TERMS GET THE SAME TREATMENT, still in English, as a bilingual \
+learner's dictionary for English speakers would. Do NOT just name an English \
+equivalent: "تعارف = politeness" is a translation, not a definition; "a Persian \
+social custom of repeatedly offering or refusing something out of politeness" is \
+a definition. Where there is no neat English equivalent, explain the idea — that \
+is where a real definition matters most.
 
 SAFETY AND REGISTER:
 - Content must suit the learner's age range when one is given: keep examples and \
@@ -153,35 +184,40 @@ LOOKUP_JSON_SCHEMA: dict[str, object] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "context": {"type": "string", "description": "1-2 word sense label."},
-                    "part_of_speech": {"type": "string"},
                     "native_meaning": {
                         "type": "string",
                         "description": "The meaning in the learner's native language and script.",
                     },
-                    "meaning": {
-                        "type": "string",
-                        "description": "Short target-language gloss, under 8 words.",
-                    },
                     "definition": {
                         "type": "string",
-                        "description": "Learner-dictionary definition in the target language.",
+                        "description": (
+                            "Learner-dictionary style definition of this sense, ALWAYS IN "
+                            "ENGLISH whatever language the term is written in. Usually one "
+                            "sentence in plain words, lowercase, no trailing full stop."
+                        ),
                     },
-                    "examples": _string_array("1-2 natural sentences for this sense."),
-                    "synonyms": _string_array("Synonyms true for this sense only."),
-                    "antonyms": _string_array("Antonyms true for this sense only."),
-                    "collocations": _string_array("Fixed word partnerships for this sense."),
+                    "example": {
+                        "type": "string",
+                        "description": (
+                            "One natural sentence using this sense, in the term's own "
+                            "language (not English unless the term is English)."
+                        ),
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "1-2 word sense label, in English. Capitalised.",
+                    },
+                    "part_of_speech": {
+                        "type": "string",
+                        "description": "Part of speech, in English ('noun', 'verb', …).",
+                    },
                 },
                 "required": [
+                    "native_meaning",
+                    "definition",
+                    "example",
                     "context",
                     "part_of_speech",
-                    "native_meaning",
-                    "meaning",
-                    "definition",
-                    "examples",
-                    "synonyms",
-                    "antonyms",
-                    "collocations",
                 ],
                 "additionalProperties": False,
             },

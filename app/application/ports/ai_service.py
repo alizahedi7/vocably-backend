@@ -48,28 +48,32 @@ class LookupStatus(StrEnum):
 class MeaningSuggestion:
     """One sense of a word, as suggested by the AI when adding a word.
 
-    Mirrors one card back in the "AI Card Magic" deck. The first three fields are
-    the original, narrower contract and stay positional so existing callers keep
-    working; everything after them is optional enrichment a provider may omit.
+    Mirrors one card back in the "AI Card Magic" deck. Deliberately narrowed to
+    what the card actually renders; the gloss (``meaning``), multi-``examples``,
+    ``synonyms``, ``antonyms`` and ``collocations`` it once carried were dropped
+    because nothing displays them today.
+
+    Three languages are in play, which is the whole point of the card:
+
+    * ``native_meaning`` — the learner's own language.
+    * ``definition``, ``context``, ``part_of_speech`` — always English, whatever
+      language the term is in. English is the app's single reference language, so
+      every card reads in one consistent voice and the client can localise the
+      short labels itself from a known value set.
+    * ``example`` — the language the term itself is written in.
     """
 
-    #: Short target-language gloss ("to move fast on foot") — the card's subtitle.
-    meaning: str
-    #: Sense label that disambiguates this card from its siblings ("Movement").
-    context: str
-    #: The single headline example. Mirrors ``examples[0]`` when examples are present.
-    example: str
-    #: "noun" | "verb" | "adjective" | … — shown italic next to the context chip.
-    part_of_speech: str = ""
     #: The meaning rendered in the learner's native language — the card's headline.
     native_meaning: str = ""
-    #: Learner-dictionary style definition in the target language (Longman/Oxford register).
+    #: Learner-dictionary definition (Longman/Oxford register), in English.
     definition: str = ""
-    #: Practical sentences for *this* sense. Includes ``example`` as its first entry.
-    examples: tuple[str, ...] = ()
-    synonyms: tuple[str, ...] = ()
-    antonyms: tuple[str, ...] = ()
-    collocations: tuple[str, ...] = ()
+    #: One natural sentence using this sense, in the term's own language.
+    example: str = ""
+    #: Sense label that disambiguates this card from its siblings ("Movement").
+    #: English, 1-2 words — the chip above the card back.
+    context: str = ""
+    #: "noun" | "verb" | "adjective" | … — English, shown italic beside the chip.
+    part_of_speech: str = ""
 
 
 @dataclass(frozen=True, slots=True)

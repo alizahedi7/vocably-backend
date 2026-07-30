@@ -13,32 +13,19 @@ from app.application.ports.ai_service import LookupStatus, MeaningSuggestion
 
 
 class SensePayload(BaseModel):
+    native_meaning: str = ""
+    definition: str = ""
+    example: str = ""
     context: str = ""
     part_of_speech: str = ""
-    native_meaning: str = ""
-    meaning: str = ""
-    definition: str = ""
-    examples: list[str] = Field(default_factory=list)
-    synonyms: list[str] = Field(default_factory=list)
-    antonyms: list[str] = Field(default_factory=list)
-    collocations: list[str] = Field(default_factory=list)
 
     def to_dto(self) -> MeaningSuggestion:
-        examples = [e.strip() for e in self.examples if e.strip()]
         return MeaningSuggestion(
-            # `meaning` and `example` are the original narrow contract; keep them
-            # populated even when the model leans on the richer fields, so older
-            # clients never render a blank card.
-            meaning=self.meaning.strip() or self.definition.strip(),
-            context=self.context.strip(),
-            example=examples[0] if examples else "",
-            part_of_speech=self.part_of_speech.strip(),
             native_meaning=self.native_meaning.strip(),
             definition=self.definition.strip(),
-            examples=tuple(examples),
-            synonyms=tuple(s.strip() for s in self.synonyms if s.strip()),
-            antonyms=tuple(a.strip() for a in self.antonyms if a.strip()),
-            collocations=tuple(c.strip() for c in self.collocations if c.strip()),
+            example=self.example.strip(),
+            context=self.context.strip(),
+            part_of_speech=self.part_of_speech.strip(),
         )
 
 

@@ -36,19 +36,11 @@ authenticated user's profile. Do not send them.
   "notice": null,
   "suggestions": [
     {
-      "context": "Movement",
-      "part_of_speech": "verb",
       "native_meaning": "دویدن",
-      "meaning": "to move fast on foot",
       "definition": "to move quickly using your legs, faster than walking",
-      "examples": [
-        "I run along the beach every morning before breakfast.",
-        "She had to run to catch the last train to the airport."
-      ],
-      "synonyms": ["sprint", "jog", "dash"],
-      "antonyms": [],
-      "collocations": ["run fast", "run a marathon", "go for a run"],
-      "example": "I run along the beach every morning before breakfast."
+      "example": "I run along the beach every morning before breakfast.",
+      "context": "Movement",
+      "part_of_speech": "verb"
     }
   ]
 }
@@ -57,6 +49,12 @@ authenticated user's profile. Do not send them.
 Between 0 and 4 suggestions, ordered most common sense first. A monosemous word
 returns exactly one — the deck is never padded to four.
 
+> **Breaking change — clients built against the previous shape must update.**
+> A suggestion now carries **exactly these five fields**. Removed: `meaning`
+> (the gloss sub-headline), `examples[]` (now a single `example`), `synonyms`,
+> `antonyms`, `collocations`. Any code reading `opt.meaning` or `opt.examples[0]`
+> breaks. See [Migrating from the previous shape](#migrating-from-the-previous-shape).
+
 ## Field mapping
 
 Each entry of `suggestions` is one card back, in deck order. `aiOptions[i]` maps
@@ -64,20 +62,63 @@ Each entry of `suggestions` is one card back, in deck order. `aiOptions[i]` maps
 
 | Prototype binding | API field | Notes |
 |---|---|---|
-| `c.context` | `context` | The uppercase chip. Already capitalised; the design applies `text-transform`. |
-| `c.pos` | `part_of_speech` | Italic label beside the chip. |
 | `c.native` / `opt.native` | `native_meaning` | The 26px card headline. **Always in the user's own native language** — the prototype's `nativeLang === 'Persian' ? opt.native : opt.nativeEn` branch disappears; the server has already picked the language. |
-| `c.gloss` / `opt.meaning` | `meaning` | Sub-headline under the native meaning. **In the detected language of the input**, not a fixed language — see below. |
-| `c.definition` | `definition` | The "DEFINITION" body. Same detected-language rule as `meaning`. |
-| `c.examples[].text` | `examples[]` | Map to `{ text }`: `examples.map(t => ({ text: t }))`. |
+| `c.definition` | `definition` | The "DEFINITION" body. **Always English**, in learner-dictionary style — see below. |
+| `c.examples[].text` | `example` | Now a single string. Wrap if the design still wants a list: `[{ text: opt.example }]`. |
+| `c.context` | `context` | The uppercase chip. Already capitalised; the design applies `text-transform`. **Always English.** |
+| `c.pos` | `part_of_speech` | Italic label beside the chip. **Always English** (`"noun"`, `"verb"`, `"adjective"`, `"adverb"`, `"phrasal verb"`, `"idiom"`, …), so you can map it to your own localised label. |
+| `c.gloss` | — | **Gone.** There is no sub-headline field any more; drop the row from the card or leave it blank. |
 | `c.counter` | — | Client-computed: `` `${i + 1} / ${suggestions.length}` ``. |
 | `c.defLabel`, `c.exLabel` | — | Client-side i18n strings; unchanged. |
-| — | `synonyms`, `antonyms`, `collocations` | Not rendered by v7. Available for a future metadata row; may be empty arrays. |
-| — | `example` | Compatibility mirror of `examples[0]`. New clients should read `examples`. |
 
-`part_of_speech`, `native_meaning`, `definition` are strings and may be `""` if a
-provider omits them; the arrays may be empty. Guard before rendering rather than
-assuming presence.
+All five are plain strings and every one may be `""` if a provider omits it.
+Guard before rendering rather than assuming presence.
+
+## Which language is each field in?
+
+This is the part most likely to surprise you, so it is worth stating plainly. The
+server detects whatever language the learner typed — English, Persian, Spanish,
+Chinese, anything — and each field then has a **fixed** language:
+
+| Field | Language | Why |
+|---|---|---|
+| `native_meaning` | The learner's **native language**, in its own script | The headline: what this word means to *them*. Set from their profile, even when the term was already in that language. |
+| `definition` | **Always English** | English is the app's single reference language, so every card reads in one consistent dictionary voice regardless of what was looked up. A Persian or Chinese term still gets an English definition. |
+| `context` | **Always English** | A short label, so the client can localise it itself. |
+| `part_of_speech` | **Always English** | A known small value set — map it to your own strings. |
+| `example` | The **term's own language** | An example sentence has to show the word in use, so it is written in whatever language the term is. |
+| `term` (top level) | The **term's own language** | |
+
+So a Persian speaker looking up `ephemeral` gets a Persian headline, an English
+definition, and an English example. The same user looking up `دویدن` gets a
+Persian headline, an English definition, and a **Persian** example.
+
+Nothing about the learner's profile is sent by the client — native language, age
+range, and interests are all read server-side from the authenticated user.
+
+## What `definition` looks like
+
+Written in the general style of a learner's dictionary (Longman,
+Merriam-Webster Learner's) — but readability for the learner wins over strict
+dictionary convention, so treat the shape below as typical rather than
+guaranteed:
+
+- **Starts lowercase and has no trailing full stop.** This one is reliable — do
+  not add a period in the UI, and do not capitalise it with CSS. `"to move using
+  your legs, going faster than when you walk"`.
+- **Usually one sentence, roughly 8–25 words.** Budget for two lines at the
+  card's width, three at the largest accessibility text size. Don't hard-clamp to
+  one line.
+- **Normally fits the headword's grammar** — a verb reads `"to …"`, a noun
+  `"a person who …"`, an adjective as a description. Useful if you ever render
+  the part of speech and the definition on one line, but not something to rely on.
+- **May open with a short parenthesised note**: `"(of a machine) to operate
+  correctly"`, `"(informal)"`. If you want to grey those out, match a leading
+  `(...)` group — and handle its absence, since these appear only when they help.
+- **Non-English terms get the same treatment, in English** — a real definition,
+  not a translation. `تعارف` returns something like `"a Persian social custom of
+  repeatedly offering or refusing something out of politeness"`, not
+  `"politeness"`. These run to the longer end, so leave room.
 
 ## `status` — the edge cases
 
@@ -86,13 +127,9 @@ line above the deck. `notice` is a ready-to-display sentence; it is `null` exact
 when `status` is `"ok"`.
 
 **The input is not assumed to be any particular language.** The server detects
-whatever language the learner typed in — English, Persian, Spanish, Chinese,
-anything — and every field except `native_meaning` (`meaning`, `definition`,
-`examples`, `synonyms`, `antonyms`, `collocations`) is written in *that* detected
-language, at the register of that language's standard dictionary (Longman/Oxford/
-Merriam-Webster for English, and the equivalent authoritative reference for
-others). `native_meaning` is always translated into the learner's own native
-language, even when the input already was in that language.
+whatever language the learner typed in and reports how it interpreted it. See
+[Which language is each field in?](#which-language-is-each-field-in) for what
+that means per field.
 
 | `status` | What happened | What the client shows |
 |---|---|---|
@@ -175,7 +212,7 @@ selectAiOption = (i) => {
       term: s.aiResolvedTerm || s.addForm.term,   // NEW — commit the resolved term
       meaning: opt.native_meaning,                 // was: nativeLang === 'Persian' ? …
       definition: opt.definition,
-      example: (opt.examples && opt.examples[0]) || '',
+      example: opt.example || '',                  // was: (opt.examples || [])[0]
     },
   }));
   // …unchanged: close the sheet and flash "Back of card filled in"
@@ -185,16 +222,31 @@ selectAiOption = (i) => {
 `clearAiSuggestion` should restore `term` from `aiUndo` too, now that selecting can
 change it.
 
-The `aiCards` builder (line 2404) keeps its shape; only three lines change:
+The `aiCards` builder (line 2404) keeps its shape:
 
 ```js
 context: opt.context,
 pos: opt.part_of_speech,                          // was opt.pos
 native: opt.native_meaning,                       // was the nativeLang ternary
-gloss: opt.meaning,
 definition: opt.definition,
-examples: (opt.examples || []).map(text => ({ text })),
+examples: opt.example ? [{ text: opt.example }] : [],   // was opt.examples.map(…)
+// `gloss` has no source any more — remove the binding and the sub-headline row.
 ```
+
+## Migrating from the previous shape
+
+| Was | Now |
+|---|---|
+| `opt.meaning` | **Removed.** No gloss field exists; delete the sub-headline. |
+| `opt.examples` (array) | `opt.example` (single string) |
+| `opt.examples[0]` | `opt.example` |
+| `opt.synonyms` / `antonyms` / `collocations` | **Removed.** Not rendered by v7, so nothing to change unless you had built ahead. |
+| `definition` in the detected language | `definition` **always in English** |
+| `context` / `part_of_speech` in the detected language | **always in English** |
+
+`native_meaning`, `context`, and `part_of_speech` keep their names and meaning.
+A client that only read `native_meaning`, `definition`, `examples[0]`, `context`
+and `part_of_speech` needs exactly one change: `examples[0]` → `example`.
 
 ## Saving the card
 

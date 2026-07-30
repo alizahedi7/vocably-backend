@@ -26,32 +26,30 @@ class LookupIn(BaseModel):
 
 
 class MeaningSuggestionOut(BaseModel):
-    """One card back in the suggestion deck."""
+    """One card back in the suggestion deck.
 
-    meaning: str
-    context: str
-    example: str
-    part_of_speech: str = ""
+    Each field has a fixed language — see ``MeaningSuggestion``.
+    """
+
+    #: In the learner's native language. The card headline.
     native_meaning: str = ""
+    #: Always English, whatever language the term is in.
     definition: str = ""
-    examples: list[str] = Field(default_factory=list)
-    synonyms: list[str] = Field(default_factory=list)
-    antonyms: list[str] = Field(default_factory=list)
-    collocations: list[str] = Field(default_factory=list)
+    #: One sentence, in the term's own language.
+    example: str = ""
+    #: Sense label chip. Always English.
+    context: str = ""
+    #: Always English.
+    part_of_speech: str = ""
 
     @classmethod
     def from_dto(cls, dto: MeaningSuggestion) -> MeaningSuggestionOut:
         return cls(
-            meaning=dto.meaning,
-            context=dto.context,
-            example=dto.example,
-            part_of_speech=dto.part_of_speech,
             native_meaning=dto.native_meaning,
             definition=dto.definition,
-            examples=list(dto.examples),
-            synonyms=list(dto.synonyms),
-            antonyms=list(dto.antonyms),
-            collocations=list(dto.collocations),
+            example=dto.example,
+            context=dto.context,
+            part_of_speech=dto.part_of_speech,
         )
 
 

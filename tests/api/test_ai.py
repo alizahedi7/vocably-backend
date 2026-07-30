@@ -21,19 +21,16 @@ async def test_lookup_returns_multiple_senses(
     assert body["notice"] is None
     assert len(body["suggestions"]) == 3
     first = body["suggestions"][0]
+    # The card back is exactly these five fields — anything else is a contract
+    # change for the "AI Card Magic" screen (docs/ai-card-magic-contract.md).
     assert set(first) == {
-        "meaning",
-        "context",
-        "example",
-        "part_of_speech",
         "native_meaning",
         "definition",
-        "examples",
-        "synonyms",
-        "antonyms",
-        "collocations",
+        "example",
+        "context",
+        "part_of_speech",
     }
-    assert first["context"] == "movement"
+    assert first["context"] == "Movement"
 
 
 async def test_lookup_card_back_carries_the_full_design_contract(
@@ -45,9 +42,36 @@ async def test_lookup_card_back_carries_the_full_design_contract(
     assert first["part_of_speech"] == "verb"
     assert first["native_meaning"]
     assert first["definition"].startswith("to move using your legs")
-    # The headline example is always the first of the full example list.
-    assert len(first["examples"]) >= 1
-    assert first["example"] == first["examples"][0]
+    assert first["example"]
+
+
+async def test_definitions_follow_the_house_dictionary_style(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """Longman/Merriam-Webster register: lowercase opening, no trailing full stop.
+
+    Only the stub's fixtures are checkable here — a real provider's prose cannot
+    be asserted — but keeping the fixtures honest is what stops the design and the
+    prompt drifting apart.
+    """
+    for term in ("run", "light", "book"):
+        response = await client.post("/api/v1/ai/lookup", headers=auth_headers, json={"term": term})
+        for sense in response.json()["suggestions"]:
+            definition = sense["definition"]
+            assert definition
+            assert not definition.endswith(".")
+            first = definition.lstrip("(")[0]
+            assert first == first.lower(), definition
+
+
+async def test_every_sense_of_a_word_gets_its_own_label(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """With no gloss on the card, `context` is what tells sibling senses apart."""
+    response = await client.post("/api/v1/ai/lookup", headers=auth_headers, json={"term": "run"})
+    contexts = [s["context"] for s in response.json()["suggestions"]]
+    assert all(contexts)
+    assert len(set(contexts)) == len(contexts)
 
 
 async def test_lookup_rejects_pasted_prose(
@@ -82,7 +106,7 @@ async def test_lookup_fallback_is_themed_to_user_interests(
     )
     assert response.status_code == 200
     suggestion = response.json()["suggestions"][0]
-    assert suggestion["context"] == "a trip abroad"
+    assert suggestion["context"] == "A Trip Abroad"
 
 
 async def test_story_requires_authentication(client: AsyncClient) -> None:
