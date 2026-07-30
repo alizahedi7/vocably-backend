@@ -76,3 +76,45 @@ class ReviewGrade(StrEnum):
     HARD = "hard"
     GOOD = "good"
     EASY = "easy"
+
+    @property
+    def ordinal(self) -> int:
+        """The compact form persisted in the review log.
+
+        Grades are stored as ``smallint`` rather than their names: two bytes
+        instead of seven on the highest-volume table in the schema, and ordered,
+        so "was this at least a pass?" is a range predicate.
+
+        These numbers are written into ``word_reviews`` rows that outlive any
+        deploy, so they MUST NEVER be reassigned. A new grade takes the next
+        free ordinal; a retired grade's ordinal stays retired.
+        """
+        return _GRADE_ORDINALS[self]
+
+    @classmethod
+    def from_ordinal(cls, value: int) -> ReviewGrade:
+        """Inverse of :attr:`ordinal`. Raises ``ValueError`` on unknown values."""
+        try:
+            return _GRADES_BY_ORDINAL[value]
+        except KeyError:
+            raise ValueError(f"Unknown review grade ordinal: {value}") from None
+
+    @property
+    def is_lapse(self) -> bool:
+        """Whether this grade counts as forgetting the card.
+
+        Only ``again`` does. ``hard`` is a successful recall that merely felt
+        effortful — counting it as a lapse would make the difficulty signal
+        (see ``Word.lapse_count``) mostly noise.
+        """
+        return self is ReviewGrade.AGAIN
+
+
+#: Frozen wire format — see :attr:`ReviewGrade.ordinal`. Never renumber.
+_GRADE_ORDINALS: dict[ReviewGrade, int] = {
+    ReviewGrade.AGAIN: 0,
+    ReviewGrade.HARD: 1,
+    ReviewGrade.GOOD: 2,
+    ReviewGrade.EASY: 3,
+}
+_GRADES_BY_ORDINAL: dict[int, ReviewGrade] = {v: k for k, v in _GRADE_ORDINALS.items()}
