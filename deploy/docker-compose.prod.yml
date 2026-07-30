@@ -17,11 +17,34 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # No `ports:` on purpose — the broker is reachable only from inside this
+    # compose network. Publishing 6379 would expose an unauthenticated Redis
+    # to the internet, which is among the most reliably exploited misconfigs
+    # there is.
+    #
+    # Unlike the dev stack, persistence is ON here: the broker holds queued
+    # work, and a restart with persistence off silently drops whatever was
+    # in flight. Beat would re-emit the maintenance job, but future AI tasks
+    # will represent real money and must survive a container bounce.
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   api:
     image: ghcr.io/alizahedi7/vocably-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     # Everything else (SECRET_KEY, Kavenegar, Google, …) comes from .env;
     # the values below are fixed by the shape of this stack and win over .env.
@@ -30,9 +53,56 @@ services:
       ENVIRONMENT: production
       DEBUG: "false"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-vocably}
+      CELERY_BROKER_URL: redis://redis:6379/0
+    # This is the only service that migrates; worker and beat deliberately do
+    # not, so a deploy never runs two migration attempts concurrently.
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  # Executes background tasks. Safe to scale to more replicas.
+  worker:
+    image: ghcr.io/alizahedi7/vocably-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-vocably}
+      CELERY_BROKER_URL: redis://redis:6379/0
+    # --concurrency is pinned rather than left to default (one process per CPU)
+    # so worker memory on this VPS stays predictable as the box changes.
+    # --max-tasks-per-child recycles a process periodically, which bounds the
+    # blast radius of a slow leak in any long-lived task.
+    command: >
+      celery -A app.tasks worker --loglevel=info
+      -Q default,maintenance,ai
+      --concurrency=2 --max-tasks-per-child=100
+
+  # Emits scheduled tasks. MUST stay at exactly one replica: beat is a clock,
+  # and a second one makes every scheduled task fire twice.
+  beat:
+    image: ghcr.io/alizahedi7/vocably-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-vocably}
+      CELERY_BROKER_URL: redis://redis:6379/0
+    # /tmp because the image runs as a non-root user that cannot write to the
+    # working directory. Losing this file only re-evaluates the schedule.
+    command: celery -A app.tasks beat --loglevel=info --schedule=/tmp/celerybeat-schedule
 
   caddy:
     image: caddy:2-alpine
@@ -69,6 +139,7 @@ services:
 
 volumes:
   pgdata:
+  redisdata:
   caddy_data:
   caddy_config:
 
