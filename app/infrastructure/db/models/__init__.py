@@ -9,6 +9,7 @@ from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.otp_challenge import OtpChallengeModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
+from app.infrastructure.db.models.word_review import WordReviewModel
 
 __all__ = [
     "AILookupAliasModel",
@@ -17,4 +18,5 @@ __all__ = [
     "OtpChallengeModel",
     "UserModel",
     "WordModel",
+    "WordReviewModel",
 ]

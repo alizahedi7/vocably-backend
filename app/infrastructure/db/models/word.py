@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, String, Text
+from sqlalchemy import ForeignKey, Index, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -37,3 +37,13 @@ class WordModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     due_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
     review_count: Mapped[int] = mapped_column(default=0, nullable=False)
     last_reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+    # Review summary counters, maintained by Word.apply_review on the UPDATE the
+    # grade already issues. Redundant with `word_reviews` by design — they keep
+    # "hardest words" and time-to-mastery off the event log entirely.
+    lapse_count: Mapped[int] = mapped_column(default=0, nullable=False)
+    consecutive_correct: Mapped[int] = mapped_column(default=0, nullable=False)
+    first_reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    mastered_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    #: ReviewGrade.ordinal of the most recent grade; NULL until first reviewed.
+    last_grade: Mapped[int | None] = mapped_column(SmallInteger())

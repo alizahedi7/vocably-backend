@@ -8,13 +8,15 @@ from __future__ import annotations
 
 from app.domain.entities.deck import Deck
 from app.domain.entities.otp_challenge import OtpChallenge
+from app.domain.entities.review_event import ReviewEvent
 from app.domain.entities.user import User
 from app.domain.entities.word import Word
-from app.domain.enums import AgeRange, AuthMethod, LeitnerBox
+from app.domain.enums import AgeRange, AuthMethod, LeitnerBox, ReviewGrade
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.otp_challenge import OtpChallengeModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
+from app.infrastructure.db.models.word_review import WordReviewModel
 
 
 # ── User ─────────────────────────────────────────────────────
@@ -92,6 +94,11 @@ def word_to_entity(m: WordModel) -> Word:
         due_at=m.due_at,
         review_count=m.review_count,
         last_reviewed_at=m.last_reviewed_at,
+        lapse_count=m.lapse_count,
+        consecutive_correct=m.consecutive_correct,
+        first_reviewed_at=m.first_reviewed_at,
+        mastered_at=m.mastered_at,
+        last_grade=ReviewGrade.from_ordinal(m.last_grade) if m.last_grade is not None else None,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -109,6 +116,50 @@ def apply_word(entity: Word, m: WordModel) -> None:
     m.due_at = entity.due_at
     m.review_count = entity.review_count
     m.last_reviewed_at = entity.last_reviewed_at
+    m.lapse_count = entity.lapse_count
+    m.consecutive_correct = entity.consecutive_correct
+    m.first_reviewed_at = entity.first_reviewed_at
+    m.mastered_at = entity.mastered_at
+    m.last_grade = entity.last_grade.ordinal if entity.last_grade is not None else None
+
+
+# ── Review event ─────────────────────────────────────────────
+def review_event_to_entity(m: WordReviewModel) -> ReviewEvent:
+    return ReviewEvent(
+        id=m.id,
+        user_id=m.user_id,
+        word_id=m.word_id,
+        deck_id=m.deck_id,
+        reviewed_at=m.reviewed_at,
+        grade=ReviewGrade.from_ordinal(m.grade),
+        box_before=LeitnerBox(m.box_before),
+        box_after=LeitnerBox(m.box_after),
+        elapsed_seconds=m.elapsed_seconds,
+        overdue_seconds=m.overdue_seconds,
+        latency_ms=m.latency_ms,
+        session_id=m.session_id,
+    )
+
+
+def review_event_values(entity: ReviewEvent) -> dict[str, object]:
+    """Column values for a Core INSERT.
+
+    Events are append-only, so there is no ``apply_*`` counterpart: nothing ever
+    writes over an existing row. ``id`` is omitted so the database assigns it.
+    """
+    return {
+        "user_id": entity.user_id,
+        "word_id": entity.word_id,
+        "deck_id": entity.deck_id,
+        "reviewed_at": entity.reviewed_at,
+        "grade": entity.grade.ordinal,
+        "box_before": int(entity.box_before),
+        "box_after": int(entity.box_after),
+        "elapsed_seconds": entity.elapsed_seconds,
+        "overdue_seconds": entity.overdue_seconds,
+        "latency_ms": entity.latency_ms,
+        "session_id": entity.session_id,
+    }
 
 
 # ── OTP challenge ────────────────────────────────────────────
