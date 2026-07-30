@@ -285,8 +285,19 @@ characters, and returned on every `WordOut`. Three rules:
 | `422` | Empty term, or over 200 characters. | Validate before sending; the CTA is already hidden while `term` is empty. |
 | `502` | Provider unreachable, or returned an unusable response after one retry. | Show the empty state and keep the manual fields editable — the learner can always write the back by hand. That path is the design's `aiWriteOwnLabel`, so nothing new is needed. |
 
-Lookups are **not** cached server-side today. Debounce on the client if you ever
-wire the CTA to fire automatically instead of on tap.
+## Caching
+
+Lookups **are** cached server-side, shared across all users and keyed on the term
+(case- and punctuation-insensitive), the learner's native language, and their age
+band. Two consequences for the client:
+
+- A repeated term returns in milliseconds instead of seconds. The staged `aiStep`
+  animation should not assume a multi-second wait — let it be cut short.
+- The response for a given term is stable, so there is nothing to gain from
+  caching it again on the device.
+
+Debounce on the client if you ever wire the CTA to fire automatically instead of
+on tap; a cache hit is cheap for the server but still a round trip.
 
 ## Keeping this in sync
 

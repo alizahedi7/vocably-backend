@@ -127,6 +127,38 @@ backs practice stories.
   Renaming a `MeaningSuggestion` field is a breaking change for that screen — update
   the doc in the same commit.
 
+### Lookup cache
+
+Lookups repeat heavily across the user base, so `look_up_meanings` is served from a
+shared Postgres cache — `CachingAIService`, a decorator over the `AIService` port, so
+it applies to every provider and `AIStudioService` stays unaware of it. Stories are
+never cached (their word set is one learner's Leitner boxes).
+
+- **Key**: `(normalized input, native_language, age_bucket, PROMPT_VERSION)`, hashed.
+  `interests` is deliberately **not** in it — themed examples would make every key
+  unique and the cache would stop existing. `AgeRange`'s eight values collapse to three
+  buckets, since only child/teen/adult changes the text.
+- **`PROMPT_VERSION` in [prompts.py](app/infrastructure/ai/prompts.py) MUST be bumped
+  with every prompt or lookup-schema change.** It is part of the key, so bumping it
+  retires every card the old prompt wrote — no purge, no migration. Forgetting is the
+  one way a prompt improvement silently fails to reach existing learners.
+- **Two tables**: `ai_lookup_entries` holds the senses keyed by *resolved* term;
+  `ai_lookup_aliases` holds one row per thing a learner *typed*, with its own
+  `status`/`notice`. So a typo, a sentence, and the correct spelling share one
+  paid-for entry. Inputs over `MAX_ALIAS_INPUT_CHARS` get no alias — a sentence is
+  never retyped, and long free text is the only input likely to carry something
+  personal.
+- **Never user data.** No `user_id` anywhere in these tables, and a learner's edits to
+  a card go to `words` and never back into the cache — one person's wording must not be
+  served to everyone. Only what a provider produced is stored, at call time, whatever
+  the learner does next.
+- **Never load-bearing.** Every cache read/write is best-effort: a failure is logged
+  and the provider's answer is served anyway. Stored payloads are re-validated on read
+  ([lookup_cache_payload.py](app/infrastructure/db/lookup_cache_payload.py)) and a row
+  this deploy can't read counts as a miss.
+- `AI_CACHE_ENABLED=false` bypasses it for debugging a provider in isolation. Leaving
+  it off in production means paying full price for every repeat of every word.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

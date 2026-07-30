@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     #: Ceiling per lookup/story response. Generous enough for 4 full card backs.
     avalai_max_tokens: int = 4096
 
+    # ── AI lookup cache ───────────────────────────────────────
+    #: Vocabulary lookups repeat heavily across the user base, so the same
+    #: provider response is otherwise bought over and over. Off only for
+    #: debugging a provider in isolation — leaving it off in production means
+    #: paying full price for every repeat of every word.
+    ai_cache_enabled: bool = True
+    #: How long an `unsupported` verdict is remembered. Real words never expire;
+    #: unintelligible input does, so retry-spam is absorbed without letting the
+    #: table fill with junk that will never be asked for again. 7 days.
+    ai_cache_unsupported_ttl_seconds: int = 7 * 24 * 3600
+
     @field_validator("backend_cors_origins", mode="before")
     @classmethod
     def _split_cors(cls, value: object) -> object:

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.ports.admin_repository import AdminRepository
 from app.application.ports.ai_service import AIService
 from app.application.ports.google_verifier import GoogleVerifier
+from app.application.ports.lookup_cache import LookupCacheRepository
 from app.application.ports.otp_sender import OTPSender
 from app.application.services.admin_service import AdminService
 from app.application.services.ai_studio_service import AIStudioService
@@ -39,6 +40,7 @@ from app.domain.repositories.deck_repository import DeckRepository
 from app.domain.repositories.otp_repository import OTPChallengeRepository
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_repository import WordRepository
+from app.infrastructure.ai.caching_ai_service import CachingAIService
 from app.infrastructure.ai.stub_ai_service import StubAIService
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
@@ -47,6 +49,9 @@ from app.infrastructure.auth.sms_ir_otp_sender import SmsIrOTPSender
 from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
 from app.infrastructure.db.repositories.admin_repository import SqlAlchemyAdminRepository
 from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
+from app.infrastructure.db.repositories.lookup_cache_repository import (
+    SqlAlchemyLookupCacheRepository,
+)
 from app.infrastructure.db.repositories.otp_repository import (
     SqlAlchemyOTPChallengeRepository,
 )
@@ -77,15 +82,21 @@ def get_admin_repository(session: SessionDep) -> AdminRepository:
     return SqlAlchemyAdminRepository(session)
 
 
+def get_lookup_cache_repository(session: SessionDep) -> LookupCacheRepository:
+    return SqlAlchemyLookupCacheRepository(session)
+
+
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 DeckRepoDep = Annotated[DeckRepository, Depends(get_deck_repository)]
 WordRepoDep = Annotated[WordRepository, Depends(get_word_repository)]
 OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
 AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
+LookupCacheRepoDep = Annotated[LookupCacheRepository, Depends(get_lookup_cache_repository)]
 
 
 # ── Outbound adapters (selected by config) ───────────────────
-def get_ai_service() -> AIService:
+def get_ai_provider() -> AIService:
+    """The raw provider adapter, before any cache is layered on."""
     if settings.ai_provider == "anthropic":
         if not settings.anthropic_api_key:
             raise RuntimeError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
@@ -95,6 +106,15 @@ def get_ai_service() -> AIService:
             raise RuntimeError("AI_PROVIDER=avalai requires AVALAI_API_KEY and AVALAI_MODEL.")
         return _avalai_ai_service()
     return StubAIService()
+
+
+def _configured_model() -> str:
+    """The model name to record on cached entries, for provenance only."""
+    if settings.ai_provider == "anthropic":
+        return settings.anthropic_model
+    if settings.ai_provider == "avalai":
+        return settings.avalai_model
+    return ""
 
 
 @lru_cache
@@ -160,6 +180,29 @@ def get_google_verifier() -> GoogleVerifier:
             raise RuntimeError("GOOGLE_VERIFIER=google requires GOOGLE_CLIENT_ID.")
         return _google_id_token_verifier()
     return StubGoogleVerifier()
+
+
+AIProviderDep = Annotated[AIService, Depends(get_ai_provider)]
+
+
+def get_ai_service(provider: AIProviderDep, cache: LookupCacheRepoDep) -> AIService:
+    """The AI service the use cases get: the provider, cached when enabled.
+
+    Composed per request because the cache repository is bound to the
+    request-scoped session, while the provider adapter itself stays
+    process-wide (see ``_anthropic_ai_service``) so its connection pool is
+    reused. The wrapper is a plain object — building one per request costs
+    nothing and opens no connections.
+    """
+    if not settings.ai_cache_enabled:
+        return provider
+    return CachingAIService(
+        provider,
+        cache,
+        unsupported_ttl_seconds=settings.ai_cache_unsupported_ttl_seconds,
+        provider=settings.ai_provider,
+        model=_configured_model(),
+    )
 
 
 AIServiceDep = Annotated[AIService, Depends(get_ai_service)]

@@ -12,7 +12,7 @@ import pytest
 from app.api.deps import (
     _avalai_ai_service,
     _google_id_token_verifier,
-    get_ai_service,
+    get_ai_provider,
     get_google_verifier,
     get_otp_sender,
 )
@@ -65,7 +65,7 @@ def test_sms_ir_without_credentials_fails_fast(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_stub_ai_service_is_the_default() -> None:
-    assert isinstance(get_ai_service(), StubAIService)
+    assert isinstance(get_ai_provider(), StubAIService)
 
 
 def test_avalai_service_is_selected_and_memoized(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,10 +74,10 @@ def test_avalai_service_is_selected_and_memoized(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(settings, "avalai_model", "gpt-4o-mini")
     _avalai_ai_service.cache_clear()
     try:
-        service = get_ai_service()
+        service = get_ai_provider()
         assert isinstance(service, AvalAIService)
         # Cached so one HTTP client (and its connection pool) is shared.
-        assert get_ai_service() is service
+        assert get_ai_provider() is service
     finally:
         _avalai_ai_service.cache_clear()
 
@@ -88,7 +88,7 @@ def test_avalai_without_credentials_fails_fast(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(settings, "avalai_model", "")
 
     with pytest.raises(RuntimeError, match="AVALAI_API_KEY"):
-        get_ai_service()
+        get_ai_provider()
 
 
 def test_stub_verifier_is_the_default() -> None:
