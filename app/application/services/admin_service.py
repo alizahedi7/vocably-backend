@@ -7,8 +7,12 @@ mutates state. Access is gated at the API layer by an admin-only dependency.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from app.application.dto import (
+    AdminCacheAliasRow,
+    AdminCacheEntryRow,
+    AdminCacheOverview,
     AdminDeckRow,
     AdminOverview,
     AdminUserRow,
@@ -17,6 +21,7 @@ from app.application.dto import (
     DailyCount,
 )
 from app.application.ports.admin_repository import AdminRepository
+from app.core.exceptions import NotFoundError
 
 #: Window used for "new" and "active" headline metrics.
 _ACTIVITY_WINDOW = timedelta(days=7)
@@ -64,3 +69,22 @@ class AdminService:
 
     async def words(self) -> list[AdminWordRow]:
         return await self._admin.list_word_rows()
+
+    async def cache_overview(self) -> AdminCacheOverview:
+        return await self._admin.cache_overview()
+
+    async def cache_entry(self, entry_id: UUID) -> AdminCacheEntryRow:
+        entry = await self._admin.get_cache_entry(entry_id)
+        if entry is None:
+            raise NotFoundError("Cache entry not found.")
+        return entry
+
+    async def cache_entries(
+        self, limit: int, offset: int, search: str | None
+    ) -> tuple[list[AdminCacheEntryRow], int]:
+        return await self._admin.list_cache_entries(limit, offset, search)
+
+    async def cache_aliases(
+        self, entry_id: UUID, limit: int, offset: int
+    ) -> tuple[list[AdminCacheAliasRow], int]:
+        return await self._admin.list_cache_aliases(entry_id, limit, offset)

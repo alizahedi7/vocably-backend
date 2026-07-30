@@ -14,6 +14,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.application.dto import (
+    AdminCacheAliasRow,
+    AdminCacheEntryRow,
+    AdminCacheOverview,
     AdminDeckRow,
     AdminOverview,
     AdminUserRow,
@@ -139,3 +142,93 @@ class AdminWordOut(_CamelModel):
             box=int(w.box),
             created_at=w.created_at,
         )
+
+
+class AdminCacheOverviewOut(_CamelModel):
+    total_entries: int = Field(serialization_alias="totalEntries")
+    total_aliases: int = Field(serialization_alias="totalAliases")
+    total_hits: int = Field(serialization_alias="totalHits")
+    current_prompt_version: int = Field(serialization_alias="currentPromptVersion")
+    stale_entry_count: int = Field(serialization_alias="staleEntryCount")
+    expired_alias_count: int = Field(serialization_alias="expiredAliasCount")
+
+    @classmethod
+    def from_dto(cls, dto: AdminCacheOverview) -> AdminCacheOverviewOut:
+        return cls(
+            total_entries=dto.total_entries,
+            total_aliases=dto.total_aliases,
+            total_hits=dto.total_hits,
+            current_prompt_version=dto.current_prompt_version,
+            stale_entry_count=dto.stale_entry_count,
+            expired_alias_count=dto.expired_alias_count,
+        )
+
+
+class AdminCacheEntryOut(_CamelModel):
+    id: UUID
+    term: str
+    native_language: str = Field(serialization_alias="nativeLanguage")
+    age_bucket: str = Field(serialization_alias="ageBucket")
+    prompt_version: int = Field(serialization_alias="promptVersion")
+    provider: str
+    model: str
+    hit_count: int = Field(serialization_alias="hitCount")
+    alias_count: int = Field(serialization_alias="aliasCount")
+    created_at: datetime = Field(serialization_alias="createdAt")
+    updated_at: datetime = Field(serialization_alias="updatedAt")
+    last_accessed_at: datetime | None = Field(serialization_alias="lastAccessedAt")
+
+    @classmethod
+    def from_dto(cls, dto: AdminCacheEntryRow) -> AdminCacheEntryOut:
+        return cls(
+            id=dto.id,
+            term=dto.term,
+            native_language=dto.native_language,
+            age_bucket=dto.age_bucket,
+            prompt_version=dto.prompt_version,
+            provider=dto.provider,
+            model=dto.model,
+            hit_count=dto.hit_count,
+            alias_count=dto.alias_count,
+            created_at=dto.created_at,
+            updated_at=dto.updated_at,
+            last_accessed_at=dto.last_accessed_at,
+        )
+
+
+class AdminCacheEntryPageOut(_CamelModel):
+    items: list[AdminCacheEntryOut]
+    total: int
+
+
+class AdminCacheAliasOut(_CamelModel):
+    id: UUID
+    normalized_input: str = Field(serialization_alias="normalizedInput")
+    native_language: str = Field(serialization_alias="nativeLanguage")
+    age_bucket: str = Field(serialization_alias="ageBucket")
+    prompt_version: int = Field(serialization_alias="promptVersion")
+    status: str
+    notice: str | None
+    resolved_term: str = Field(serialization_alias="resolvedTerm")
+    expires_at: datetime | None = Field(serialization_alias="expiresAt")
+    created_at: datetime = Field(serialization_alias="createdAt")
+
+    @classmethod
+    def from_dto(cls, dto: AdminCacheAliasRow) -> AdminCacheAliasOut:
+        return cls(
+            id=dto.id,
+            normalized_input=dto.normalized_input,
+            native_language=dto.native_language,
+            age_bucket=dto.age_bucket,
+            prompt_version=dto.prompt_version,
+            status=dto.status,
+            notice=dto.notice,
+            resolved_term=dto.resolved_term,
+            expires_at=dto.expires_at,
+            created_at=dto.created_at,
+        )
+
+
+class AdminCacheAliasPageOut(_CamelModel):
+    items: list[AdminCacheAliasOut]
+    total: int

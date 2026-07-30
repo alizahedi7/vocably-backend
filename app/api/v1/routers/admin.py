@@ -7,10 +7,17 @@ match the ``vocably-admin`` dashboard's TypeScript types.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Query
 
 from app.api.deps import AdminServiceDep, CurrentAdmin
 from app.api.v1.schemas.admin import (
+    AdminCacheAliasOut,
+    AdminCacheAliasPageOut,
+    AdminCacheEntryOut,
+    AdminCacheEntryPageOut,
+    AdminCacheOverviewOut,
     AdminCategoryOut,
     AdminUserOut,
     AdminWordOut,
@@ -56,3 +63,42 @@ async def categories(_admin: CurrentAdmin, admin: AdminServiceDep) -> list[Admin
 @router.get("/words", response_model=list[AdminWordOut])
 async def words(_admin: CurrentAdmin, admin: AdminServiceDep) -> list[AdminWordOut]:
     return [AdminWordOut.from_dto(row) for row in await admin.words()]
+
+
+@router.get("/cache/overview", response_model=AdminCacheOverviewOut)
+async def cache_overview(_admin: CurrentAdmin, admin: AdminServiceDep) -> AdminCacheOverviewOut:
+    return AdminCacheOverviewOut.from_dto(await admin.cache_overview())
+
+
+@router.get("/cache/entries/{entry_id}", response_model=AdminCacheEntryOut)
+async def cache_entry(
+    entry_id: UUID, _admin: CurrentAdmin, admin: AdminServiceDep
+) -> AdminCacheEntryOut:
+    return AdminCacheEntryOut.from_dto(await admin.cache_entry(entry_id))
+
+
+@router.get("/cache/entries", response_model=AdminCacheEntryPageOut)
+async def cache_entries(
+    _admin: CurrentAdmin,
+    admin: AdminServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    q: str | None = Query(default=None, max_length=255),
+) -> AdminCacheEntryPageOut:
+    rows, total = await admin.cache_entries(limit, offset, q)
+    items = [AdminCacheEntryOut.from_dto(row) for row in rows]
+    return AdminCacheEntryPageOut(items=items, total=total)
+
+
+@router.get("/cache/entries/{entry_id}/aliases", response_model=AdminCacheAliasPageOut)
+async def cache_entry_aliases(
+    entry_id: UUID,
+    _admin: CurrentAdmin,
+    admin: AdminServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> AdminCacheAliasPageOut:
+    rows, total = await admin.cache_aliases(entry_id, limit, offset)
+    return AdminCacheAliasPageOut(
+        items=[AdminCacheAliasOut.from_dto(row) for row in rows], total=total
+    )

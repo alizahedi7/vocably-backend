@@ -123,3 +123,92 @@ async def test_auth_methods_breakdown(client: AsyncClient, make_user: UserFactor
     counts = {row["method"]: row["count"] for row in response.json()}
     assert counts.get("phone", 0) >= 1
     assert counts.get("google", 0) == 1
+
+
+async def test_cache_routes_reject_non_admins(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    for path in ("/admin/cache/overview", "/admin/cache/entries"):
+        response = await client.get(f"/api/v1{path}", headers=auth_headers)
+        assert response.status_code == 403
+
+
+async def test_cache_overview_reports_prompt_version_and_empty_totals(
+    client: AsyncClient, make_user: UserFactory
+) -> None:
+    from app.infrastructure.ai.prompts import PROMPT_VERSION
+
+    headers = await _admin_headers(make_user)
+
+    response = await client.get("/api/v1/admin/cache/overview", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["totalEntries"] == 0
+    assert body["totalAliases"] == 0
+    assert body["totalHits"] == 0
+    assert body["currentPromptVersion"] == PROMPT_VERSION
+    assert body["staleEntryCount"] == 0
+    assert body["expiredAliasCount"] == 0
+
+
+async def test_cache_entries_lists_hit_counts_and_paginates(
+    client: AsyncClient, make_user: UserFactory, auth_headers: dict[str, str]
+) -> None:
+    headers = await _admin_headers(make_user)
+
+    for _ in range(2):
+        await client.post("/api/v1/ai/lookup", headers=auth_headers, json={"term": "run"})
+
+    response = await client.get("/api/v1/admin/cache/entries?limit=1&offset=0", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 1
+    (entry,) = body["items"]
+    assert entry["term"] == "run"
+    assert entry["hitCount"] == 1  # one miss (write) + one hit (read)
+    assert entry["aliasCount"] == 1
+    assert entry["lastAccessedAt"] is not None
+
+
+async def test_cache_entry_by_id_returns_404_when_missing(
+    client: AsyncClient, make_user: UserFactory
+) -> None:
+    headers = await _admin_headers(make_user)
+    missing_id = "00000000-0000-0000-0000-000000000000"
+
+    response = await client.get(f"/api/v1/admin/cache/entries/{missing_id}", headers=headers)
+    assert response.status_code == 404
+
+
+async def test_cache_entry_by_id_returns_the_entry(
+    client: AsyncClient, make_user: UserFactory, auth_headers: dict[str, str]
+) -> None:
+    headers = await _admin_headers(make_user)
+    await client.post("/api/v1/ai/lookup", headers=auth_headers, json={"term": "run"})
+
+    entries = await client.get("/api/v1/admin/cache/entries", headers=headers)
+    (entry,) = entries.json()["items"]
+
+    response = await client.get(f"/api/v1/admin/cache/entries/{entry['id']}", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["term"] == "run"
+
+
+async def test_cache_entry_aliases_lists_the_learner_inputs_that_resolved_to_it(
+    client: AsyncClient, make_user: UserFactory, auth_headers: dict[str, str]
+) -> None:
+    headers = await _admin_headers(make_user)
+    await client.post("/api/v1/ai/lookup", headers=auth_headers, json={"term": "run"})
+
+    entries = await client.get("/api/v1/admin/cache/entries", headers=headers)
+    (entry,) = entries.json()["items"]
+
+    response = await client.get(
+        f"/api/v1/admin/cache/entries/{entry['id']}/aliases", headers=headers
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["total"] == 1
+    (alias,) = body["items"]
+    assert alias["normalizedInput"] == "run"
+    assert alias["resolvedTerm"] == "run"

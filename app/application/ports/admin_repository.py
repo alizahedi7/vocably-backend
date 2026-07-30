@@ -10,8 +10,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import date, datetime
+from uuid import UUID
 
 from app.application.dto import (
+    AdminCacheAliasRow,
+    AdminCacheEntryRow,
+    AdminCacheOverview,
     AdminDeckRow,
     AdminUserRow,
     AdminWordRow,
@@ -58,3 +62,26 @@ class AdminRepository(ABC):
     @abstractmethod
     async def list_word_rows(self) -> list[AdminWordRow]:
         """Every word with its deck ("category") and owner names."""
+
+    @abstractmethod
+    async def cache_overview(self) -> AdminCacheOverview:
+        """Headline KPIs for the AI lookup cache."""
+
+    @abstractmethod
+    async def get_cache_entry(self, entry_id: UUID) -> AdminCacheEntryRow | None:
+        """A single cached word by id, or ``None`` if it doesn't exist."""
+
+    @abstractmethod
+    async def list_cache_entries(
+        self, limit: int, offset: int, search: str | None
+    ) -> tuple[list[AdminCacheEntryRow], int]:
+        """Cached words ordered by hit count, most-reused first, plus a total count.
+
+        ``search`` filters by case-insensitive substring match on ``term``.
+        """
+
+    @abstractmethod
+    async def list_cache_aliases(
+        self, entry_id: UUID, limit: int, offset: int
+    ) -> tuple[list[AdminCacheAliasRow], int]:
+        """The raw learner inputs that resolved to a cache entry, newest first."""

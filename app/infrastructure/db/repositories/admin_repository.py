@@ -8,11 +8,15 @@ dashboard stays cheap as the user base grows.
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from uuid import UUID
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.dto import (
+    AdminCacheAliasRow,
+    AdminCacheEntryRow,
+    AdminCacheOverview,
     AdminDeckRow,
     AdminUserRow,
     AdminWordRow,
@@ -21,7 +25,9 @@ from app.application.dto import (
 )
 from app.application.ports.admin_repository import AdminRepository
 from app.domain.enums import AuthMethod
+from app.infrastructure.ai.prompts import PROMPT_VERSION
 from app.infrastructure.db import mappers
+from app.infrastructure.db.models.ai_lookup import AILookupAliasModel, AILookupEntryModel
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
@@ -149,3 +155,143 @@ class SqlAlchemyAdminRepository(AdminRepository):
             )
             for word, deck_name, owner_name in rows
         ]
+
+    async def cache_overview(self) -> AdminCacheOverview:
+        now = datetime.now(UTC)
+        total_hits_stmt = select(func.coalesce(func.sum(AILookupEntryModel.hit_count), 0))
+        total_hits = (await self._session.execute(total_hits_stmt)).scalar_one()
+        stale_entry_count = await self._scalar_int(
+            select(func.count())
+            .select_from(AILookupEntryModel)
+            .where(AILookupEntryModel.prompt_version != PROMPT_VERSION)
+        )
+        expired_alias_count = await self._scalar_int(
+            select(func.count())
+            .select_from(AILookupAliasModel)
+            .where(
+                AILookupAliasModel.expires_at.is_not(None),
+                AILookupAliasModel.expires_at <= now,
+            )
+        )
+        return AdminCacheOverview(
+            total_entries=await self._scalar_int(
+                select(func.count()).select_from(AILookupEntryModel)
+            ),
+            total_aliases=await self._scalar_int(
+                select(func.count()).select_from(AILookupAliasModel)
+            ),
+            total_hits=int(total_hits),
+            current_prompt_version=PROMPT_VERSION,
+            stale_entry_count=stale_entry_count,
+            expired_alias_count=expired_alias_count,
+        )
+
+    async def get_cache_entry(self, entry_id: UUID) -> AdminCacheEntryRow | None:
+        alias_counts = (
+            select(AILookupAliasModel.entry_id, func.count().label("n"))
+            .where(AILookupAliasModel.entry_id.is_not(None))
+            .group_by(AILookupAliasModel.entry_id)
+            .subquery()
+        )
+        stmt = (
+            select(AILookupEntryModel, func.coalesce(alias_counts.c.n, 0))
+            .outerjoin(alias_counts, alias_counts.c.entry_id == AILookupEntryModel.id)
+            .where(AILookupEntryModel.id == entry_id)
+        )
+        row = (await self._session.execute(stmt)).first()
+        if row is None:
+            return None
+        entry, alias_count = row
+        return AdminCacheEntryRow(
+            id=entry.id,
+            term=entry.term,
+            native_language=entry.native_language,
+            age_bucket=entry.age_bucket,
+            prompt_version=entry.prompt_version,
+            provider=entry.provider,
+            model=entry.model,
+            hit_count=entry.hit_count,
+            alias_count=int(alias_count),
+            created_at=entry.created_at,
+            updated_at=entry.updated_at,
+            last_accessed_at=entry.last_accessed_at,
+        )
+
+    async def list_cache_entries(
+        self, limit: int, offset: int, search: str | None
+    ) -> tuple[list[AdminCacheEntryRow], int]:
+        alias_counts = (
+            select(AILookupAliasModel.entry_id, func.count().label("n"))
+            .where(AILookupAliasModel.entry_id.is_not(None))
+            .group_by(AILookupAliasModel.entry_id)
+            .subquery()
+        )
+
+        filters = []
+        if search:
+            filters.append(AILookupEntryModel.term.ilike(f"%{search}%"))
+
+        total = await self._scalar_int(
+            select(func.count()).select_from(AILookupEntryModel).where(*filters)
+        )
+
+        stmt = (
+            select(AILookupEntryModel, func.coalesce(alias_counts.c.n, 0))
+            .outerjoin(alias_counts, alias_counts.c.entry_id == AILookupEntryModel.id)
+            .where(*filters)
+            .order_by(AILookupEntryModel.hit_count.desc(), AILookupEntryModel.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        entries = [
+            AdminCacheEntryRow(
+                id=entry.id,
+                term=entry.term,
+                native_language=entry.native_language,
+                age_bucket=entry.age_bucket,
+                prompt_version=entry.prompt_version,
+                provider=entry.provider,
+                model=entry.model,
+                hit_count=entry.hit_count,
+                alias_count=int(alias_count),
+                created_at=entry.created_at,
+                updated_at=entry.updated_at,
+                last_accessed_at=entry.last_accessed_at,
+            )
+            for entry, alias_count in rows
+        ]
+        return entries, total
+
+    async def list_cache_aliases(
+        self, entry_id: UUID, limit: int, offset: int
+    ) -> tuple[list[AdminCacheAliasRow], int]:
+        total = await self._scalar_int(
+            select(func.count())
+            .select_from(AILookupAliasModel)
+            .where(AILookupAliasModel.entry_id == entry_id)
+        )
+        stmt = (
+            select(AILookupAliasModel)
+            .where(AILookupAliasModel.entry_id == entry_id)
+            .order_by(AILookupAliasModel.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        aliases = (await self._session.execute(stmt)).scalars().all()
+        rows = [
+            AdminCacheAliasRow(
+                id=alias.id,
+                normalized_input=alias.normalized_input,
+                native_language=alias.native_language,
+                age_bucket=alias.age_bucket,
+                prompt_version=alias.prompt_version,
+                status=alias.status,
+                notice=alias.notice,
+                resolved_term=alias.resolved_term,
+                expires_at=alias.expires_at,
+                created_at=alias.created_at,
+            )
+            for alias in aliases
+        ]
+        return rows, total

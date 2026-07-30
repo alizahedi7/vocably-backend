@@ -7,7 +7,8 @@ schemas. Domain entities are returned directly where they suffice.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
+from uuid import UUID
 
 from app.domain.entities.deck import Deck
 from app.domain.entities.user import User
@@ -119,3 +120,51 @@ class AdminWordRow:
     word: Word
     deck_name: str
     owner_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class AdminCacheOverview:
+    """Headline KPIs for the admin AI-cache monitoring page."""
+
+    total_entries: int
+    total_aliases: int
+    total_hits: int
+    current_prompt_version: int
+    stale_entry_count: int
+    """Entries keyed to a retired ``PROMPT_VERSION`` — a prompt bump orphaned them."""
+    expired_alias_count: int
+    """``unsupported`` aliases past their TTL, awaiting the (not-yet-built) sweep."""
+
+
+@dataclass(frozen=True, slots=True)
+class AdminCacheEntryRow:
+    """A cached word: its provenance and how often it has been reused."""
+
+    id: UUID
+    term: str
+    native_language: str
+    age_bucket: str
+    prompt_version: int
+    provider: str
+    model: str
+    hit_count: int
+    alias_count: int
+    created_at: datetime
+    updated_at: datetime
+    last_accessed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class AdminCacheAliasRow:
+    """One raw learner input that resolved to a cache entry (or to nothing)."""
+
+    id: UUID
+    normalized_input: str
+    native_language: str
+    age_bucket: str
+    prompt_version: int
+    status: str
+    notice: str | None
+    resolved_term: str
+    expires_at: datetime | None
+    created_at: datetime
