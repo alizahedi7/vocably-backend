@@ -17,6 +17,7 @@ dependencies = [
     "httpx>=0.28",
     "anthropic>=0.69",
     "openai>=1.54",
+    "celery[redis]>=5.4",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,7 @@ dev = [
     "aiosqlite>=0.20",
     "ruff>=0.8",
     "mypy>=1.13",
+    "celery-types>=0.22",
 ]
 
 [build-system]

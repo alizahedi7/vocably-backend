@@ -15,6 +15,20 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    # Durability is not needed: the broker holds in-flight task messages, and a
+    # lost scheduled run is re-emitted by beat on the next tick. Keeping the
+    # default RDB snapshots would only add disk churn.
+    command: redis-server --save "" --appendonly no
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   api:
     build: .
     depends_on:
@@ -43,6 +57,45 @@ services:
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  # Executes background tasks. Safe to scale: `docker compose up --scale worker=4`.
+  worker:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:-vocably}@db:5432/${POSTGRES_DB:-vocably}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    command: celery -A app.tasks worker --loglevel=info -Q default,maintenance,ai
+
+  # Emits scheduled tasks. MUST stay at exactly one replica — beat is a clock,
+  # and a second one makes every scheduled task fire twice.
+  beat:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:-vocably}@db:5432/${POSTGRES_DB:-vocably}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    # The schedule file records when each entry last fired. In /tmp because the
+    # image's working directory is read-only to the non-root user.
+    command: celery -A app.tasks beat --loglevel=info --schedule=/tmp/celerybeat-schedule
 
 volumes:
   pgdata:
