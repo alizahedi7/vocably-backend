@@ -7,8 +7,10 @@ from uuid import UUID
 
 from app.application.dto import BoxCount, MemoryStrength, StudyOverview
 from app.core.exceptions import NotFoundError, PermissionDeniedError
+from app.domain.entities.review_event import ReviewEvent
 from app.domain.entities.word import Word
 from app.domain.enums import LeitnerBox, ReviewGrade
+from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.domain.services import leitner
@@ -20,9 +22,15 @@ LEARNED_BOXES = (LeitnerBox.KNOWN, LeitnerBox.MASTERED)
 
 
 class StudyService:
-    def __init__(self, words: WordRepository, users: UserRepository) -> None:
+    def __init__(
+        self,
+        words: WordRepository,
+        users: UserRepository,
+        reviews: ReviewEventRepository,
+    ) -> None:
         self._words = words
         self._users = users
+        self._reviews = reviews
 
     async def get_overview(self, user_id: UUID) -> StudyOverview:
         now = datetime.now(UTC)
@@ -71,8 +79,16 @@ class StudyService:
             return due
         return await self._words.list_for_user(user_id, deck_id=deck_id, limit=limit)
 
-    async def grade(self, user_id: UUID, word_id: UUID, grade: ReviewGrade) -> Word:
-        """Apply a review grade to a card and advance the user's streak."""
+    async def grade(
+        self,
+        user_id: UUID,
+        word_id: UUID,
+        grade: ReviewGrade,
+        *,
+        latency_ms: int | None = None,
+        session_id: UUID | None = None,
+    ) -> Word:
+        """Apply a review grade to a card, log the review, and advance the streak."""
         word = await self._words.get(word_id)
         if word is None:
             raise NotFoundError("Word not found.")
@@ -81,12 +97,26 @@ class StudyService:
 
         now = datetime.now(UTC)
         outcome = leitner.review(word.box, grade, now)
-        word.box = outcome.box
-        word.due_at = outcome.due_at
-        word.review_count += 1
-        word.last_reviewed_at = now
-        word.updated_at = now
+
+        # Built before apply_review, which overwrites the pre-review box, due
+        # date and last-reviewed time the event needs.
+        event = ReviewEvent.from_review(
+            word,
+            grade,
+            outcome.box,
+            now,
+            latency_ms=latency_ms,
+            session_id=session_id,
+        )
+        word.apply_review(grade, outcome.box, outcome.due_at, now)
         updated = await self._words.update(word)
+
+        # Written in the same transaction as the card update, unlike the AI
+        # lookup cache's best-effort writes. That cache is derived data — a lost
+        # write costs one repeat API call. A lost review is gone for good and
+        # leaves the log disagreeing with review_count, so a failure here must
+        # fail the request and let the client retry.
+        await self._reviews.add(event)
 
         user = await self._users.get(user_id)
         if user is not None:

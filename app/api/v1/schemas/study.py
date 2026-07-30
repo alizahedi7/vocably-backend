@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 from app.api.v1.schemas.word import WordOut
 from app.application.dto import StudyOverview
+from app.domain.entities.review_event import MAX_LATENCY_MS
 from app.domain.enums import LeitnerBox, ReviewGrade
 
 
 class GradeIn(BaseModel):
     grade: ReviewGrade
+    #: How long the learner spent on the card, in milliseconds. Optional and
+    #: purely observational — it is recorded in the review log, never used to
+    #: schedule. Clients that don't send it simply record NULL.
+    latency_ms: int | None = Field(default=None, ge=0, le=MAX_LATENCY_MS)
+    #: Client-generated id shared by every card graded in one sitting, so a
+    #: session can be reconstructed from the log. Optional.
+    session_id: UUID | None = None
 
 
 class BoxCountOut(BaseModel):

@@ -42,6 +42,17 @@ async def grade_word(
     current_user: CurrentUser,
     study: StudyServiceDep,
 ) -> WordOut:
-    """Grade a reviewed card; advances its Leitner box and the study streak."""
-    word = await study.grade(current_user.id, word_id, payload.grade)
+    """Grade a reviewed card; advances its Leitner box and the study streak.
+
+    Also appends an immutable row to the review log. The extra ``latency_ms``
+    and ``session_id`` fields are optional, so clients predating them keep
+    working unchanged.
+    """
+    word = await study.grade(
+        current_user.id,
+        word_id,
+        payload.grade,
+        latency_ms=payload.latency_ms,
+        session_id=payload.session_id,
+    )
     return WordOut.model_validate(word)

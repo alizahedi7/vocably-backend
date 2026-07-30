@@ -38,6 +38,7 @@ from app.core.security import TokenType, decode_token
 from app.domain.entities.user import User
 from app.domain.repositories.deck_repository import DeckRepository
 from app.domain.repositories.otp_repository import OTPChallengeRepository
+from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.infrastructure.ai.caching_ai_service import CachingAIService
@@ -54,6 +55,9 @@ from app.infrastructure.db.repositories.lookup_cache_repository import (
 )
 from app.infrastructure.db.repositories.otp_repository import (
     SqlAlchemyOTPChallengeRepository,
+)
+from app.infrastructure.db.repositories.review_event_repository import (
+    SqlAlchemyReviewEventRepository,
 )
 from app.infrastructure.db.repositories.user_repository import SqlAlchemyUserRepository
 from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
@@ -86,12 +90,17 @@ def get_lookup_cache_repository(session: SessionDep) -> LookupCacheRepository:
     return SqlAlchemyLookupCacheRepository(session)
 
 
+def get_review_event_repository(session: SessionDep) -> ReviewEventRepository:
+    return SqlAlchemyReviewEventRepository(session)
+
+
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 DeckRepoDep = Annotated[DeckRepository, Depends(get_deck_repository)]
 WordRepoDep = Annotated[WordRepository, Depends(get_word_repository)]
 OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
 AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
 LookupCacheRepoDep = Annotated[LookupCacheRepository, Depends(get_lookup_cache_repository)]
+ReviewEventRepoDep = Annotated[ReviewEventRepository, Depends(get_review_event_repository)]
 
 
 # ── Outbound adapters (selected by config) ───────────────────
@@ -232,8 +241,10 @@ def get_word_service(words: WordRepoDep, decks: DeckRepoDep) -> WordService:
     return WordService(words, decks)
 
 
-def get_study_service(words: WordRepoDep, users: UserRepoDep) -> StudyService:
-    return StudyService(words, users)
+def get_study_service(
+    words: WordRepoDep, users: UserRepoDep, reviews: ReviewEventRepoDep
+) -> StudyService:
+    return StudyService(words, users, reviews)
 
 
 def get_ai_studio_service(
