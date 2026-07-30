@@ -119,6 +119,30 @@ class Settings(BaseSettings):
     #: and long-range analytics should read rolled-up aggregates rather than
     #: raw events. ``0`` disables pruning entirely (keep everything).
     review_history_retention_months: int = 24
+    #: Whether the scheduled maintenance run also *drops* partitions past the
+    #: retention window. Off by default: enabling it means a background job
+    #: deletes learners' history on its own, irreversibly. Turn it on once the
+    #: retention window above is a deliberate policy rather than a default —
+    #: while it is off, expired partitions are only reported, never removed.
+    review_history_auto_prune: bool = False
+    #: UTC hour of the daily partition-maintenance run. Creating partitions is
+    #: cheap and lock-free, so the exact hour matters little; a quiet one is
+    #: still preferable because pruning takes a brief exclusive lock.
+    review_history_maintenance_hour: int = Field(default=3, ge=0, le=23)
+
+    # ── Background tasks (Celery) ─────────────────────────────
+    #: Broker URL. Redis by default; any broker Celery supports will do.
+    celery_broker_url: str = "redis://localhost:6379/0"
+    #: Where task results are stored. Empty (the default) disables result
+    #: storage entirely — scheduled maintenance has no caller waiting on a
+    #: return value, and keeping results would grow Redis for nothing. Set it
+    #: when a task's result is actually read back.
+    celery_result_backend: str = ""
+    #: Hard kill / graceful-stop limits for a single task, in seconds. A task
+    #: that outruns these is wedged, and holding a worker slot forever is worse
+    #: than failing loudly.
+    celery_task_time_limit_seconds: int = 600
+    celery_task_soft_time_limit_seconds: int = 540
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod
@@ -161,6 +185,16 @@ class Settings(BaseSettings):
         if not self.otp_fixed_code.isdigit() or len(self.otp_fixed_code) != self.otp_length:
             raise ValueError(
                 f"OTP_FIXED_CODE must be exactly {self.otp_length} digits (OTP_LENGTH)."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_celery_time_limits(self) -> Settings:
+        if self.celery_task_soft_time_limit_seconds >= self.celery_task_time_limit_seconds:
+            raise ValueError(
+                "CELERY_TASK_SOFT_TIME_LIMIT_SECONDS must be below "
+                "CELERY_TASK_TIME_LIMIT_SECONDS, or the task is killed outright "
+                "before it ever gets the chance to shut down cleanly."
             )
         return self
 

@@ -208,6 +208,53 @@ fact, which is why the log exists before the features that will consume it.
   `ON DELETE CASCADE` from both `users` and `words` means erasure and card
   deletion really erase.
 
+## Background tasks (Celery)
+
+A second entry point into the same codebase, alongside the FastAPI app. Tasks are
+adapters exactly as routers are: unpack a message, call the application layer,
+translate the outcome. Domain and application code stays unaware Celery exists.
+
+- **Two processes.** `make worker` executes tasks and scales freely;
+  `make beat` emits scheduled ones and **must never exceed one replica** — beat
+  is a clock, and two of them make every scheduled task fire twice.
+- **Redis is the broker**, `redis://redis:6379/0` in compose. No result backend
+  by default (`CELERY_RESULT_BACKEND=""`): nothing reads these tasks' return
+  values, and storing them would grow Redis forever. Set it when something does.
+- **Register new task modules in `TASK_MODULES`**
+  ([celery_app.py](app/tasks/celery_app.py)). A task outside that list is never
+  imported, and beat scheduling it fails with "unregistered task" only when it
+  first fires.
+- **Queues split by what would be blocked**, not by feature: `maintenance` is
+  small and latency-sensitive, `ai` is slow, external and bursty. Sharing one
+  queue is how a backlog of AI work silently stops partition maintenance.
+  Routing is by task-name prefix (`vocably.ai.*` → `ai`), so **name AI tasks
+  `vocably.ai.<something>`** or they land on the default queue.
+- **`run_async` is mandatory for async work in a task**
+  ([runtime.py](app/tasks/runtime.py)). Celery workers are synchronous; this
+  codebase is not. `asyncio.run` builds a new event loop per call while the
+  SQLAlchemy engine is process-global and its pooled asyncpg connections belong
+  to the loop that opened them — so the helper disposes the engine after every
+  run. Calling `asyncio.run` directly instead makes the *second* task in a
+  worker pick up a connection tied to a dead loop, which surfaces as random,
+  very hard to trace database flakiness.
+- **`task_acks_late` is on**, so a worker killed mid-task (deploy, OOM, spot
+  reclaim) has its work redelivered rather than dropped. The price is that
+  **every task must be safe to run twice.**
+- Scheduled entries carry `expires`, so a worker returning from a long outage
+  drops the missed runs instead of replaying them all at once.
+
+### Scheduled work
+
+`vocably.maintenance.review_partitions` runs daily at
+`REVIEW_HISTORY_MAINTENANCE_HOUR` (UTC, default 03:00) and calls the same
+`maintain()` as `make partitions` — one implementation, so the cron job and an
+operator at a terminal cannot drift apart.
+
+**It does not prune by default.** `REVIEW_HISTORY_AUTO_PRUNE=false` means
+expired partitions are reported in the logs and never dropped. Turning it on
+makes a background job delete learners' history irreversibly, which should be a
+deliberate retention policy, not a side effect of installing a scheduler.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

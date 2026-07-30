@@ -49,3 +49,6 @@ graphify-out/
 benchmarks/
 benchmark_report*.json
 benchmark_report*.md
+
+# Celery beat writes its last-run state here at runtime.
+celerybeat-schedule*
