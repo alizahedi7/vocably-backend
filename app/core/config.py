@@ -108,6 +108,18 @@ class Settings(BaseSettings):
     #: table fill with junk that will never be asked for again. 7 days.
     ai_cache_unsupported_ttl_seconds: int = 7 * 24 * 3600
 
+    # ── Review history ────────────────────────────────────────
+    #: How many months of monthly partitions to keep ahead of today. The
+    #: maintenance job (``make partitions``) keeps this window rolling; the
+    #: margin is what stops a lapsed job from ever reaching the DEFAULT
+    #: partition, so it is measured in months rather than days on purpose.
+    review_history_partition_lookahead_months: int = 12
+    #: How long raw review events are kept before their partition is dropped.
+    #: Two years is well past what fitting a per-learner memory model needs,
+    #: and long-range analytics should read rolled-up aggregates rather than
+    #: raw events. ``0`` disables pruning entirely (keep everything).
+    review_history_retention_months: int = 24
+
     @field_validator("backend_cors_origins", mode="before")
     @classmethod
     def _split_cors(cls, value: object) -> object:

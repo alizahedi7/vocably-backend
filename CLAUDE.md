@@ -159,6 +159,55 @@ never cached (their word set is one learner's Leitner boxes).
 - `AI_CACHE_ENABLED=false` bypasses it for debugging a provider in isolation. Leaving
   it off in production means paying full price for every repeat of every word.
 
+## Review history
+
+Every press of Again/Hard/Good/Easy appends one immutable row to `word_reviews`.
+The card in `words` holds only its *current* state, so without this log a word
+reviewed ten times flawlessly and one failed ten times are indistinguishable —
+both just read `review_count == 10`. None of it is reconstructible after the
+fact, which is why the log exists before the features that will consume it.
+
+- **Hybrid by design.** Immutable events in `word_reviews`; summary counters
+  (`lapse_count`, `consecutive_correct`, `first_reviewed_at`, `mastered_at`,
+  `last_grade`) updated in place on `words` by
+  [`Word.apply_review`](app/domain/entities/word.py). The counters are what the
+  product reads — "your hardest words" is `lapse_count / review_count`,
+  time-to-mastery is a column subtraction — so **no user-facing request should
+  ever aggregate over `word_reviews`**. They ride along on the UPDATE the grade
+  already issues, so they cost no extra write. Longer-range analytics belong on
+  a rolled-up daily aggregate, not on scans of the raw log.
+- **Ordering matters in `grade`.** [`ReviewEvent.from_review`](app/domain/entities/review_event.py)
+  must be called *before* `apply_review`; it captures the pre-review box, due
+  date and elapsed time that `apply_review` overwrites. The factory exists so
+  that requirement lives in one place.
+- **Written in the same transaction as the card update** — deliberately unlike
+  the lookup cache above. That cache is derived data, so a lost write costs one
+  repeat API call; a lost review is gone for good and leaves the log disagreeing
+  with `review_count`. A failure here must fail the request.
+- **`elapsed_seconds` + `grade` are the point.** They are what a fitted
+  scheduler (FSRS and relatives) trains on, and the only reason it will ever be
+  possible to replace the fixed ladder in
+  [leitner.py](app/domain/services/leitner.py) with a per-learner model.
+  Neither is recoverable later, at any price.
+- **`ReviewGrade.ordinal` is a frozen wire format.** Grades are stored as
+  `smallint`. Those numbers sit in rows that outlive any deploy — never renumber
+  them; a new grade takes the next free ordinal.
+- **Partitioned by month on `reviewed_at`** (Postgres only; the ORM model can't
+  express it and doesn't try, so `create_all` in tests yields a plain table —
+  the partitioning contract is covered by
+  [test_review_partitioning.py](tests/api/test_review_partitioning.py), which
+  runs the real migrations). Partitions do not appear on their own: **`make
+  partitions` must run on a schedule.** `make partitions prune=1` drops months
+  past `REVIEW_HISTORY_RETENTION_MONTHS` and is destructive, so it is never
+  implied by a plain run. `word_reviews_default` is a safety net that must stay
+  empty — the script exits non-zero if it isn't, because creating a partition
+  overlapping rows stuck there locks and rescans it.
+- **This is user data**, unlike the lookup cache. It must never flow into the
+  shared `ai_lookup_*` tables, and AI features should be fed *summaries*
+  computed server-side, never a raw event stream handed to a provider.
+  `ON DELETE CASCADE` from both `users` and `words` means erasure and card
+  deletion really erase.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
