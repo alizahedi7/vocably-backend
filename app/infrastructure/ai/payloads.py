@@ -46,3 +46,24 @@ class LookupPayload(BaseModel):
 class StoryPayload(BaseModel):
     text: str
     words_used: list[str] = Field(default_factory=list)
+
+
+class TranslationPayload(BaseModel):
+    """One localised sense from the translate-only path.
+
+    Carries no English: the definition, example and part of speech are joined
+    back from the dictionary entry by ``index``. That is the point of the cheap
+    path — what the model never writes, it can never corrupt.
+    """
+
+    #: Position of the sense in the numbered list the model was shown. Required:
+    #: without a valid index the translation cannot be rejoined to anything, and
+    #: guessing an order would silently mis-pair a headline with a definition —
+    #: the worst failure this card can have.
+    index: int
+    native_meaning: str = ""
+    context: str = ""
+
+
+class TranslationsPayload(BaseModel):
+    translations: list[TranslationPayload]

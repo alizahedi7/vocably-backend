@@ -32,15 +32,27 @@ from app.application.ports.ai_service import (
     LearnerContext,
     LookupResult,
     LookupStatus,
+    MeaningSuggestion,
 )
 from app.core.exceptions import ExternalServiceError
 from app.core.logging import get_logger
-from app.infrastructure.ai.payloads import LookupPayload, StoryPayload
+from app.infrastructure.ai.payloads import (
+    LookupPayload,
+    StoryPayload,
+    TranslationsPayload,
+)
 from app.infrastructure.ai.prompts import (
     LOOKUP_JSON_SCHEMA,
     LOOKUP_SYSTEM_PROMPT,
     STORY_JSON_SCHEMA,
     STORY_SYSTEM_PROMPT,
+)
+from app.infrastructure.ai.translate_prompts import (
+    TRANSLATE_JSON_SCHEMA,
+    TRANSLATE_ONLY_JSON_SCHEMA,
+    translate_only_system_prompt,
+    translate_system_prompt,
+    translate_user_prompt,
 )
 
 logger = get_logger("vocably.ai.anthropic")
@@ -132,6 +144,69 @@ class AnthropicAIService(AIService):
             status=status,
             notice=(payload.notice or "").strip() or None,
         )
+
+    async def translate_only(
+        self,
+        term: str,
+        entry_text: str,
+        learner: LearnerContext,
+        max_cards: int,
+    ) -> list[tuple[int, str, str]]:
+        """Localise supplied senses, returning ``(index, native_meaning, context)``.
+
+        The cheap half of the grounded path — English stays with the dictionary
+        and is rejoined by index, so the model cannot corrupt what it never
+        writes.
+        """
+        payload = await self._complete(
+            system=translate_only_system_prompt(
+                native_language=learner.native_language,
+                max_cards=max_cards,
+            ),
+            user=translate_user_prompt(
+                term,
+                entry_text,
+                native_language=learner.native_language,
+                max_cards=max_cards,
+                learner_block=self._learner_block(learner),
+            ),
+            schema=TRANSLATE_ONLY_JSON_SCHEMA,
+            model_type=TranslationsPayload,
+        )
+        return [
+            (t.index, t.native_meaning.strip(), t.context.strip())
+            for t in payload.translations[:max_cards]
+        ]
+
+    async def translate_senses(
+        self,
+        term: str,
+        entry_text: str,
+        learner: LearnerContext,
+        max_cards: int,
+    ) -> list[MeaningSuggestion]:
+        """Select and translate senses from a dictionary entry.
+
+        Satisfies :class:`~app.infrastructure.ai.grounded_ai_service.SenseTranslator`
+        structurally. Reuses ``_complete`` so the grounded path inherits the same
+        schema enforcement, validation and single retry as the generative one.
+        """
+        payload = await self._complete(
+            system=translate_system_prompt(
+                native_language=learner.native_language,
+                max_cards=max_cards,
+            ),
+            user=translate_user_prompt(
+                term,
+                entry_text,
+                native_language=learner.native_language,
+                max_cards=max_cards,
+                learner_block=self._learner_block(learner),
+            ),
+            schema=TRANSLATE_JSON_SCHEMA,
+            model_type=LookupPayload,
+        )
+        return [s.to_dto() for s in payload.senses[:max_cards]]
 
     async def generate_story(
         self,

@@ -152,6 +152,74 @@ class StubAIService(AIService):
             status=LookupStatus.OK,
         )
 
+    async def translate_only(
+        self,
+        term: str,
+        entry_text: str,
+        learner: LearnerContext,
+        max_cards: int,
+    ) -> list[tuple[int, str, str]]:
+        """Echo back one translation per numbered sense, offline.
+
+        Reads the indices out of the rendered entry rather than inventing them,
+        so a test can prove the join really is index-driven.
+        """
+        await self._delay()
+        out: list[tuple[int, str, str]] = []
+        for line in entry_text.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("["):
+                continue
+            head, _, rest = stripped[1:].partition("]")
+            try:
+                index = int(head)
+            except ValueError:
+                continue
+            out.append((index, f"{rest.strip()[:40]} in {learner.native_language}", "Dictionary"))
+            if len(out) >= max_cards:
+                break
+        return out
+
+    async def translate_senses(
+        self,
+        term: str,
+        entry_text: str,
+        learner: LearnerContext,
+        max_cards: int,
+    ) -> list[MeaningSuggestion]:
+        """Stand in for the grounded path, offline and deterministically.
+
+        Echoes the supplied entry rather than inventing senses, which is exactly
+        what the real translator is supposed to do — so a test can tell whether
+        the dictionary text actually reached the model, not merely that some
+        card came back.
+        """
+        await self._delay()
+        suggestions: list[MeaningSuggestion] = []
+        for line in entry_text.splitlines():
+            text = line.strip().lstrip("- ").strip()
+            if not text:
+                continue
+            part_of_speech = "noun"
+            if text.startswith("("):
+                head, _, rest = text[1:].partition(")")
+                part_of_speech = head.strip() or "noun"
+                text = rest.strip()
+            definition, _, example_part = text.partition("  [example:")
+            example = example_part.strip().rstrip("]").strip('" ') if example_part else ""
+            suggestions.append(
+                MeaningSuggestion(
+                    native_meaning=f"{definition.strip()} in {learner.native_language}",
+                    context="Dictionary",
+                    part_of_speech=part_of_speech,
+                    definition=definition.strip(),
+                    example=example or f"Here is “{term}” used naturally in a sentence.",
+                )
+            )
+            if len(suggestions) >= max_cards:
+                break
+        return suggestions
+
     async def generate_story(
         self,
         words: list[str],
