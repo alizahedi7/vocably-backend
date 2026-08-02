@@ -44,15 +44,22 @@ class CachingAIService(AIService):
         unsupported_ttl_seconds: int,
         provider: str = "",
         model: str = "",
+        prompt_version: int = PROMPT_VERSION,
     ) -> None:
         self._inner = inner
         self._cache = cache
         self._unsupported_ttl_seconds = unsupported_ttl_seconds
         self._provider = provider
         self._model = model
+        # Overridable because the pipeline below is not always the generative
+        # one: with dictionary grounding on, cards are written by a different
+        # prompt and must not collide with cards written without it. Callers
+        # pass a version that identifies the whole pipeline, not just this
+        # module's prompt — see ``deps._effective_prompt_version``.
+        self._prompt_version = prompt_version
 
     async def look_up_meanings(self, term: str, learner: LearnerContext) -> LookupResult:
-        key = build_lookup_cache_key(term, learner, PROMPT_VERSION)
+        key = build_lookup_cache_key(term, learner, self._prompt_version)
 
         try:
             if hit := await self._cache.get(key):
