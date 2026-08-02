@@ -34,6 +34,7 @@ authenticated user's profile. Do not send them.
   "term": "run",
   "status": "ok",
   "notice": null,
+  "phonetic": "/ɹʌn/",
   "suggestions": [
     {
       "native_meaning": "دویدن",
@@ -48,6 +49,20 @@ authenticated user's profile. Do not send them.
 
 Between 0 and 4 suggestions, ordered most common sense first. A monosemous word
 returns exactly one — the deck is never padded to four.
+
+### `phonetic` — optional, and frequently absent
+
+IPA for `term`, one value for the whole lookup rather than per sense (the senses
+of a headword share a pronunciation). **Treat it as optional and hide the element
+when it is `""`.** It is populated only when the word was found in the
+dictionary, which is about two thirds of real learner input — typos, most idioms
+and non-English terms come back without one.
+
+It is deliberately left empty rather than filled in by the language model.
+Phonetic transcription is exactly the kind of detail a model reproduces
+confidently and wrongly, and a wrong IPA teaches a learner to mispronounce the
+word — worse than showing nothing. Adding it is backwards-compatible: clients
+that ignore the field are unaffected.
 
 > **Breaking change — clients built against the previous shape must update.**
 > A suggestion now carries **exactly these five fields**. Removed: `meaning`

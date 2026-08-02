@@ -16,6 +16,7 @@ the model writes into it is a prompt bump.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Final
 
 from pydantic import BaseModel, ValidationError
@@ -24,7 +25,7 @@ from app.application.ports.ai_service import MeaningSuggestion
 
 #: Bump when the stored shape changes incompatibly. Rows at another version are
 #: read as misses and swept later, so a bump never needs a data migration.
-SCHEMA_VERSION: Final = 2
+SCHEMA_VERSION: Final = 3
 
 
 class _StoredSense(BaseModel):
@@ -47,12 +48,25 @@ class _StoredSense(BaseModel):
 class _StoredPayload(BaseModel):
     v: int
     senses: list[_StoredSense]
+    #: Stored beside the senses rather than on the alias row: it belongs to the
+    #: resolved headword, which is what an entry is keyed by, and every alias
+    #: pointing at that entry shares it.
+    phonetic: str = ""
 
 
-def encode(suggestions: list[MeaningSuggestion]) -> dict[str, Any]:
-    """Serialise senses for storage."""
+@dataclass(frozen=True, slots=True)
+class DecodedEntry:
+    """What a readable cache row yields."""
+
+    suggestions: list[MeaningSuggestion]
+    phonetic: str = ""
+
+
+def encode(suggestions: list[MeaningSuggestion], phonetic: str = "") -> dict[str, Any]:
+    """Serialise an entry for storage."""
     return {
         "v": SCHEMA_VERSION,
+        "phonetic": phonetic,
         "senses": [
             {
                 "native_meaning": s.native_meaning,
@@ -66,7 +80,7 @@ def encode(suggestions: list[MeaningSuggestion]) -> dict[str, Any]:
     }
 
 
-def decode(raw: object) -> list[MeaningSuggestion] | None:
+def decode(raw: object) -> DecodedEntry | None:
     """Deserialise a stored payload, or ``None`` if it is not usable as written."""
     try:
         payload = _StoredPayload.model_validate(raw)
@@ -74,4 +88,7 @@ def decode(raw: object) -> list[MeaningSuggestion] | None:
         return None
     if payload.v != SCHEMA_VERSION:
         return None
-    return [s.to_dto() for s in payload.senses]
+    return DecodedEntry(
+        suggestions=[s.to_dto() for s in payload.senses],
+        phonetic=payload.phonetic,
+    )

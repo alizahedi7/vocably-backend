@@ -61,6 +61,11 @@ class LookupOut(BaseModel):
     status: LookupStatus = LookupStatus.OK
     #: Short user-facing note, present whenever ``status`` is not ``ok``.
     notice: str | None = None
+    #: IPA for ``term``, e.g. ``/ʌndəˈmaɪn/``. **Often empty — render it as
+    #: optional.** It is supplied by the dictionary when the term is covered and
+    #: is deliberately left blank rather than guessed by a model, because a
+    #: confidently wrong transcription teaches a mispronunciation.
+    phonetic: str = ""
 
     @classmethod
     def from_dto(cls, dto: LookupResult) -> LookupOut:
@@ -69,6 +74,7 @@ class LookupOut(BaseModel):
             suggestions=[MeaningSuggestionOut.from_dto(s) for s in dto.suggestions],
             status=dto.status,
             notice=dto.notice,
+            phonetic=dto.phonetic,
         )
 
 

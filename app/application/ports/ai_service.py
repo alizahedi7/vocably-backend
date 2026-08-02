@@ -87,6 +87,17 @@ class LookupResult:
     status: LookupStatus = LookupStatus.OK
     #: Short user-facing explanation, set whenever ``status`` is not ``OK``.
     notice: str | None = None
+    #: IPA transcription of ``term``, e.g. ``/ʌndəˈmaɪn/``. Empty when unknown.
+    #:
+    #: One value per lookup, not per sense: the senses of a headword share a
+    #: pronunciation. Populated from the dictionary on the grounded path, where
+    #: it is authoritative and free. **A model is never asked to invent one** —
+    #: see ``docs/ai-card-magic-contract.md``. Phonetic transcription is exactly
+    #: the kind of detail a language model reproduces confidently and wrongly,
+    #: and a wrong IPA teaches a learner to mispronounce a word, which is worse
+    #: than showing no pronunciation at all. Clients must render this as
+    #: optional.
+    phonetic: str = ""
 
 
 @dataclass(frozen=True, slots=True)

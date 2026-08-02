@@ -65,8 +65,8 @@ class SqlAlchemyLookupCacheRepository(LookupCacheRepository):
 
         if entry is None:
             return None
-        suggestions = lookup_cache_payload.decode(entry.payload)
-        if not suggestions:
+        decoded = lookup_cache_payload.decode(entry.payload)
+        if decoded is None or not decoded.suggestions:
             # Unreadable at this schema version, or an entry that somehow holds
             # no senses. Either way the learner must not see an empty deck.
             return None
@@ -75,9 +75,10 @@ class SqlAlchemyLookupCacheRepository(LookupCacheRepository):
 
         return LookupResult(
             term=alias.resolved_term,
-            suggestions=suggestions,
+            suggestions=decoded.suggestions,
             status=status,
             notice=alias.notice,
+            phonetic=decoded.phonetic,
         )
 
     async def _record_hit(self, entry_id: UUID) -> None:
@@ -147,7 +148,7 @@ class SqlAlchemyLookupCacheRepository(LookupCacheRepository):
             native_language=entry_key.native_language[:64],
             age_bucket=entry_key.age_bucket.value,
             prompt_version=entry_key.prompt_version,
-            payload=lookup_cache_payload.encode(result.suggestions),
+            payload=lookup_cache_payload.encode(result.suggestions, result.phonetic),
             provider=provider[:32],
             model=model[:128],
         )
