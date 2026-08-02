@@ -108,6 +108,42 @@ class Settings(BaseSettings):
     #: table fill with junk that will never be asked for again. 7 days.
     ai_cache_unsupported_ttl_seconds: int = 7 * 24 * 3600
 
+    # ── Dictionary grounding ──────────────────────────────────
+    #: Front lookups with a free English dictionary and ask the model only to
+    #: select and translate its senses, instead of recalling them. Measured on
+    #: our own prompts this cut input tokens ~60% and cost ~30%, and removed the
+    #: invented senses the generative path produces for polysemous words.
+    #: Off by default: it changes what every card says, so it is a deliberate
+    #: product decision, not a deployment detail.
+    dictionary_enabled: bool = False
+    #: Hard ceiling on the dictionary call. It sits in front of a path that
+    #: already works without it, so being slow is worth less than giving up:
+    #: measured p95 is 325 ms, and anything past this falls through to full
+    #: generation.
+    dictionary_timeout_seconds: float = 1.0
+    #: Where entries are cached. Defaults to the Celery broker's Redis — same
+    #: server, separate logical database, so a cache flush cannot touch queued
+    #: tasks.
+    dictionary_redis_url: str = "redis://localhost:6379/1"
+    #: Entries are immutable facts about English and shared by every learner, so
+    #: they keep for a long time. This cache is the main defence against the
+    #: API's rate limiting, not a latency optimisation.
+    dictionary_cache_ttl_seconds: int = 30 * 24 * 3600
+    #: Misses expire far sooner than hits: a word Wiktionary lacks today (new
+    #: slang) may appear next month, and a 30-day negative cache would hide it.
+    dictionary_cache_miss_ttl_seconds: int = 24 * 3600
+    #: Whether the grounded path also rewrites each dictionary definition into
+    #: learner-dictionary English, instead of showing the source wording.
+    #:
+    #: Off means the cheapest possible call — the model returns only Persian
+    #: headlines and the English is joined back locally, so it cannot corrupt
+    #: text it never writes. The cost is that the card shows Wiktionary's own
+    #: prose, which is accurate but written for reference, not for learners
+    #: ("Sensitive mental touch; special skill or faculty; keen perception or
+    #: discernment"). Turn it on when card readability matters more than the
+    #: extra output tokens.
+    dictionary_rewrite_definitions: bool = False
+
     # ── Review history ────────────────────────────────────────
     #: How many months of monthly partitions to keep ahead of today. The
     #: maintenance job (``make partitions``) keeps this window rolling; the

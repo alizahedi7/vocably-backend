@@ -7,7 +7,7 @@ declares. Everything above (domain/application) stays ignorant of these choices.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import Depends, Request
@@ -16,11 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.admin_repository import AdminRepository
 from app.application.ports.ai_service import AIService
+from app.application.ports.dictionary_service import DictionaryService
 from app.application.ports.google_verifier import GoogleVerifier
 from app.application.ports.lookup_cache import LookupCacheRepository
 from app.application.ports.otp_sender import OTPSender
 from app.application.services.admin_service import AdminService
-from app.application.services.ai_studio_service import AIStudioService
+from app.application.services.ai_studio_service import MAX_LOOKUP_SUGGESTIONS, AIStudioService
 from app.application.services.auth_service import AuthService
 from app.application.services.deck_service import DeckService
 from app.application.services.study_service import StudyService
@@ -42,7 +43,10 @@ from app.domain.repositories.review_event_repository import ReviewEventRepositor
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.infrastructure.ai.caching_ai_service import CachingAIService
+from app.infrastructure.ai.grounded_ai_service import GroundedAIService, SenseTranslator
+from app.infrastructure.ai.prompts import PROMPT_VERSION
 from app.infrastructure.ai.stub_ai_service import StubAIService
+from app.infrastructure.ai.translate_prompts import TRANSLATE_PROMPT_VERSION
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
 from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
@@ -105,7 +109,24 @@ ReviewEventRepoDep = Annotated[ReviewEventRepository, Depends(get_review_event_r
 
 # ── Outbound adapters (selected by config) ───────────────────
 def get_ai_provider() -> AIService:
-    """The raw provider adapter, before any cache is layered on."""
+    """The lookup pipeline below the cache: provider, grounded when enabled."""
+    provider = _raw_ai_provider()
+    if not settings.dictionary_enabled:
+        return provider
+    return GroundedAIService(
+        provider,
+        _dictionary_service(),
+        # The provider doubles as the translator: it satisfies SenseTranslator
+        # structurally, and reusing it keeps one HTTP client and one set of
+        # response guardrails for both paths.
+        translator=cast("SenseTranslator", provider),
+        max_cards=MAX_LOOKUP_SUGGESTIONS,
+        rewrite_definitions=settings.dictionary_rewrite_definitions,
+    )
+
+
+def _raw_ai_provider() -> AIService:
+    """The provider adapter itself, before grounding or caching."""
     if settings.ai_provider == "anthropic":
         if not settings.anthropic_api_key:
             raise RuntimeError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
@@ -115,6 +136,51 @@ def get_ai_provider() -> AIService:
             raise RuntimeError("AI_PROVIDER=avalai requires AVALAI_API_KEY and AVALAI_MODEL.")
         return _avalai_ai_service()
     return StubAIService()
+
+
+@lru_cache
+def _dictionary_service() -> DictionaryService:
+    """The dictionary adapter and its Redis cache, built once per process.
+
+    Memoized for the same reason the provider adapters are: both the HTTP
+    connection pool and the Redis pool should outlive a single request. Redis is
+    created lazily and never awaited here, so an unreachable Redis costs nothing
+    at startup — every cache call is best-effort and a dead one degrades to
+    calling the dictionary directly.
+    """
+    import httpx
+    from redis.asyncio import Redis
+
+    from app.infrastructure.dictionary.free_dictionary_service import (
+        DictionaryCache,
+        FreeDictionaryService,
+    )
+
+    return FreeDictionaryService(
+        httpx.AsyncClient(),
+        DictionaryCache(
+            Redis.from_url(settings.dictionary_redis_url, decode_responses=True),
+            hit_ttl_seconds=settings.dictionary_cache_ttl_seconds,
+            miss_ttl_seconds=settings.dictionary_cache_miss_ttl_seconds,
+        ),
+        timeout_seconds=settings.dictionary_timeout_seconds,
+    )
+
+
+def _effective_prompt_version() -> int:
+    """The cache-key version for the whole lookup pipeline, not one prompt.
+
+    Grounded and generated cards read differently, so they must never share a
+    key — otherwise flipping ``DICTIONARY_ENABLED`` would serve a mix of the two
+    and make a rollback invisible. Encoding both versions in one integer keeps
+    ``LookupCacheKey`` unchanged and lets either prompt be bumped independently.
+    """
+    if not settings.dictionary_enabled:
+        return PROMPT_VERSION
+    # The two grounded modes write visibly different card fronts — one shows the
+    # dictionary's wording, the other a rewrite — so they get distinct keys too.
+    mode = 2 if settings.dictionary_rewrite_definitions else 1
+    return (PROMPT_VERSION * 1000 + TRANSLATE_PROMPT_VERSION) * 10 + mode
 
 
 def _configured_model() -> str:
@@ -211,6 +277,7 @@ def get_ai_service(provider: AIProviderDep, cache: LookupCacheRepoDep) -> AIServ
         unsupported_ttl_seconds=settings.ai_cache_unsupported_ttl_seconds,
         provider=settings.ai_provider,
         model=_configured_model(),
+        prompt_version=_effective_prompt_version(),
     )
 
 
