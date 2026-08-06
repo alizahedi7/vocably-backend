@@ -43,5 +43,13 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _handle_app_error(_request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=_status_for(exc),
-            content={"error": {"code": exc.code, "message": exc.message}},
+            # ``detail`` duplicates ``error.message`` because the two clients read
+            # different keys: vocably-admin reads ``error.code``, while the Flutter
+            # client's ApiClient._extractDetail reads ``detail`` and falls back to
+            # "Request failed (409)" without it. 4xx messages are user-visible copy
+            # on that client, so the key it actually parses has to be there.
+            content={
+                "error": {"code": exc.code, "message": exc.message},
+                "detail": exc.message,
+            },
         )
