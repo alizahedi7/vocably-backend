@@ -49,7 +49,7 @@ async def get_word(
     current_user: CurrentUser,
     words: WordServiceDep,
 ) -> WordOut:
-    word = await words.get_owned(word_id, current_user.id)
+    word = await words.get_readable(word_id, current_user.id)
     return WordOut.model_validate(word)
 
 

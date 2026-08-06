@@ -39,7 +39,7 @@ async def get_deck(
     current_user: CurrentUser,
     decks: DeckServiceDep,
 ) -> DeckOut:
-    deck = await decks.get_owned(deck_id, current_user.id)
+    deck = await decks.get_readable(deck_id, current_user.id)
     return DeckOut.model_validate(deck)
 
 

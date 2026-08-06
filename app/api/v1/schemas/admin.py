@@ -139,7 +139,7 @@ class AdminWordOut(_CamelModel):
             meaning=w.meaning,
             category_name=dto.deck_name,
             owner_name=dto.owner_name,
-            box=int(w.box),
+            box=dto.box,
             created_at=w.created_at,
         )
 

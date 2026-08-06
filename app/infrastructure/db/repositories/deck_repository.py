@@ -11,6 +11,7 @@ from app.domain.entities.deck import Deck
 from app.domain.repositories.deck_repository import DeckRepository
 from app.infrastructure.db import mappers
 from app.infrastructure.db.models.deck import DeckModel
+from app.infrastructure.db.models.deck_member import DeckMemberModel
 
 
 class SqlAlchemyDeckRepository(DeckRepository):
@@ -22,9 +23,13 @@ class SqlAlchemyDeckRepository(DeckRepository):
         return mappers.deck_to_entity(model) if model else None
 
     async def list_for_user(self, user_id: UUID) -> list[Deck]:
+        # Membership, not decks.user_id: "my decks" now includes decks shared
+        # with me, and the owner is a member like anyone else. decks.user_id is
+        # creator attribution and is never an access check.
         stmt = (
             select(DeckModel)
-            .where(DeckModel.user_id == user_id)
+            .join(DeckMemberModel, DeckMemberModel.deck_id == DeckModel.id)
+            .where(DeckMemberModel.user_id == user_id)
             .order_by(DeckModel.created_at.asc())
         )
         models = (await self._session.execute(stmt)).scalars().all()

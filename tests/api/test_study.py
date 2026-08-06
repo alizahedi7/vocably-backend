@@ -131,8 +131,8 @@ async def test_cannot_grade_another_users_word(
     response = await client.post(
         f"/api/v1/study/words/{word_id}/grade", headers=bearer(other.id), json={"grade": "good"}
     )
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "permission_denied"
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 async def test_first_grade_of_the_day_advances_streak_once(

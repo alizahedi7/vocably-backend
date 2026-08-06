@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import UTC, datetime
 from uuid import UUID
 
 from app.application.dto import BoxCount, MemoryStrength, StudyOverview
-from app.core.exceptions import NotFoundError, PermissionDeniedError
+from app.core.exceptions import NotFoundError
 from app.domain.entities.review_event import ReviewEvent
-from app.domain.entities.word import Word
+from app.domain.entities.studied_word import StudiedWord
 from app.domain.enums import LeitnerBox, ReviewGrade
 from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
-from app.domain.repositories.word_repository import WordRepository
+from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.services import leitner
 
 #: Rough estimate used for the "~N min" hint on the home screen.
@@ -24,29 +25,43 @@ LEARNED_BOXES = (LeitnerBox.KNOWN, LeitnerBox.MASTERED)
 class StudyService:
     def __init__(
         self,
-        words: WordRepository,
+        progress: WordProgressRepository,
         users: UserRepository,
         reviews: ReviewEventRepository,
     ) -> None:
-        self._words = words
+        self._progress = progress
         self._users = users
         self._reviews = reviews
 
     async def get_overview(self, user_id: UUID) -> StudyOverview:
-        now = datetime.now(UTC)
-        distribution = await self._words.box_distribution(user_id)
-        total = sum(distribution.values())
-        learned = sum(distribution.get(box, 0) for box in LEARNED_BOXES)
+        """Every home-screen number, from one grouped query.
 
-        due_words = await self._words.list_due(user_id, now)
-        due_count = len(due_words)
-        due_deck_count = len({w.deck_id for w in due_words})
+        This used to fetch every due row and count them in Python, which made
+        the home screen cost one row per due card. The response is unchanged —
+        deliberately, so the migration that moved these columns can be proved
+        against it byte for byte.
+        """
+        now = datetime.now(UTC)
+        tallies = await self._progress.tally_by_deck_and_box(user_id, now)
+
+        per_box: dict[LeitnerBox, int] = defaultdict(int)
+        total = due_count = learned = 0
+        due_decks: set[UUID] = set()
+        for tally in tallies:
+            per_box[tally.box] += tally.word_count
+            total += tally.word_count
+            due_count += tally.due_count
+            if tally.box in LEARNED_BOXES:
+                learned += tally.word_count
+            if tally.due_count:
+                due_decks.add(tally.deck_id)
 
         memory = MemoryStrength(
             total=total,
+            # Every box, including the empty ones: the client renders five bars
+            # and hard-casts each one.
             distribution=[
-                BoxCount(box=box, label=box.label, count=distribution.get(box, 0))
-                for box in LeitnerBox
+                BoxCount(box=box, label=box.label, count=per_box.get(box, 0)) for box in LeitnerBox
             ],
         )
         user = await self._users.get(user_id)
@@ -54,7 +69,7 @@ class StudyService:
             due_count=due_count,
             total_count=total,
             learned_count=learned,
-            due_deck_count=due_deck_count,
+            due_deck_count=len(due_decks),
             estimated_minutes=max(1, round(due_count * _MINUTES_PER_CARD)),
             streak=user.streak if user else 0,
             memory_strength=memory,
@@ -66,7 +81,7 @@ class StudyService:
         *,
         deck_id: UUID | None = None,
         limit: int = 20,
-    ) -> list[Word]:
+    ) -> list[StudiedWord]:
         """Return the queue of cards for a study session.
 
         Due cards take priority; if nothing is due (the deck, or the whole
@@ -74,10 +89,10 @@ class StudyService:
         "practice anyway" sessions always have something to show.
         """
         now = datetime.now(UTC)
-        due = await self._words.list_due(user_id, now, deck_id=deck_id, limit=limit)
+        due = await self._progress.list_due(user_id, now, deck_id=deck_id, limit=limit)
         if due:
             return due
-        return await self._words.list_for_user(user_id, deck_id=deck_id, limit=limit)
+        return await self._progress.list_for_user(user_id, deck_id=deck_id, limit=limit)
 
     async def grade(
         self,
@@ -87,31 +102,34 @@ class StudyService:
         *,
         latency_ms: int | None = None,
         session_id: UUID | None = None,
-    ) -> Word:
+    ) -> StudiedWord:
         """Apply a review grade to a card, log the review, and advance the streak."""
-        word = await self._words.get(word_id)
-        if word is None:
+        # Grading a card you can read is always allowed — study is not an edit,
+        # so a viewer in a class deck may study it like anyone else. A
+        # non-member gets 404: a 403 would confirm the card exists.
+        studied = await self._progress.get_for_user(word_id, user_id)
+        if studied is None:
             raise NotFoundError("Word not found.")
-        if word.user_id != user_id:
-            raise PermissionDeniedError("This word belongs to another user.")
 
         now = datetime.now(UTC)
-        outcome = leitner.review(word.box, grade, now)
+        outcome = leitner.review(studied.box, grade, now)
 
         # Built before apply_review, which overwrites the pre-review box, due
         # date and last-reviewed time the event needs.
         event = ReviewEvent.from_review(
-            word,
+            studied,
             grade,
             outcome.box,
             now,
             latency_ms=latency_ms,
             session_id=session_id,
         )
-        word.apply_review(grade, outcome.box, outcome.due_at, now)
-        updated = await self._words.update(word)
+        studied.progress.apply_review(grade, outcome.box, outcome.due_at, now)
+        # An upsert, so the learner's first sight of a shared word creates their
+        # row here rather than thirty rows being fanned out when a deck is shared.
+        await self._progress.upsert(studied.progress)
 
-        # Written in the same transaction as the card update, unlike the AI
+        # Written in the same transaction as the progress update, unlike the AI
         # lookup cache's best-effort writes. That cache is derived data — a lost
         # write costs one repeat API call. A lost review is gone for good and
         # leaves the log disagreeing with review_count, so a failure here must
@@ -123,4 +141,4 @@ class StudyService:
             user.register_study_day(now.date())
             await self._users.update(user)
 
-        return updated
+        return studied

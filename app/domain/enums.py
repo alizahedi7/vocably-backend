@@ -10,6 +10,48 @@ class AuthMethod(StrEnum):
     GOOGLE = "google"
 
 
+class DeckRole(StrEnum):
+    """What someone may do with a deck they belong to.
+
+    Three roles rather than a permission matrix: a deck has words and members,
+    so there are only two things to be allowed to change. Mirrors the client's
+    ``DeckRole`` in ``lib/models/deck_member.dart``.
+    """
+
+    #: Made it. Edits words, invites, changes roles, and sees every member's
+    #: progress in detail — which is also what makes a teacher a teacher.
+    OWNER = "owner"
+    #: Adds and changes words. Sees only summaries of other members.
+    EDITOR = "editor"
+    #: Studies it, and cannot change a word. The default for a class: a student
+    #: adding words to the teacher's deck is rarely what was meant.
+    VIEWER = "viewer"
+
+    @classmethod
+    def parse(cls, raw: str | None) -> DeckRole:
+        """Read a role off the wire, failing closed.
+
+        An unknown or missing role is the *least* privileged one, in both
+        directions of the wire — the client's ``DeckRole.parse`` does the same.
+        A role this deploy does not recognise must never widen access.
+        """
+        if raw is None:
+            return cls.VIEWER
+        try:
+            return cls(raw)
+        except ValueError:
+            return cls.VIEWER
+
+    @property
+    def can_edit_words(self) -> bool:
+        return self is not DeckRole.VIEWER
+
+    @property
+    def can_manage_members(self) -> bool:
+        """Inviting, removing, changing roles, and seeing per-member detail."""
+        return self is DeckRole.OWNER
+
+
 class AgeRange(StrEnum):
     """Age buckets offered during onboarding (mirrors the app UI).
 

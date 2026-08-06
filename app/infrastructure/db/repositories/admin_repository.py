@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.dto import (
@@ -24,13 +24,14 @@ from app.application.dto import (
     DailyCount,
 )
 from app.application.ports.admin_repository import AdminRepository
-from app.domain.enums import AuthMethod
+from app.domain.enums import AuthMethod, LeitnerBox
 from app.infrastructure.ai.prompts import PROMPT_VERSION
 from app.infrastructure.db import mappers
 from app.infrastructure.db.models.ai_lookup import AILookupAliasModel, AILookupEntryModel
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
+from app.infrastructure.db.models.word_progress import WordProgressModel
 
 
 class SqlAlchemyAdminRepository(AdminRepository):
@@ -93,8 +94,8 @@ class SqlAlchemyAdminRepository(AdminRepository):
             .subquery()
         )
         word_counts = (
-            select(WordModel.user_id, func.count().label("n"))
-            .group_by(WordModel.user_id)
+            select(WordModel.created_by_user_id.label("user_id"), func.count().label("n"))
+            .group_by(WordModel.created_by_user_id)
             .subquery()
         )
         stmt = (
@@ -140,10 +141,22 @@ class SqlAlchemyAdminRepository(AdminRepository):
         ]
 
     async def list_word_rows(self) -> list[AdminWordRow]:
+        # The box shown here is the *creator's*, joined in rather than read off
+        # the card: study state is per member now, so a shared card has as many
+        # boxes as it has learners and "the" box is not a thing. A creator who
+        # has never studied their own card reads as box 1, exactly as they do
+        # everywhere else.
         stmt = (
-            select(WordModel, DeckModel.name, UserModel.name)
+            select(WordModel, DeckModel.name, UserModel.name, WordProgressModel.box)
             .join(DeckModel, DeckModel.id == WordModel.deck_id)
-            .join(UserModel, UserModel.id == WordModel.user_id)
+            .join(UserModel, UserModel.id == WordModel.created_by_user_id)
+            .outerjoin(
+                WordProgressModel,
+                and_(
+                    WordProgressModel.word_id == WordModel.id,
+                    WordProgressModel.user_id == WordModel.created_by_user_id,
+                ),
+            )
             .order_by(WordModel.created_at.desc(), WordModel.id.desc())
         )
         rows = (await self._session.execute(stmt)).all()
@@ -152,8 +165,9 @@ class SqlAlchemyAdminRepository(AdminRepository):
                 word=mappers.word_to_entity(word),
                 deck_name=deck_name,
                 owner_name=owner_name,
+                box=int(box) if box is not None else int(LeitnerBox.NEW),
             )
-            for word, deck_name, owner_name in rows
+            for word, deck_name, owner_name, box in rows
         ]
 
     async def cache_overview(self) -> AdminCacheOverview:

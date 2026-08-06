@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from app.domain.entities.word import Word
+from app.domain.entities.studied_word import StudiedWord
 from app.domain.enums import LeitnerBox, ReviewGrade
 
 #: Ceiling for a self-reported answer latency, in milliseconds (10 minutes).
@@ -64,7 +64,7 @@ class ReviewEvent:
     @classmethod
     def from_review(
         cls,
-        word: Word,
+        word: StudiedWord,
         grade: ReviewGrade,
         box_after: LeitnerBox,
         now: datetime,
@@ -72,12 +72,13 @@ class ReviewEvent:
         latency_ms: int | None = None,
         session_id: UUID | None = None,
     ) -> ReviewEvent:
-        """Capture a review of ``word`` **before** :meth:`Word.apply_review` runs.
+        """Capture a review **before** :meth:`WordProgress.apply_review` runs.
 
-        ``word.box``, ``word.due_at`` and ``word.last_reviewed_at`` are all
-        overwritten by the grade, so the ordering matters. Building the event
-        through this factory is what keeps that requirement in one place instead
-        of relying on statement order at every call site.
+        ``word.box``, ``word.due_at`` and ``word.last_reviewed_at`` all read
+        through to the same progress object the grade overwrites, so the
+        ordering matters. Building the event through this factory is what keeps
+        that requirement in one place instead of relying on statement order at
+        every call site.
         """
         return cls(
             user_id=word.user_id,

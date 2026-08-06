@@ -218,8 +218,8 @@ async def test_cannot_move_word_into_another_users_deck(
         headers=auth_headers,
         json={"deck_id": foreign_deck.json()["id"]},
     )
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "permission_denied"
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 async def test_cannot_create_word_in_another_users_deck(
@@ -233,8 +233,8 @@ async def test_cannot_create_word_in_another_users_deck(
         headers=bearer(other.id),
         json={"deck_id": deck_id, "term": "steal", "meaning": "should not work"},
     )
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "permission_denied"
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 async def test_cannot_read_another_users_word(
@@ -249,4 +249,41 @@ async def test_cannot_read_another_users_word(
     other = await make_user(phone="+989121110000")
 
     response = await client.get(f"/api/v1/words/{created.json()['id']}", headers=bearer(other.id))
-    assert response.status_code == 403
+    # 404, not 403: a stranger walking word ids must not learn which exist.
+    assert response.status_code == 404
+
+
+async def test_word_payload_still_carries_the_progress_keys(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """An Android build from before the words/word_progress split must not notice.
+
+    ``box``, ``due_at``, ``review_count`` and ``last_reviewed_at`` moved to a
+    different table; they are read back onto the same flat object deliberately,
+    and the client hard-casts every one of them.
+    """
+    deck_id = await create_deck(client, auth_headers)
+    created = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={"deck_id": deck_id, "term": "improve", "meaning": "to get better"},
+    )
+    word = created.json()
+
+    assert {"box", "due_at", "review_count", "last_reviewed_at"} <= word.keys()
+    assert word["box"] == 1
+    assert word["review_count"] == 0
+    assert word["last_reviewed_at"] is None
+    assert word["due_at"] is not None
+
+    listed = await client.get("/api/v1/words", headers=auth_headers)
+    assert {"box", "due_at", "review_count", "last_reviewed_at"} <= listed.json()[0].keys()
+
+    session = await client.get("/api/v1/study/session", headers=auth_headers)
+    assert {"box", "due_at", "review_count"} <= session.json()["words"][0].keys()
+
+    graded = await client.post(
+        f"/api/v1/study/words/{word['id']}/grade", headers=auth_headers, json={"grade": "good"}
+    )
+    assert {"box", "due_at", "review_count", "last_reviewed_at"} <= graded.json().keys()
+    assert graded.json()["review_count"] == 1

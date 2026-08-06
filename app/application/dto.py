@@ -115,11 +115,15 @@ class AdminDeckRow:
 
 @dataclass(frozen=True, slots=True)
 class AdminWordRow:
-    """A word with the deck ("category") and owner it belongs to."""
+    """A word with the deck ("category") and creator it belongs to."""
 
     word: Word
     deck_name: str
     owner_name: str
+    #: The *creator's* Leitner box. Study state is per member, so a shared card
+    #: has one box per learner and none of them is the card's; this is the one
+    #: belonging to whoever added it. 1 when they have never studied it.
+    box: int
 
 
 @dataclass(frozen=True, slots=True)

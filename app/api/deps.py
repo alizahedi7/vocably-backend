@@ -37,10 +37,12 @@ from app.core.exceptions import (
 from app.core.rate_limit import SlidingWindowRateLimiter
 from app.core.security import TokenType, decode_token
 from app.domain.entities.user import User
+from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_repository import DeckRepository
 from app.domain.repositories.otp_repository import OTPChallengeRepository
 from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
+from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.infrastructure.ai.caching_ai_service import CachingAIService
 from app.infrastructure.ai.grounded_ai_service import GroundedAIService, SenseTranslator
@@ -53,6 +55,9 @@ from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
 from app.infrastructure.auth.sms_ir_otp_sender import SmsIrOTPSender
 from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
 from app.infrastructure.db.repositories.admin_repository import SqlAlchemyAdminRepository
+from app.infrastructure.db.repositories.deck_member_repository import (
+    SqlAlchemyDeckMemberRepository,
+)
 from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
 from app.infrastructure.db.repositories.lookup_cache_repository import (
     SqlAlchemyLookupCacheRepository,
@@ -64,6 +69,9 @@ from app.infrastructure.db.repositories.review_event_repository import (
     SqlAlchemyReviewEventRepository,
 )
 from app.infrastructure.db.repositories.user_repository import SqlAlchemyUserRepository
+from app.infrastructure.db.repositories.word_progress_repository import (
+    SqlAlchemyWordProgressRepository,
+)
 from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -80,6 +88,14 @@ def get_deck_repository(session: SessionDep) -> DeckRepository:
 
 def get_word_repository(session: SessionDep) -> WordRepository:
     return SqlAlchemyWordRepository(session)
+
+
+def get_word_progress_repository(session: SessionDep) -> WordProgressRepository:
+    return SqlAlchemyWordProgressRepository(session)
+
+
+def get_deck_member_repository(session: SessionDep) -> DeckMemberRepository:
+    return SqlAlchemyDeckMemberRepository(session)
 
 
 def get_otp_repository(session: SessionDep) -> OTPChallengeRepository:
@@ -101,6 +117,8 @@ def get_review_event_repository(session: SessionDep) -> ReviewEventRepository:
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 DeckRepoDep = Annotated[DeckRepository, Depends(get_deck_repository)]
 WordRepoDep = Annotated[WordRepository, Depends(get_word_repository)]
+WordProgressRepoDep = Annotated[WordProgressRepository, Depends(get_word_progress_repository)]
+DeckMemberRepoDep = Annotated[DeckMemberRepository, Depends(get_deck_member_repository)]
 OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
 AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
 LookupCacheRepoDep = Annotated[LookupCacheRepository, Depends(get_lookup_cache_repository)]
@@ -300,26 +318,30 @@ def get_user_service(users: UserRepoDep) -> UserService:
     return UserService(users)
 
 
-def get_deck_service(decks: DeckRepoDep, words: WordRepoDep) -> DeckService:
-    return DeckService(decks, words)
+def get_deck_service(
+    decks: DeckRepoDep, progress: WordProgressRepoDep, members: DeckMemberRepoDep
+) -> DeckService:
+    return DeckService(decks, progress, members)
 
 
-def get_word_service(words: WordRepoDep, decks: DeckRepoDep) -> WordService:
-    return WordService(words, decks)
+def get_word_service(
+    words: WordRepoDep, progress: WordProgressRepoDep, members: DeckMemberRepoDep
+) -> WordService:
+    return WordService(words, progress, members)
 
 
 def get_study_service(
-    words: WordRepoDep, users: UserRepoDep, reviews: ReviewEventRepoDep
+    progress: WordProgressRepoDep, users: UserRepoDep, reviews: ReviewEventRepoDep
 ) -> StudyService:
-    return StudyService(words, users, reviews)
+    return StudyService(progress, users, reviews)
 
 
 def get_ai_studio_service(
     ai: AIServiceDep,
-    words: WordRepoDep,
+    progress: WordProgressRepoDep,
     users: UserRepoDep,
 ) -> AIStudioService:
-    return AIStudioService(ai, words, users)
+    return AIStudioService(ai, progress, users)
 
 
 def get_admin_service(admin_repo: AdminRepoDep) -> AdminService:

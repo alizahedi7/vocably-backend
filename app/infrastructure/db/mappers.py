@@ -7,15 +7,19 @@ domain stay free of SQLAlchemy.
 from __future__ import annotations
 
 from app.domain.entities.deck import Deck
+from app.domain.entities.deck_member import DeckMember
 from app.domain.entities.otp_challenge import OtpChallenge
 from app.domain.entities.review_event import ReviewEvent
 from app.domain.entities.user import User
 from app.domain.entities.word import Word
-from app.domain.enums import AgeRange, AuthMethod, LeitnerBox, ReviewGrade
+from app.domain.entities.word_progress import WordProgress
+from app.domain.enums import AgeRange, AuthMethod, DeckRole, LeitnerBox, ReviewGrade
 from app.infrastructure.db.models.deck import DeckModel
+from app.infrastructure.db.models.deck_member import DeckMemberModel
 from app.infrastructure.db.models.otp_challenge import OtpChallengeModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
+from app.infrastructure.db.models.word_progress import WordProgressModel
 from app.infrastructure.db.models.word_review import WordReviewModel
 
 
@@ -84,12 +88,37 @@ def word_to_entity(m: WordModel) -> Word:
     return Word(
         id=m.id,
         deck_id=m.deck_id,
-        user_id=m.user_id,
+        created_by_user_id=m.created_by_user_id,
         term=m.term,
         meaning=m.meaning,
         definition=m.definition,
         example=m.example,
         sense_label=m.sense_label,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+def apply_word(entity: Word, m: WordModel) -> None:
+    # created_by_user_id is attribution and is set once, at insert. Leaving it
+    # out of the update path means an edit by a co-editor cannot silently
+    # reassign authorship of someone else's card.
+    if entity.created_by_user_id is not None:
+        m.created_by_user_id = entity.created_by_user_id
+    m.deck_id = entity.deck_id
+    m.term = entity.term
+    m.meaning = entity.meaning
+    m.definition = entity.definition
+    m.example = entity.example
+    m.sense_label = entity.sense_label
+
+
+# ── Word progress ────────────────────────────────────────────
+def word_progress_to_entity(m: WordProgressModel) -> WordProgress:
+    return WordProgress(
+        user_id=m.user_id,
+        word_id=m.word_id,
+        deck_id=m.deck_id,
         box=LeitnerBox(m.box),
         due_at=m.due_at,
         review_count=m.review_count,
@@ -104,23 +133,43 @@ def word_to_entity(m: WordModel) -> Word:
     )
 
 
-def apply_word(entity: Word, m: WordModel) -> None:
-    m.user_id = entity.user_id
-    m.deck_id = entity.deck_id
-    m.term = entity.term
-    m.meaning = entity.meaning
-    m.definition = entity.definition
-    m.example = entity.example
-    m.sense_label = entity.sense_label
-    m.box = int(entity.box)
-    m.due_at = entity.due_at
-    m.review_count = entity.review_count
-    m.last_reviewed_at = entity.last_reviewed_at
-    m.lapse_count = entity.lapse_count
-    m.consecutive_correct = entity.consecutive_correct
-    m.first_reviewed_at = entity.first_reviewed_at
-    m.mastered_at = entity.mastered_at
-    m.last_grade = entity.last_grade.ordinal if entity.last_grade is not None else None
+def word_progress_values(entity: WordProgress) -> dict[str, object]:
+    """Column values for the upsert a grade issues.
+
+    A dict rather than an ``apply_*`` mutator because progress rows are written
+    with ``INSERT … ON CONFLICT DO UPDATE``: the row may not exist yet, and
+    read-then-write would lose one of two concurrent first grades of the same
+    word. ``created_at`` is omitted so the database defaults it on insert and
+    leaves it alone on update — it records when the learner first met the word.
+    """
+    return {
+        "user_id": entity.user_id,
+        "word_id": entity.word_id,
+        "deck_id": entity.deck_id,
+        "box": int(entity.box),
+        "due_at": entity.due_at,
+        "review_count": entity.review_count,
+        "last_reviewed_at": entity.last_reviewed_at,
+        "lapse_count": entity.lapse_count,
+        "consecutive_correct": entity.consecutive_correct,
+        "first_reviewed_at": entity.first_reviewed_at,
+        "mastered_at": entity.mastered_at,
+        "last_grade": entity.last_grade.ordinal if entity.last_grade is not None else None,
+        "updated_at": entity.updated_at,
+    }
+
+
+# ── Deck membership ──────────────────────────────────────────
+def deck_member_to_entity(m: DeckMemberModel) -> DeckMember:
+    return DeckMember(
+        deck_id=m.deck_id,
+        user_id=m.user_id,
+        role=DeckRole.parse(m.role),
+        invited_by_user_id=m.invited_by_user_id,
+        joined_at=m.joined_at,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
 
 
 # ── Review event ─────────────────────────────────────────────

@@ -1,20 +1,35 @@
-"""Word (flashcard) use cases with ownership enforcement."""
+"""Word (flashcard) use cases, authorized by deck membership.
+
+Reads return a ``StudiedWord`` — the shared card plus the caller's own progress
+— so the wire shape is unchanged even though the two halves now live in
+different tables. Writes touch only the card, which every editor of the deck
+shares.
+"""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from uuid import UUID
 
-from app.core.exceptions import NotFoundError, PermissionDeniedError
+from app.application.services.deck_access import DeckAccess
+from app.core.exceptions import NotFoundError
+from app.domain.entities.studied_word import StudiedWord
 from app.domain.entities.word import Word
-from app.domain.repositories.deck_repository import DeckRepository
+from app.domain.repositories.deck_member_repository import DeckMemberRepository
+from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.word_repository import WordRepository
 
 
 class WordService:
-    def __init__(self, words: WordRepository, decks: DeckRepository) -> None:
+    def __init__(
+        self,
+        words: WordRepository,
+        progress: WordProgressRepository,
+        members: DeckMemberRepository,
+    ) -> None:
         self._words = words
-        self._decks = decks
+        self._progress = progress
+        self._access = DeckAccess(members)
 
     async def list_words(
         self,
@@ -23,18 +38,23 @@ class WordService:
         deck_id: UUID | None = None,
         limit: int | None = None,
         offset: int = 0,
-    ) -> list[Word]:
+    ) -> list[StudiedWord]:
         if deck_id is not None:
-            await self._assert_owns_deck(deck_id, user_id)
-        return await self._words.list_for_user(user_id, deck_id=deck_id, limit=limit, offset=offset)
+            await self._access.require_read(deck_id, user_id)
+        return await self._progress.list_for_user(
+            user_id, deck_id=deck_id, limit=limit, offset=offset
+        )
 
-    async def get_owned(self, word_id: UUID, user_id: UUID) -> Word:
-        word = await self._words.get(word_id)
-        if word is None:
+    async def get_readable(self, word_id: UUID, user_id: UUID) -> StudiedWord:
+        """The card plus this learner's progress, if they are in its deck.
+
+        404 rather than 403 for a non-member: a stranger walking word ids must
+        not be able to learn which ones exist.
+        """
+        studied = await self._progress.get_for_user(word_id, user_id)
+        if studied is None:
             raise NotFoundError("Word not found.")
-        if word.user_id != user_id:
-            raise PermissionDeniedError("This word belongs to another user.")
-        return word
+        return studied
 
     async def create(
         self,
@@ -46,10 +66,10 @@ class WordService:
         example: str | None,
         sense_label: str | None,
         definition: str | None = None,
-    ) -> Word:
-        await self._assert_owns_deck(deck_id, user_id)
+    ) -> StudiedWord:
+        await self._access.require_edit_words(deck_id, user_id)
         word = Word(
-            user_id=user_id,
+            created_by_user_id=user_id,
             deck_id=deck_id,
             term=term.strip(),
             meaning=meaning.strip(),
@@ -57,7 +77,10 @@ class WordService:
             example=(example or "").strip() or None,
             sense_label=sense_label,
         )
-        return await self._words.add(word)
+        created = await self._words.add(word)
+        # No progress row is written: the card is new to everyone, and an
+        # unstudied word already reads as box 1, due now.
+        return await self.get_readable(created.id, user_id)
 
     async def update(
         self,
@@ -70,10 +93,14 @@ class WordService:
         example: str | None = None,
         sense_label: str | None = None,
         deck_id: UUID | None = None,
-    ) -> Word:
-        word = await self.get_owned(word_id, user_id)
+    ) -> StudiedWord:
+        studied = await self.get_readable(word_id, user_id)
+        await self._access.require_edit_words(studied.deck_id, user_id)
+        word = studied.word
         if deck_id is not None and deck_id != word.deck_id:
-            await self._assert_owns_deck(deck_id, user_id)
+            # Both ends: you must be allowed to take it out of where it is and
+            # to put it where it is going.
+            await self._access.require_edit_words(deck_id, user_id)
             word.deck_id = deck_id
         if term is not None:
             word.term = term.strip()
@@ -88,15 +115,12 @@ class WordService:
         if sense_label is not None:
             word.sense_label = sense_label
         word.updated_at = datetime.now(UTC)
-        return await self._words.update(word)
+        await self._words.update(word)
+        return await self.get_readable(word_id, user_id)
 
     async def delete(self, word_id: UUID, user_id: UUID) -> None:
-        await self.get_owned(word_id, user_id)
+        studied = await self.get_readable(word_id, user_id)
+        await self._access.require_edit_words(studied.deck_id, user_id)
+        # Everyone's progress on the card goes with it, by cascade: the card is
+        # gone, so nobody's boxes against it mean anything any more.
         await self._words.delete(word_id)
-
-    async def _assert_owns_deck(self, deck_id: UUID, user_id: UUID) -> None:
-        deck = await self._decks.get(deck_id)
-        if deck is None:
-            raise NotFoundError("Deck not found.")
-        if deck.user_id != user_id:
-            raise PermissionDeniedError("This deck belongs to another user.")

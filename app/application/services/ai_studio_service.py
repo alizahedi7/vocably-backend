@@ -18,7 +18,7 @@ from app.application.ports.ai_service import (
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.enums import LeitnerBox
 from app.domain.repositories.user_repository import UserRepository
-from app.domain.repositories.word_repository import WordRepository
+from app.domain.repositories.word_progress_repository import WordProgressRepository
 
 #: Minimum learned words required before a story can be generated.
 MIN_WORDS_FOR_STORY = 3
@@ -36,11 +36,11 @@ class AIStudioService:
     def __init__(
         self,
         ai: AIService,
-        words: WordRepository,
+        progress: WordProgressRepository,
         users: UserRepository,
     ) -> None:
         self._ai = ai
-        self._words = words
+        self._progress = progress
         self._users = users
 
     async def look_up_meanings(
@@ -68,7 +68,10 @@ class AIStudioService:
 
     async def generate_story(self, user_id: UUID) -> GeneratedStory:
         learner = await self._learner_context(user_id)
-        words = await self._words.list_for_user(user_id)
+        # The learner's own boxes, not the deck's: a story is written from
+        # what *this* person has learned, which in a shared deck is not what
+        # anyone else has.
+        words = await self._progress.list_for_user(user_id)
         learned = [w.term for w in words if w.box in STORY_ELIGIBLE_BOXES]
 
         if len(learned) < MIN_WORDS_FOR_STORY:
