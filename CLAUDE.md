@@ -159,6 +159,124 @@ never cached (their word set is one learner's Leitner boxes).
 - `AI_CACHE_ENABLED=false` bypasses it for debugging a provider in isolation. Leaving
   it off in production means paying full price for every repeat of every word.
 
+## Shared decks, and where study progress lives
+
+A deck is shared as **the same deck**, not a copy: a word an editor adds is a
+word every member sees, while each member holds their own boxes against it.
+That is impossible while progress lives on the card, which is why `words` was
+split.
+
+```
+words(id, deck_id, created_by_user_id, unit_id, term, meaning, …)   -- the card: shared
+word_progress(user_id, word_id, deck_id, box, due_at, review_count, …)  -- per learner
+  PRIMARY KEY (user_id, word_id)
+```
+
+- **`words.created_by_user_id` is attribution and nothing else.** It is never
+  an authorization check. Who may read or edit a card is deck membership. If you
+  find yourself comparing it to `current_user.id`, that is the bug.
+- **Membership is the only access check.** `deck_members(deck_id, user_id, role)`
+  answers it, through `DeckAccess`
+  ([deck_access.py](app/application/services/deck_access.py)) — one place, on
+  purpose, because getting it wrong in one of four places is a data leak.
+  `decks.user_id` is the creator column and must not be read for access.
+  Roles: owner manages members and deletes the deck; editor changes words and
+  units; viewer studies. An unknown role parses to **viewer** — fail closed.
+- **A non-member gets 404, never 403.** A 403 confirms that a deck or card with
+  that id exists, which is exactly what someone probing ids wants to learn. A
+  *member* who lacks the role for an action does get 403 — they already know it
+  exists. Grading is always allowed to any member: study is not an edit.
+- **Progress rows are created lazily.** Only `grade` writes one, via an upsert.
+  A missing row reads as `WordProgress.unstudied` — box 1, due now, counters
+  zero — so sharing a 500-word deck with a class of thirty writes *nothing*.
+  Reads are `words LEFT JOIN word_progress`, and the `user_id` predicate belongs
+  in the **ON clause**: in `WHERE` it silently becomes an inner join and every
+  never-studied word disappears, which is most of them.
+- **`word_progress.deck_id` is a live mirror** of `words.deck_id`, kept in step
+  by `SqlAlchemyWordRepository.update` when a card moves deck. It exists so
+  per-deck aggregates and the roster never join `words`. This is deliberately
+  the *opposite* of `word_reviews.deck_id`, which is frozen at review time —
+  do not unify them.
+- **Cascades carry the policy.** `ON DELETE CASCADE` from `users` lands on
+  `word_progress`, never on the card: a member leaving must not delete a class's
+  vocabulary. `words.created_by_user_id` is **`ON DELETE RESTRICT`** — see
+  account deletion below. Progress rows survive a member leaving a deck, so
+  rejoining restores their boxes; every aggregate is scoped through
+  `deck_members`, so those rows are invisible until then.
+- **No user-facing request may scan `words` per learner.** `/study/overview` and
+  the deck list both fold a single `tally_by_deck_and_box` result. The overview
+  used to fetch every due row and count it in Python; do not reintroduce that.
+- **Account deletion is blocked while the user owns cards in a shared deck.**
+  The FK enforces it rather than an application check someone forgets. Deleting
+  the owner of a class deck must never be silently destructive; transferring
+  ownership is a separate action that does not exist yet.
+
+### Units
+
+`deck_units` is optional grouping. A deck with no units renders exactly as it
+did before the feature, and a card may belong to **no** unit — there is no
+"uncategorised" unit. `words.unit_id` is `ON DELETE SET NULL`, and that **is**
+the product rule: deleting a unit keeps its cards and drops them back into the
+deck, which is why the client asks for no confirmation. Order by `position`,
+never by name — "Unit 10" sorts between 1 and 2.
+
+`PATCH /words/{id}` treats an **omitted** `unit_id` as "leave it alone" and an
+explicit **null** as "remove from its unit". `x is None` cannot tell them apart;
+the router reads `model_fields_set`. Conflating them lets a client older than
+units silently ungroup every card it edits.
+
+### Invite links
+
+An invite code is a **bearer credential**: CSPRNG, ~65 bits, unique-indexed.
+The client's local stand-in derives a 6-character code from `deckId.hashCode`
+and is a UI placeholder — never copy it. `deck_invites` is keyed by deck, so
+re-opening a closed link returns the same code; one already handed to a class
+must keep working. A bad code, a closed one and an expired one all answer the
+same 404. `POST /decks/join` is rate-limited per user *and* per IP.
+
+**Known client gap:** nothing yet parses `https://app.vocably.ir/join/<code>`
+into a `joinByCode` call, so the flow is copy-and-paste until the PWA gets a
+`/join/:code` route and Android gets an App Link.
+
+### Days, weeks, and the activity rollup
+
+Every "today" here is a local question — a streak, a daily goal and the roster's
+weekly figures all turn on where a day starts, and a learner in Tehran was
+getting a UTC boundary at 03:30 local. `users.timezone` holds an IANA name
+(NULL means UTC) and
+**[calendar.py](app/domain/services/calendar.py) is the only place a day or week
+boundary is computed.** Weeks start Monday, matching the client. Do not scatter
+`date.today()` through services.
+
+`daily_deck_activity(user_id, deck_id, day, reviews, mastered)` backs the
+roster's weekly numbers. It exists because `CLAUDE.md` forbids user-facing
+aggregation over `word_reviews`, and a roster of thirty students would scan that
+log thirty times. Counters ride along on the transaction the grade already
+opens, bucketed by the learner's local day; `mastered` counts only the
+transition *into* box 5 (`ReviewApplied.became_mastered`). The roster is two
+grouped queries for the whole class — the N+1 here is the obvious way to write
+it wrong.
+
+### Handles
+
+`users.username` is the one user-chosen string other people type. Stored
+already-lowercased behind a unique index — normalising in the application would
+let two casings both exist. Reserved names
+([usernames.py](app/domain/services/usernames.py)) are refused as *invalid*
+rather than taken, so the availability endpoint answers identically whether or
+not anyone holds them. `/users/username-available` is capped **per user through
+Redis**: the in-process limiter multiplies its budget by the worker count, which
+is fine for SMS spend and wrong for an endpoint that answers "does this person
+exist" for any string. An unreachable Redis degrades to per-worker, never open.
+
+### The error envelope
+
+4xx bodies carry **both** `error.code`/`error.message` and a top-level `detail`,
+because the two clients read different keys: vocably-admin reads `error.code`,
+and the Flutter client's `ApiClient._extractDetail` reads `detail` and otherwise
+shows "Request failed (409)". 4xx messages on the sharing, units and friends
+paths are **user-visible copy** — write them as such, and keep them in English.
+
 ## Review history
 
 Every press of Again/Hard/Good/Easy appends one immutable row to `word_reviews`.
