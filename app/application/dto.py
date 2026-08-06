@@ -62,6 +62,14 @@ class StudyOverview:
     due_count: int
     total_count: int
     learned_count: int
+    #: Words in box 5 across every deck. Distinct from ``learned_count``, which
+    #: counts boxes 4 and 5 — the mastery badges are a pure function of this
+    #: one, which is why no badge table exists.
+    mastered_count: int
+    #: Cards answered today, in the learner's own timezone. The client keeps a
+    #: local counter too and takes the larger of the two: a grade that never
+    #: reached the server is still work the learner did.
+    reviewed_today: int
     due_deck_count: int
     estimated_minutes: int
     streak: int

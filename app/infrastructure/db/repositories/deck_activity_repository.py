@@ -50,6 +50,13 @@ class SqlAlchemyDeckActivityRepository(DeckActivityRepository):
             )
         )
 
+    async def reviews_on(self, user_id: UUID, day: date) -> int:
+        table = DailyDeckActivityModel
+        stmt = select(func.coalesce(func.sum(table.reviews), 0)).where(
+            table.user_id == user_id, table.day == day
+        )
+        return int((await self._session.execute(stmt)).scalar_one())
+
     async def totals_for_deck(self, deck_id: UUID) -> list[MemberTotals]:
         learning = func.sum(
             case((WordProgressModel.box.in_([int(b) for b in _LEARNING_BOXES]), 1), else_=0)

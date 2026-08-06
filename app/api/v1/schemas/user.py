@@ -34,6 +34,8 @@ class UserOut(BaseModel):
     interests: list[str]
     daily_goal: int
     streak: int
+    #: The client derives level and progress from this single integer.
+    xp: int
     last_studied_on: date | None
     onboarded: bool
     created_at: datetime

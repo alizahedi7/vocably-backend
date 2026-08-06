@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, status
 
-from app.api.deps import AdminServiceDep, CurrentAdmin
+from app.api.deps import AdminServiceDep, CurrentAdmin, DeckDiscoveryServiceDep
 from app.api.v1.schemas.admin import (
     AdminCacheAliasOut,
     AdminCacheAliasPageOut,
@@ -19,6 +19,7 @@ from app.api.v1.schemas.admin import (
     AdminCacheEntryPageOut,
     AdminCacheOverviewOut,
     AdminCategoryOut,
+    AdminPublishDeckIn,
     AdminUserOut,
     AdminWordOut,
     AuthMethodBreakdownOut,
@@ -101,4 +102,28 @@ async def cache_entry_aliases(
     rows, total = await admin.cache_aliases(entry_id, limit, offset)
     return AdminCacheAliasPageOut(
         items=[AdminCacheAliasOut.from_dto(row) for row in rows], total=total
+    )
+
+
+@router.patch("/decks/{deck_id}/publish", status_code=status.HTTP_204_NO_CONTENT)
+async def publish_deck(
+    deck_id: UUID,
+    payload: AdminPublishDeckIn,
+    _admin: CurrentAdmin,
+    discovery: DeckDiscoveryServiceDep,
+) -> None:
+    """Put a deck in Explore, or take it out.
+
+    Deliberately the only mutating route on the admin surface, and deliberately
+    not available to deck owners: Explore has no report path and no moderation
+    queue yet, so publishing is a curated act. Opening it to owners later is a
+    permission change, not a migration — see CLAUDE.md.
+    """
+    await discovery.set_published(
+        deck_id,
+        is_public=payload.is_public,
+        is_official=payload.is_official,
+        category=payload.category,
+        description=payload.description,
+        description_fa=payload.description_fa,
     )

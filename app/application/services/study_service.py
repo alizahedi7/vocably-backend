@@ -3,20 +3,27 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from typing import Literal
 from uuid import UUID
 
 from app.application.dto import BoxCount, MemoryStrength, StudyOverview
 from app.core.exceptions import NotFoundError
 from app.domain.entities.review_event import ReviewEvent
 from app.domain.entities.studied_word import StudiedWord
+from app.domain.entities.xp import XpAction
 from app.domain.enums import LeitnerBox, ReviewGrade
 from app.domain.repositories.deck_activity_repository import DeckActivityRepository
 from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
+from app.domain.repositories.xp_repository import XpRepository
 from app.domain.services import leitner
 from app.domain.services.calendar import today_for
+
+#: Where a graded answer came from. A review session and a practice drill
+#: are worth different amounts, and the client says which.
+ReviewSource = Literal["session", "drill"]
 
 #: Rough estimate used for the "~N min" hint on the home screen.
 _MINUTES_PER_CARD = 0.5
@@ -31,11 +38,13 @@ class StudyService:
         users: UserRepository,
         reviews: ReviewEventRepository,
         activity: DeckActivityRepository,
+        xp: XpRepository,
     ) -> None:
         self._progress = progress
         self._users = users
         self._reviews = reviews
         self._activity = activity
+        self._xp = xp
 
     async def get_overview(self, user_id: UUID) -> StudyOverview:
         """Every home-screen number, from one grouped query.
@@ -69,10 +78,15 @@ class StudyService:
             ],
         )
         user = await self._users.get(user_id)
+        today = today_for(user.timezone if user else None, now)
         return StudyOverview(
             due_count=due_count,
             total_count=total,
             learned_count=learned,
+            mastered_count=per_box.get(LeitnerBox.MASTERED, 0),
+            # From the rollup, so it costs a handful of indexed rows rather
+            # than an aggregate over the review log.
+            reviewed_today=await self._activity.reviews_on(user_id, today),
             due_deck_count=len(due_decks),
             estimated_minutes=max(1, round(due_count * _MINUTES_PER_CARD)),
             streak=user.streak if user else 0,
@@ -106,8 +120,15 @@ class StudyService:
         *,
         latency_ms: int | None = None,
         session_id: UUID | None = None,
+        source: ReviewSource = "session",
     ) -> StudiedWord:
-        """Apply a review grade to a card, log the review, and advance the streak."""
+        """Apply a review grade to a card, log the review, and advance the streak.
+
+        ``source`` decides what the answer is worth: a practice drill pays
+        differently from a review session, and a *wrong* drill answer still
+        pays — turning up to be tested on your weakest words is the behaviour
+        worth rewarding.
+        """
         # Grading a card you can read is always allowed — study is not an edit,
         # so a viewer in a class deck may study it like anyone else. A
         # non-member gets 404: a 403 would confirm the card exists.
@@ -159,4 +180,54 @@ class StudyService:
             user.register_study_day(today)
             await self._users.update(user)
 
+        await self._award_for_grade(user_id, grade, source, today, now)
         return studied
+
+    async def _award_for_grade(
+        self,
+        user_id: UUID,
+        grade: ReviewGrade,
+        source: ReviewSource,
+        today: date,
+        now: datetime,
+    ) -> None:
+        if source == "drill":
+            action = XpAction.DRILL_WRONG if grade.is_lapse else XpAction.DRILL_CORRECT
+        else:
+            action = XpAction.GRADE_WORD
+        await self._xp.award(user_id, action, occurred_at=now, day=today)
+        await self._award_daily_goal_if_met(user_id, today, now)
+
+    async def _award_daily_goal_if_met(self, user_id: UUID, today: date, now: datetime) -> None:
+        """Pay the daily goal the first time it is met, and only then.
+
+        Derived from the rollup rather than trusted from the client: an
+        endpoint that accepts "I met my goal" is an endpoint that hands out
+        25 points on request. The once-a-day guarantee is a partial unique
+        index, not a check here, so two sessions finishing together cannot
+        both collect.
+        """
+        user = await self._users.get(user_id)
+        if user is None:  # pragma: no cover
+            return
+        if await self._activity.reviews_on(user_id, today) < user.daily_goal:
+            return
+        await self._xp.award(
+            user_id, XpAction.DAILY_GOAL, occurred_at=now, day=today, once_per_day=True
+        )
+
+    async def complete_session(self, user_id: UUID) -> int:
+        """Award the end-of-session bonus, on top of the cards.
+
+        Separate from grading because finishing is its own act: the client
+        calls it when the last card of a queue is answered, and a session
+        abandoned halfway earns the cards but not the bonus.
+        """
+        now = datetime.now(UTC)
+        user = await self._users.get(user_id)
+        today = today_for(user.timezone if user else None, now)
+        awarded = await self._xp.award(
+            user_id, XpAction.FINISH_SESSION, occurred_at=now, day=today
+        )
+        await self._award_daily_goal_if_met(user_id, today, now)
+        return awarded

@@ -47,6 +47,14 @@ class DeckActivityRepository(ABC):
         """
 
     @abstractmethod
+    async def reviews_on(self, user_id: UUID, day: date) -> int:
+        """How many cards this learner answered on ``day``, across every deck.
+
+        Backs ``reviewed_today`` and the daily-goal award. A handful of indexed
+        rows per learner per day, never a scan of the review log.
+        """
+
+    @abstractmethod
     async def totals_for_deck(self, deck_id: UUID) -> list[MemberTotals]:
         """Every member's seen/learning/mastered — one grouped query, not N."""
 

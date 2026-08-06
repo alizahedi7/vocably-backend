@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     #: hopeless, and a teacher's second class must not be locked out by the
     #: first one's joins.
     joins_per_ip_per_hour: int = 600
+    #: Shares and friend-adds per user per hour. Both resolve a handle to a
+    #: person, so without a cap they are a slower handle-enumeration oracle
+    #: than the availability endpoint.
+    shares_per_user_per_hour: int = 60
     # DEV/TEST ONLY: issue this exact code instead of a random one, for every phone
     # number, so mobile/QA can sign in without reading server logs. Forbidden in
     # production (validated below) — it disables OTP secrecy entirely while set.

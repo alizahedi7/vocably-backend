@@ -15,10 +15,14 @@ from app.application.services.deck_access import DeckAccess
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities.studied_word import StudiedWord
 from app.domain.entities.word import Word
+from app.domain.entities.xp import XpAction
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_unit_repository import DeckUnitRepository
+from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.word_repository import WordRepository
+from app.domain.repositories.xp_repository import XpRepository
+from app.domain.services.calendar import today_for
 
 
 class _Unset:
@@ -42,10 +46,14 @@ class WordService:
         progress: WordProgressRepository,
         members: DeckMemberRepository,
         units: DeckUnitRepository,
+        xp: XpRepository,
+        users: UserRepository,
     ) -> None:
         self._words = words
         self._progress = progress
         self._units = units
+        self._xp = xp
+        self._users = users
         self._access = DeckAccess(members)
 
     async def list_words(
@@ -99,6 +107,17 @@ class WordService:
             sense_label=sense_label,
         )
         created = await self._words.add(word)
+        # Adding a card is work, whether it was typed or came from the reader.
+        now = datetime.now(UTC)
+        user = await self._users.get(user_id)
+        await self._xp.award(
+            user_id,
+            XpAction.ADD_WORD,
+            occurred_at=now,
+            day=today_for(user.timezone if user else None, now),
+            ref_type="word",
+            ref_id=created.id,
+        )
         # No progress row is written: the card is new to everyone, and an
         # unstudied word already reads as box 1, due now.
         return await self.get_readable(created.id, user_id)

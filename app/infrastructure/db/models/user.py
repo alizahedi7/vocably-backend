@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, String
+from sqlalchemy import JSON, Boolean, Date, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,6 +49,11 @@ class UserModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     streak: Mapped[int] = mapped_column(default=0, nullable=False)
     last_studied_on: Mapped[date | None] = mapped_column(Date)
     onboarded: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    #: Experience points. A counter kept in step with the ``xp_events`` ledger,
+    #: and the whole contract with the client: it derives level and progress
+    #: from this single integer.
+    xp: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime())

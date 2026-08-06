@@ -23,9 +23,11 @@ from app.application.ports.otp_sender import OTPSender
 from app.application.services.admin_service import AdminService
 from app.application.services.ai_studio_service import MAX_LOOKUP_SUGGESTIONS, AIStudioService
 from app.application.services.auth_service import AuthService
+from app.application.services.deck_discovery_service import DeckDiscoveryService
 from app.application.services.deck_service import DeckService
 from app.application.services.deck_sharing_service import DeckSharingService
 from app.application.services.deck_unit_service import DeckUnitService
+from app.application.services.friend_service import FriendService
 from app.application.services.study_service import StudyService
 from app.application.services.user_service import UserService
 from app.application.services.word_service import WordService
@@ -40,15 +42,18 @@ from app.core.rate_limit import RedisFixedWindowRateLimiter, SlidingWindowRateLi
 from app.core.security import TokenType, decode_token
 from app.domain.entities.user import User
 from app.domain.repositories.deck_activity_repository import DeckActivityRepository
+from app.domain.repositories.deck_discovery_repository import DeckDiscoveryRepository
 from app.domain.repositories.deck_invite_repository import DeckInviteRepository
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_repository import DeckRepository
 from app.domain.repositories.deck_unit_repository import DeckUnitRepository
+from app.domain.repositories.friend_repository import FriendRepository
 from app.domain.repositories.otp_repository import OTPChallengeRepository
 from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.word_repository import WordRepository
+from app.domain.repositories.xp_repository import XpRepository
 from app.infrastructure.ai.caching_ai_service import CachingAIService
 from app.infrastructure.ai.grounded_ai_service import GroundedAIService, SenseTranslator
 from app.infrastructure.ai.prompts import PROMPT_VERSION
@@ -63,6 +68,9 @@ from app.infrastructure.db.repositories.admin_repository import SqlAlchemyAdminR
 from app.infrastructure.db.repositories.deck_activity_repository import (
     SqlAlchemyDeckActivityRepository,
 )
+from app.infrastructure.db.repositories.deck_discovery_repository import (
+    SqlAlchemyDeckDiscoveryRepository,
+)
 from app.infrastructure.db.repositories.deck_invite_repository import (
     SqlAlchemyDeckInviteRepository,
 )
@@ -72,6 +80,9 @@ from app.infrastructure.db.repositories.deck_member_repository import (
 from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
 from app.infrastructure.db.repositories.deck_unit_repository import (
     SqlAlchemyDeckUnitRepository,
+)
+from app.infrastructure.db.repositories.friend_repository import (
+    SqlAlchemyFriendRepository,
 )
 from app.infrastructure.db.repositories.lookup_cache_repository import (
     SqlAlchemyLookupCacheRepository,
@@ -87,6 +98,7 @@ from app.infrastructure.db.repositories.word_progress_repository import (
     SqlAlchemyWordProgressRepository,
 )
 from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
+from app.infrastructure.db.repositories.xp_repository import SqlAlchemyXpRepository
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -124,6 +136,18 @@ def get_deck_activity_repository(session: SessionDep) -> DeckActivityRepository:
     return SqlAlchemyDeckActivityRepository(session)
 
 
+def get_deck_discovery_repository(session: SessionDep) -> DeckDiscoveryRepository:
+    return SqlAlchemyDeckDiscoveryRepository(session)
+
+
+def get_friend_repository(session: SessionDep) -> FriendRepository:
+    return SqlAlchemyFriendRepository(session)
+
+
+def get_xp_repository(session: SessionDep) -> XpRepository:
+    return SqlAlchemyXpRepository(session)
+
+
 def get_otp_repository(session: SessionDep) -> OTPChallengeRepository:
     return SqlAlchemyOTPChallengeRepository(session)
 
@@ -148,6 +172,11 @@ DeckMemberRepoDep = Annotated[DeckMemberRepository, Depends(get_deck_member_repo
 DeckUnitRepoDep = Annotated[DeckUnitRepository, Depends(get_deck_unit_repository)]
 DeckInviteRepoDep = Annotated[DeckInviteRepository, Depends(get_deck_invite_repository)]
 DeckActivityRepoDep = Annotated[DeckActivityRepository, Depends(get_deck_activity_repository)]
+DeckDiscoveryRepoDep = Annotated[
+    DeckDiscoveryRepository, Depends(get_deck_discovery_repository)
+]
+FriendRepoDep = Annotated[FriendRepository, Depends(get_friend_repository)]
+XpRepoDep = Annotated[XpRepository, Depends(get_xp_repository)]
 OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
 AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
 LookupCacheRepoDep = Annotated[LookupCacheRepository, Depends(get_lookup_cache_repository)]
@@ -360,8 +389,10 @@ def get_word_service(
     progress: WordProgressRepoDep,
     members: DeckMemberRepoDep,
     units: DeckUnitRepoDep,
+    xp: XpRepoDep,
+    users: UserRepoDep,
 ) -> WordService:
-    return WordService(words, progress, members, units)
+    return WordService(words, progress, members, units, xp, users)
 
 
 def get_deck_unit_service(units: DeckUnitRepoDep, members: DeckMemberRepoDep) -> DeckUnitService:
@@ -373,8 +404,23 @@ def get_study_service(
     users: UserRepoDep,
     reviews: ReviewEventRepoDep,
     activity: DeckActivityRepoDep,
+    xp: XpRepoDep,
 ) -> StudyService:
-    return StudyService(progress, users, reviews, activity)
+    return StudyService(progress, users, reviews, activity, xp)
+
+
+def get_deck_discovery_service(
+    discovery: DeckDiscoveryRepoDep,
+    members: DeckMemberRepoDep,
+    invites: DeckInviteRepoDep,
+    users: UserRepoDep,
+    friends: FriendRepoDep,
+) -> DeckDiscoveryService:
+    return DeckDiscoveryService(discovery, members, invites, users, friends)
+
+
+def get_friend_service(friends: FriendRepoDep, users: UserRepoDep) -> FriendService:
+    return FriendService(friends, users)
 
 
 def get_deck_sharing_service(
@@ -404,6 +450,10 @@ DeckServiceDep = Annotated[DeckService, Depends(get_deck_service)]
 WordServiceDep = Annotated[WordService, Depends(get_word_service)]
 DeckUnitServiceDep = Annotated[DeckUnitService, Depends(get_deck_unit_service)]
 DeckSharingServiceDep = Annotated[DeckSharingService, Depends(get_deck_sharing_service)]
+DeckDiscoveryServiceDep = Annotated[
+    DeckDiscoveryService, Depends(get_deck_discovery_service)
+]
+FriendServiceDep = Annotated[FriendService, Depends(get_friend_service)]
 StudyServiceDep = Annotated[StudyService, Depends(get_study_service)]
 AIStudioServiceDep = Annotated[AIStudioService, Depends(get_ai_studio_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
@@ -449,6 +499,19 @@ async def enforce_join_limit(request: Request, current_user: CurrentUser) -> Non
         client_ip = request.client.host if request.client else "unknown"
         if not await limiter.allow(f"join-ip:{client_ip}", per_ip):
             raise RateLimitedError("Too many join attempts. Please try again later.")
+
+
+async def enforce_share_limit(current_user: CurrentUser) -> None:
+    """Cap sharing and friend-adds per user.
+
+    Both take a handle and tell the caller whether it exists, so they are a
+    slower version of the availability oracle and need the same treatment.
+    """
+    limit = settings.shares_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"share:{current_user.id}", limit):
+        raise RateLimitedError("Too many shares just now. Please try again shortly.")
 
 
 async def enforce_username_check_limit(current_user: CurrentUser) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -12,7 +13,20 @@ from app.domain.entities.review_event import MAX_LATENCY_MS
 from app.domain.enums import LeitnerBox, ReviewGrade
 
 
+class SessionCompleteOut(BaseModel):
+    """What finishing was worth, and where that leaves the learner."""
+
+    awarded: int
+    xp: int
+    level: int
+
+
 class GradeIn(BaseModel):
+    #: Where the answer came from. A practice drill is worth different points
+    #: from a review session, and a wrong drill answer still pays — turning up
+    #: to be tested on your weakest words is the behaviour worth rewarding.
+    #: Omitted by clients older than practice, which is why it defaults.
+    source: Literal["session", "drill"] = "session"
     grade: ReviewGrade
     #: How long the learner spent on the card, in milliseconds. Optional and
     #: purely observational — it is recorded in the review log, never used to
@@ -38,6 +52,8 @@ class StudyOverviewOut(BaseModel):
     due_count: int
     total_count: int
     learned_count: int
+    mastered_count: int
+    reviewed_today: int
     due_deck_count: int
     estimated_minutes: int
     streak: int
@@ -49,6 +65,8 @@ class StudyOverviewOut(BaseModel):
             due_count=dto.due_count,
             total_count=dto.total_count,
             learned_count=dto.learned_count,
+            mastered_count=dto.mastered_count,
+            reviewed_today=dto.reviewed_today,
             due_deck_count=dto.due_deck_count,
             estimated_minutes=dto.estimated_minutes,
             streak=dto.streak,

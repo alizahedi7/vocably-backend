@@ -80,6 +80,11 @@ EXPECTED_OVERVIEW_ALI: dict[str, Any] = {
     "due_count": 4,
     "total_count": 6,
     "learned_count": 2,
+    # Added after the split, additively: an older client ignores them, and the
+    # numbers that existed before are unchanged — which is what this file is
+    # here to prove.
+    "mastered_count": 2,
+    "reviewed_today": 0,
     "due_deck_count": 2,
     "estimated_minutes": 2,
     "streak": 3,
@@ -276,6 +281,9 @@ async def test_the_fixture_produces_the_expected_overview_on_the_old_schema(
     assert int(due_decks) == EXPECTED_OVERVIEW_ALI["due_deck_count"]
     assert int(streak) == EXPECTED_OVERVIEW_ALI["streak"]
     assert per_box.get(4, 0) + per_box.get(5, 0) == EXPECTED_OVERVIEW_ALI["learned_count"]
+    # The pre-split schema has no rollup and no mastered_count; the fields
+    # added since are checked against the endpoint only.
+    assert per_box.get(5, 0) == EXPECTED_OVERVIEW_ALI["mastered_count"]
     distribution = EXPECTED_OVERVIEW_ALI["memory_strength"]["distribution"]
     assert [per_box.get(b["box"], 0) for b in distribution] == [b["count"] for b in distribution]
 

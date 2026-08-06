@@ -45,6 +45,7 @@ def user_to_entity(m: UserModel) -> User:
         interests=list(m.interests or []),
         daily_goal=m.daily_goal,
         streak=m.streak,
+        xp=m.xp,
         last_studied_on=m.last_studied_on,
         onboarded=m.onboarded,
         is_admin=m.is_admin,
@@ -71,6 +72,9 @@ def apply_user(entity: User, m: UserModel) -> None:
     m.interests = list(entity.interests)
     m.daily_goal = entity.daily_goal
     m.streak = entity.streak
+    # xp is deliberately absent: it is maintained by XpRepository.award in
+    # SQL, and writing a read-then-written value here would clobber a
+    # concurrent award.
     m.last_studied_on = entity.last_studied_on
     m.onboarded = entity.onboarded
     m.is_admin = entity.is_admin

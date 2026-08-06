@@ -150,3 +150,56 @@ async def test_first_grade_of_the_day_advances_streak_once(
         assert graded.status_code == 200
         me = await client.get("/api/v1/users/me", headers=auth_headers)
         assert me.json()["streak"] == expected_streak
+
+
+async def test_overview_reports_mastered_count_and_reviewed_today(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """The two fields the badges and the goal ring are built on.
+
+    `mastered_count` is box 5 only — the mastery badges are a pure function of
+    it, which is why no badge table exists. `learned_count` counts boxes 4 and
+    5 and is deliberately a different number.
+    """
+    deck_id, word_ids = await seed_deck_with_words(client, auth_headers, ["one", "two"])
+
+    empty = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    assert empty["mastered_count"] == 0
+    assert empty["reviewed_today"] == 0
+
+    # Four "easy" grades take a card from box 1 to box 5.
+    for _ in range(4):
+        await client.post(
+            f"/api/v1/study/words/{word_ids[0]}/grade",
+            headers=auth_headers,
+            json={"grade": "easy"},
+        )
+    await client.post(
+        f"/api/v1/study/words/{word_ids[1]}/grade", headers=auth_headers, json={"grade": "good"}
+    )
+
+    body = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    assert body["mastered_count"] == 1
+    assert body["learned_count"] == 1  # box 5 only here; box 4 would also count
+    # Five answers today, counted from the rollup rather than the review log.
+    assert body["reviewed_today"] == 5
+
+
+async def test_overview_keys_the_client_hard_casts_are_all_present(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # lib/models/study_overview.dart casts every one of these without a
+    # fallback: a missing key crashes the home screen.
+    body = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    assert {
+        "due_count",
+        "total_count",
+        "learned_count",
+        "mastered_count",
+        "reviewed_today",
+        "due_deck_count",
+        "estimated_minutes",
+        "streak",
+        "memory_strength",
+    } <= body.keys()
+    assert len(body["memory_strength"]["distribution"]) == 5

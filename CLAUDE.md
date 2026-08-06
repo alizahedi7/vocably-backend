@@ -82,7 +82,12 @@ The read-only admin analytics API backing the standalone **vocably-admin** dashb
   Gating is per-route by design — a new admin route MUST take `CurrentAdmin`, or it is public
   to any signed-in user.
 - **Endpoints**: `overview`, `registrations?days=1..365`, `auth-methods`, `users`,
-  `categories`, `words`. All GET, all platform-wide, none mutate.
+  `categories`, `words`. All GET, all platform-wide, none mutate — with one
+  deliberate exception: `PATCH /admin/decks/{id}/publish` curates Explore.
+  Publishing is admin-only because there is no report path and no moderation
+  queue; an open publish button without one is an unreviewed-content problem
+  rather than a feature. Opening it to deck owners later is a permission
+  change, not a migration.
 - **Response contract**: schemas in [admin.py](app/api/v1/schemas/admin.py) serialise via
   `serialization_alias` to **camelCase** to match vocably-admin's TypeScript types. Renaming a
   field is a breaking change for that client — keep the aliases in sync with the dashboard.
@@ -308,6 +313,55 @@ because the two clients read different keys: vocably-admin reads `error.code`,
 and the Flutter client's `ApiClient._extractDetail` reads `detail` and otherwise
 shows "Request failed (409)". 4xx messages on the sharing, units and friends
 paths are **user-visible copy** — write them as such, and keep them in English.
+
+## Explore, sharing, friends and XP
+
+**Saving from Explore takes a copy; sharing with a person shares the deck.**
+That distinction is the whole design and is easy to invert by accident:
+
+- `POST /decks/public/{id}/import` **copies** the deck, its units and its words
+  ([deck_discovery_repository.py](app/infrastructure/db/repositories/deck_discovery_repository.py)).
+  A published deck is a starting point, so editing your copy must not change
+  anyone else's. The copy is private and credits the copier — inheriting
+  `is_public` would let one popular deck spawn a hundred listings, and
+  inheriting the original author would let their account deletion touch rows in
+  a deck they have nothing to do with. Progress is never copied: an absent row
+  already reads as box 1, due now.
+- `POST /decks/{id}/share` + `POST /decks/shared/{id}/accept` make the
+  recipient a **member of the same deck**. `deck_shares` is the pending offer;
+  accepting writes a `deck_members` row. Only someone who could already invite
+  may share, so a viewer cannot hand a teacher's deck around. Declining deletes
+  the offer and tells the sender nothing.
+- A share id that is not yours **404s**, like everything else keyed by id.
+
+**Friends are a recency list, not a social graph.** One-directional and needing
+no consent, because they reveal nothing the sharer did not already know — they
+typed the handle. **Handle lookup is exact-match only**: no prefix search, no
+"find people" endpoint. Adding one is a product decision with a consent
+question attached, not a convenience. Sharing links the recipient
+automatically, which is why a handle is only ever typed once.
+
+**XP is a ledger plus a counter**, the same hybrid as the review history.
+`xp_events` is append-only; `users.xp` is what every request reads and is
+incremented **in SQL** — a read-then-write would let two awards clobber each
+other. It is deliberately absent from `apply_user`, so a profile save can never
+overwrite it.
+
+- The award table in [xp.py](app/domain/entities/xp.py) mirrors the client's
+  `progress_rewards.dart` exactly, as does `total_xp_for`. A disagreement shows
+  up as a level that changes when the learner switches device.
+- **Nothing accepts a client-supplied point total.** The daily goal is derived
+  server-side from `daily_deck_activity`, and "pays once a day" is a *partial
+  unique index* on `(user_id, action, day)` — an application check would let two
+  sessions finishing together both collect.
+- Grades pay by `source`: a drill is worth more than a review, and a *wrong*
+  drill answer still pays, because turning up to be tested on your weakest words
+  is the behaviour worth rewarding.
+
+**Badges have no table and no endpoint.** They are a pure function of
+`mastered_count` on `/study/overview` — box 5 across every deck, which is a
+different number from `learned_count` (boxes 4 and 5). A derived badge cannot
+go stale or disagree with the words.
 
 ## Review history
 

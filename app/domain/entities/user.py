@@ -39,6 +39,8 @@ class User:
 
     # Gamification
     streak: int = 0
+    #: Experience points; the client derives level and progress from it.
+    xp: int = 0
     last_studied_on: date | None = None
 
     onboarded: bool = False
