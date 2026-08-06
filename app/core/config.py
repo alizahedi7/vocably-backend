@@ -67,7 +67,12 @@ class Settings(BaseSettings):
     #: Join attempts per user and per IP per hour. This is the one endpoint
     #: where guessing wins access to someone else's data.
     joins_per_user_per_hour: int = 20
-    joins_per_ip_per_hour: int = 60
+    #: Deliberately loose: a class joins from one school's WiFi, so this is a
+    #: shared budget for everyone behind that NAT. It is a brute-force ceiling,
+    #: not a fairness quota — the code's own entropy is what makes guessing
+    #: hopeless, and a teacher's second class must not be locked out by the
+    #: first one's joins.
+    joins_per_ip_per_hour: int = 600
     # DEV/TEST ONLY: issue this exact code instead of a random one, for every phone
     # number, so mobile/QA can sign in without reading server logs. Forbidden in
     # production (validated below) — it disables OTP secrecy entirely while set.

@@ -55,6 +55,14 @@ services:
       DEBUG: "false"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-vocably}
       CELERY_BROKER_URL: redis://redis:6379/0
+      # Same Redis, separate logical databases. Both default to
+      # localhost, which inside this network is the container itself —
+      # so they MUST be set here or they silently degrade: the
+      # dictionary cache to no cache, and the rate limits from global
+      # to per-worker, which is the wrong primitive for the two of them
+      # that are security controls (handle enumeration, invite guessing).
+      DICTIONARY_REDIS_URL: redis://redis:6379/1
+      RATE_LIMIT_REDIS_URL: redis://redis:6379/2
     # This is the only service that migrates; worker and beat deliberately do
     # not, so a deploy never runs two migration attempts concurrently.
     command: >
@@ -76,6 +84,14 @@ services:
       DEBUG: "false"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-vocably}
       CELERY_BROKER_URL: redis://redis:6379/0
+      # Same Redis, separate logical databases. Both default to
+      # localhost, which inside this network is the container itself —
+      # so they MUST be set here or they silently degrade: the
+      # dictionary cache to no cache, and the rate limits from global
+      # to per-worker, which is the wrong primitive for the two of them
+      # that are security controls (handle enumeration, invite guessing).
+      DICTIONARY_REDIS_URL: redis://redis:6379/1
+      RATE_LIMIT_REDIS_URL: redis://redis:6379/2
     # Memory, not CPU, is the binding constraint on this VPS: a single process
     # running this app measures ~110 MiB, against under 1 GiB of RAM shared
     # with Postgres, Caddy, the API and the admin dashboard. Prefork spawns
@@ -116,6 +132,14 @@ services:
       DEBUG: "false"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-vocably}
       CELERY_BROKER_URL: redis://redis:6379/0
+      # Same Redis, separate logical databases. Both default to
+      # localhost, which inside this network is the container itself —
+      # so they MUST be set here or they silently degrade: the
+      # dictionary cache to no cache, and the rate limits from global
+      # to per-worker, which is the wrong primitive for the two of them
+      # that are security controls (handle enumeration, invite guessing).
+      DICTIONARY_REDIS_URL: redis://redis:6379/1
+      RATE_LIMIT_REDIS_URL: redis://redis:6379/2
     # /tmp because the image runs as a non-root user that cannot write to the
     # working directory. Losing this file only re-evaluates the schedule.
     command: celery -A app.tasks beat --loglevel=info --schedule=/tmp/celerybeat-schedule

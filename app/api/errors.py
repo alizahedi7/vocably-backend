@@ -13,6 +13,7 @@ from app.core.exceptions import (
     AlreadyExistsError,
     AppError,
     AuthenticationError,
+    ConflictError,
     ExternalServiceError,
     NotFoundError,
     PermissionDeniedError,
@@ -23,6 +24,7 @@ from app.core.exceptions import (
 _STATUS_MAP: dict[type[AppError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     AlreadyExistsError: status.HTTP_409_CONFLICT,
+    ConflictError: status.HTTP_409_CONFLICT,
     ValidationError: 422,  # Unprocessable Content
     PermissionDeniedError: status.HTTP_403_FORBIDDEN,
     AuthenticationError: status.HTTP_401_UNAUTHORIZED,

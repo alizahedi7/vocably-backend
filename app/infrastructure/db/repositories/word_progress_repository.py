@@ -13,12 +13,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.studied_word import StudiedWord
 from app.domain.entities.word_progress import WordProgress
-from app.domain.enums import LeitnerBox
+from app.domain.enums import LeitnerBox, ReviewGrade
 from app.domain.repositories.word_progress_repository import (
     DeckBoxTally,
     WordProgressRepository,
@@ -28,22 +28,6 @@ from app.infrastructure.db.dialects import upsert_insert
 from app.infrastructure.db.models.deck_member import DeckMemberModel
 from app.infrastructure.db.models.word import WordModel
 from app.infrastructure.db.models.word_progress import WordProgressModel
-
-#: Everything a grade rewrites. ``created_at`` is deliberately absent — it
-#: records when the learner first met the word and must survive later grades.
-_ON_GRADE = (
-    "deck_id",
-    "box",
-    "due_at",
-    "review_count",
-    "last_reviewed_at",
-    "lapse_count",
-    "consecutive_correct",
-    "first_reviewed_at",
-    "mastered_at",
-    "last_grade",
-    "updated_at",
-)
 
 
 class SqlAlchemyWordProgressRepository(WordProgressRepository):
@@ -204,17 +188,74 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         ]
 
     # ── writes ───────────────────────────────────────────────
-    async def upsert(self, progress: WordProgress) -> None:
-        # An upsert rather than read-then-insert-or-update, and that is a
-        # correctness choice: two concurrent first grades of the same word both
-        # read "no row", and one INSERT would then violate the primary key and
-        # lose a learner's review to a 500.
-        stmt = upsert_insert(self._session)(WordProgressModel).values(
-            **mappers.word_progress_values(progress)
-        )
-        await self._session.execute(
-            stmt.on_conflict_do_update(
-                index_elements=["user_id", "word_id"],
-                set_={column: stmt.excluded[column] for column in _ON_GRADE},
-            )
+    async def record_grade(self, progress: WordProgress, *, is_lapse: bool) -> WordProgress:
+        """Persist a graded review, and return the row as it now stands.
+
+        An upsert rather than read-then-insert-or-update, because two concurrent
+        first grades of the same word both read "no row" and one INSERT would
+        violate the primary key.
+
+        **The counters are incremented in SQL, not overwritten**, and that is
+        the other half of the same problem. ``progress`` was computed from a
+        read that may already be stale, so writing its counter values back
+        would make two concurrent grades land as one — leaving ``review_count``
+        disagreeing with ``word_reviews``, which CLAUDE.md says must never
+        happen. Adding in the database instead makes them monotonic however
+        many requests arrive at once.
+
+        ``box``, ``due_at`` and ``last_grade`` *are* last-writer-wins. That is
+        inherent: two grades of one card at the same instant have to resolve to
+        one schedule, and the most recent answer is the right one to keep.
+
+        ``first_reviewed_at`` and ``mastered_at`` are coalesced so the earliest
+        wins — neither may move once set.
+        """
+        model = WordProgressModel
+        values = mappers.word_progress_values(progress)
+        insert = upsert_insert(self._session)(model).values(**values)
+
+        stmt = insert.on_conflict_do_update(
+            index_elements=["user_id", "word_id"],
+            set_={
+                "deck_id": insert.excluded.deck_id,
+                "box": insert.excluded.box,
+                "due_at": insert.excluded.due_at,
+                "last_grade": insert.excluded.last_grade,
+                "last_reviewed_at": insert.excluded.last_reviewed_at,
+                "updated_at": insert.excluded.updated_at,
+                "review_count": model.review_count + 1,
+                "lapse_count": model.lapse_count + (1 if is_lapse else 0),
+                # A lapse resets the run; anything else extends it.
+                "consecutive_correct": (literal(0) if is_lapse else model.consecutive_correct + 1),
+                "first_reviewed_at": func.coalesce(
+                    model.first_reviewed_at, insert.excluded.first_reviewed_at
+                ),
+                "mastered_at": func.coalesce(model.mastered_at, insert.excluded.mastered_at),
+            },
+            # The table's columns, not the entity: RETURNING an ORM class
+            # yields a row keyed by entity, and this reads columns.
+        ).returning(*model.__table__.columns)
+
+        # RETURNING so the caller answers with the row that actually landed
+        # rather than the one it hoped for — under a double-tap those differ.
+        row = (await self._session.execute(stmt)).mappings().one()
+        return WordProgress(
+            user_id=row["user_id"],
+            word_id=row["word_id"],
+            deck_id=row["deck_id"],
+            box=LeitnerBox(row["box"]),
+            due_at=row["due_at"],
+            review_count=row["review_count"],
+            last_reviewed_at=row["last_reviewed_at"],
+            lapse_count=row["lapse_count"],
+            consecutive_correct=row["consecutive_correct"],
+            first_reviewed_at=row["first_reviewed_at"],
+            mastered_at=row["mastered_at"],
+            last_grade=(
+                ReviewGrade.from_ordinal(row["last_grade"])
+                if row["last_grade"] is not None
+                else None
+            ),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
         )

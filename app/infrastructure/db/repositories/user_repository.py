@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import AlreadyExistsError
 from app.domain.entities.user import User
 from app.domain.repositories.user_repository import UserRepository
 from app.infrastructure.db import mappers
@@ -31,6 +34,16 @@ class SqlAlchemyUserRepository(UserRepository):
         model = (await self._session.execute(stmt)).scalar_one_or_none()
         return mappers.user_to_entity(model) if model else None
 
+    async def list_by_ids(self, user_ids: Sequence[UUID]) -> dict[UUID, User]:
+        if not user_ids:
+            return {}
+        stmt = select(UserModel).where(UserModel.id.in_(list(user_ids)))
+        models = (await self._session.execute(stmt)).scalars().all()
+        return {m.id: mappers.user_to_entity(m) for m in models}
+
+    async def delete(self, user_id: UUID) -> None:
+        await self._session.execute(delete(UserModel).where(UserModel.id == user_id))
+
     async def get_by_username(self, username: str) -> User | None:
         stmt = select(UserModel).where(UserModel.username == username)
         model = (await self._session.execute(stmt)).scalar_one_or_none()
@@ -53,6 +66,25 @@ class SqlAlchemyUserRepository(UserRepository):
         if model is None:
             raise ValueError(f"User {user.id} does not exist")
         mappers.apply_user(user, model)
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            # The unique index is the real arbiter of a handle, not the
+            # availability check before it: two people can pass that check in
+            # the same instant and only one row can win. Translating here keeps
+            # the loser on a 409 with copy they can read, rather than a 500.
+            if _is_username_conflict(exc):
+                raise AlreadyExistsError("That handle is already taken.") from exc
+            raise
         await self._session.refresh(model)
         return mappers.user_to_entity(model)
+
+
+def _is_username_conflict(exc: IntegrityError) -> bool:
+    """Whether this violation is the handle's unique index.
+
+    Matched on the text because the constraint is named differently by each
+    dialect, and a user row has several unique columns — a phone or google_sub
+    conflict must never be reported to someone as a taken handle.
+    """
+    return "username" in str(exc.orig).lower()

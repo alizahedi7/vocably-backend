@@ -17,11 +17,13 @@ class WordModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: Attribution only — never an authorization check. Who may read or edit
     #: this card is deck membership (``deck_members``), and nothing else.
     #:
-    #: ``ondelete="RESTRICT"``: deleting the creator of a card in a shared deck
-    #: must fail loudly rather than quietly destroy a class's vocabulary. The
-    #: account-deletion flow reassigns or removes first; see CLAUDE.md.
-    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"), index=True, nullable=False
+    #: ``SET NULL``, and nullable, because attribution is precisely what may be
+    #: lost when someone leaves: a word an editor added to a teacher's deck
+    #: belongs to the deck, so their account going away must leave the class's
+    #: vocabulary standing, merely uncredited. RESTRICT was tried and made
+    #: every account undeletable — see revision e2c6a94f5b70.
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     deck_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("decks.id", ondelete="CASCADE"), index=True, nullable=False

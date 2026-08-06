@@ -343,8 +343,10 @@ def get_auth_service(
     return AuthService(users, otp_repo, otp_sender, google)
 
 
-def get_user_service(users: UserRepoDep) -> UserService:
-    return UserService(users)
+def get_user_service(
+    users: UserRepoDep, decks: DeckRepoDep, members: DeckMemberRepoDep
+) -> UserService:
+    return UserService(users, decks, members)
 
 
 def get_deck_service(

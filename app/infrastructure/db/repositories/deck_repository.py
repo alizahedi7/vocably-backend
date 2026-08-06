@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -54,3 +55,8 @@ class SqlAlchemyDeckRepository(DeckRepository):
 
     async def delete(self, deck_id: UUID) -> None:
         await self._session.execute(delete(DeckModel).where(DeckModel.id == deck_id))
+
+    async def delete_many(self, deck_ids: Sequence[UUID]) -> None:
+        if not deck_ids:
+            return
+        await self._session.execute(delete(DeckModel).where(DeckModel.id.in_(list(deck_ids))))

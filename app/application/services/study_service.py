@@ -129,9 +129,13 @@ class StudyService:
             session_id=session_id,
         )
         applied = studied.progress.apply_review(grade, outcome.box, outcome.due_at, now)
-        # An upsert, so the learner's first sight of a shared word creates their
-        # row here rather than thirty rows being fanned out when a deck is shared.
-        await self._progress.upsert(studied.progress)
+        # Returns the row that actually landed, which under two concurrent
+        # grades of the same card is not the one computed above: the counters
+        # are incremented in SQL so neither review is lost.
+        studied = StudiedWord(
+            word=studied.word,
+            progress=await self._progress.record_grade(studied.progress, is_lapse=grade.is_lapse),
+        )
 
         # Written in the same transaction as the progress update, unlike the AI
         # lookup cache's best-effort writes. That cache is derived data — a lost

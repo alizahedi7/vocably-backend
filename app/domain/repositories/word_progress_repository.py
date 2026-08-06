@@ -70,5 +70,11 @@ class WordProgressRepository(ABC):
         """
 
     @abstractmethod
-    async def upsert(self, progress: WordProgress) -> None:
-        """Write a learner's state, creating the row if this is their first grade."""
+    async def record_grade(self, progress: WordProgress, *, is_lapse: bool) -> WordProgress:
+        """Persist a graded review, returning the row as it now stands.
+
+        Creates the row on a learner's first sight of the word. Counters are
+        incremented in the database rather than overwritten, so two grades
+        arriving at once cannot land as one — see the adapter for why that
+        matters.
+        """

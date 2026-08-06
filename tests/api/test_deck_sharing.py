@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from httpx import AsyncClient
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from tests.api.conftest import UserFactory, bearer
 
@@ -399,3 +401,44 @@ async def test_a_viewer_sees_the_roster_including_their_rank(
     assert roster.status_code == 200
     me = next(m for m in roster.json()["members"] if m["is_me"])
     assert me["username"] == "parisa"
+
+
+async def test_the_roster_is_a_fixed_number_of_queries_whatever_the_class_size(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    make_user: UserFactory,
+    engine: AsyncEngine,
+) -> None:
+    """Guards the N+1 the brief warned about, by counting SQL.
+
+    The roster is the one screen where a class of thirty turns into thirty
+    round trips if a lookup slips back inside the member loop. Counting
+    statements is the only assertion that actually notices.
+    """
+    deck_id = await create_deck(client, auth_headers)
+    for i in range(6):
+        await named(client, make_user, f"+98912111200{i}", f"student{i}")
+        await client.post(
+            f"/api/v1/decks/{deck_id}/members",
+            headers=auth_headers,
+            json={"username": f"student{i}", "role": "viewer"},
+        )
+
+    statements: list[str] = []
+
+    def record(conn: object, cursor: object, statement: str, *args: object) -> None:
+        statements.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    try:
+        response = await client.get(f"/api/v1/decks/{deck_id}/roster", headers=auth_headers)
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+    assert response.status_code == 200
+    assert len(response.json()["members"]) == 7
+
+    selects = [s for s in statements if s.lstrip().upper().startswith("SELECT")]
+    # Auth, membership, members, users, invite, totals, week — a constant.
+    # Seven members must not cost seven user lookups.
+    assert len(selects) <= 8, "\n".join(selects)

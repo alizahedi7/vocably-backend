@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.entities.deck_invite import DeckInvite
 from app.domain.enums import DeckRole
 from app.domain.repositories.deck_invite_repository import DeckInviteRepository
+from app.infrastructure.db.dialects import upsert_insert
 from app.infrastructure.db.models.deck_invite import DeckInviteModel
 
 
@@ -40,16 +41,39 @@ class SqlAlchemyDeckInviteRepository(DeckInviteRepository):
         return _to_entity(model) if model else None
 
     async def upsert(self, invite: DeckInvite) -> DeckInvite:
-        model = await self._session.get(DeckInviteModel, invite.deck_id)
-        if model is None:
-            model = DeckInviteModel(deck_id=invite.deck_id, code=invite.code)
-            self._session.add(model)
-        # The code is never rewritten on an existing row: a link already handed
-        # to a class must keep working when the owner reopens it.
-        model.role = invite.role.value
-        model.is_open = invite.is_open
-        model.created_by_user_id = invite.created_by_user_id
-        model.expires_at = invite.expires_at
-        await self._session.flush()
-        await self._session.refresh(model)
-        return _to_entity(model)
+        # One statement, because read-then-insert races: two taps on "share"
+        # both see no row and the second violates the primary key. Note what
+        # the conflict branch does *not* set — ``code``. A link already handed
+        # to a class must keep working when the owner reopens it, so reopening
+        # never mints a new one.
+        stmt = (
+            upsert_insert(self._session)(DeckInviteModel)
+            .values(
+                deck_id=invite.deck_id,
+                code=invite.code,
+                role=invite.role.value,
+                is_open=invite.is_open,
+                created_by_user_id=invite.created_by_user_id,
+                expires_at=invite.expires_at,
+            )
+            .on_conflict_do_update(
+                index_elements=["deck_id"],
+                set_={
+                    "role": invite.role.value,
+                    "is_open": invite.is_open,
+                    "expires_at": invite.expires_at,
+                },
+            )
+            .returning(*DeckInviteModel.__table__.columns)
+        )
+        row = (await self._session.execute(stmt)).mappings().one()
+        return DeckInvite(
+            deck_id=row["deck_id"],
+            code=row["code"],
+            role=DeckRole.parse(row["role"]),
+            is_open=row["is_open"],
+            created_by_user_id=row["created_by_user_id"],
+            expires_at=row["expires_at"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )

@@ -18,7 +18,11 @@ from app.domain.entities.deck_invite import DeckInvite
 from app.domain.entities.deck_member import DeckMember
 from app.domain.entities.user import User
 from app.domain.enums import DeckRole
-from app.domain.repositories.deck_activity_repository import DeckActivityRepository
+from app.domain.repositories.deck_activity_repository import (
+    DeckActivityRepository,
+    MemberTotals,
+    MemberWeek,
+)
 from app.domain.repositories.deck_invite_repository import DeckInviteRepository
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.user_repository import UserRepository
@@ -91,19 +95,23 @@ class DeckSharingService:
         members = await self._members.list_for_deck(deck_id)
         invite = await self._invites.get_for_deck(deck_id)
 
-        totals = {}
-        weeks = {}
+        # One query for every member's name and handle, not one per member:
+        # a class of thirty behind a single screen is where this feature would
+        # otherwise become thirty round trips.
+        users = await self._users.list_by_ids([m.user_id for m in members])
+
+        totals: dict[UUID, MemberTotals] = {}
+        weeks: dict[UUID, MemberWeek] = {}
         if with_progress:
-            # Two grouped queries for the whole roster, not two per member.
-            # This is the obvious place to write an N+1 and the reason the
-            # aggregates live in the repository rather than in a loop here.
+            # Two more grouped queries for the whole roster, not two per member.
             totals = {t.user_id: t for t in await self._activity.totals_for_deck(deck_id)}
-            since = week_start_for(await self._timezone_of(me.user_id))
+            viewer = users.get(me.user_id)
+            since = week_start_for(viewer.timezone if viewer else None)
             weeks = {w.user_id: w for w in await self._activity.week_for_deck(deck_id, since)}
 
         views: list[MemberView] = []
         for member in members:
-            user = await self._users.get(member.user_id)
+            user = users.get(member.user_id)
             if user is None:  # pragma: no cover — membership CASCADEs with the user
                 continue
             progress = None
@@ -141,10 +149,6 @@ class DeckSharingService:
             invite_open=bool(invite and invite.accepts(datetime.now(UTC))),
         )
 
-    async def _timezone_of(self, user_id: UUID) -> str | None:
-        user = await self._users.get(user_id)
-        return user.timezone if user else None
-
     # ── members ──────────────────────────────────────────────
     async def add_member(
         self, deck_id: UUID, user_id: UUID, *, username: str, role: DeckRole
@@ -152,10 +156,9 @@ class DeckSharingService:
         me = await self._access.require_manage(deck_id, user_id)
         invitee = await self._resolve_handle(username, actor_id=user_id)
 
-        if await self._members.get(deck_id, invitee.id) is not None:
-            raise AlreadyExistsError("They already have this deck")
-
-        await self._members.add(
+        # One statement decides it: a pre-check would let two identical invites
+        # race past each other and turn the loser into a 500 on the primary key.
+        added = await self._members.add_if_absent(
             DeckMember(
                 deck_id=deck_id,
                 user_id=invitee.id,
@@ -165,6 +168,8 @@ class DeckSharingService:
                 invited_by_user_id=user_id,
             )
         )
+        if not added:
+            raise AlreadyExistsError("They already have this deck")
         return await self._build(deck_id, me, with_progress=False)
 
     async def change_role(
@@ -222,16 +227,17 @@ class DeckSharingService:
             # them apart tells someone guessing which codes exist.
             raise NotFoundError("That code does not match an open invite")
 
-        existing = await self._members.get(invite.deck_id, user_id)
-        if existing is None:
-            await self._members.add(
-                DeckMember(
-                    deck_id=invite.deck_id,
-                    user_id=user_id,
-                    role=invite.role,
-                    invited_by_user_id=invite.created_by_user_id,
-                )
+        # Idempotent in one statement: two taps on a link arrive together often
+        # enough that check-then-insert would show a learner a 500 for doing
+        # nothing wrong.
+        await self._members.add_if_absent(
+            DeckMember(
+                deck_id=invite.deck_id,
+                user_id=user_id,
+                role=invite.role,
+                invited_by_user_id=invite.created_by_user_id,
             )
+        )
         return invite.deck_id
 
     # ── helpers ──────────────────────────────────────────────

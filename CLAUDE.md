@@ -199,17 +199,49 @@ word_progress(user_id, word_id, deck_id, box, due_at, review_count, …)  -- per
   do not unify them.
 - **Cascades carry the policy.** `ON DELETE CASCADE` from `users` lands on
   `word_progress`, never on the card: a member leaving must not delete a class's
-  vocabulary. `words.created_by_user_id` is **`ON DELETE RESTRICT`** — see
-  account deletion below. Progress rows survive a member leaving a deck, so
-  rejoining restores their boxes; every aggregate is scoped through
-  `deck_members`, so those rows are invisible until then.
+  vocabulary. `words.created_by_user_id` is **`ON DELETE SET NULL`** and
+  nullable — attribution is exactly what may be lost when someone leaves, and a
+  card an editor wrote belongs to the deck. Progress rows survive a member
+  leaving a deck, so rejoining restores their boxes; every aggregate is scoped
+  through `deck_members`, so those rows are invisible until then.
 - **No user-facing request may scan `words` per learner.** `/study/overview` and
   the deck list both fold a single `tally_by_deck_and_box` result. The overview
   used to fetch every due row and count it in Python; do not reintroduce that.
-- **Account deletion is blocked while the user owns cards in a shared deck.**
-  The FK enforces it rather than an application check someone forgets. Deleting
-  the owner of a class deck must never be silently destructive; transferring
-  ownership is a separate action that does not exist yet.
+  The roster is the other trap: it batches its member lookup, and
+  `test_deck_sharing.py` counts SQL statements to keep it that way.
+- **Account deletion (`DELETE /users/me`) is an application rule, not an FK.**
+  It refuses with 409 while the caller owns a deck someone else is in, naming
+  the decks. A foreign key cannot see whether a deck is shared, and the column
+  that would destroy it is `decks.user_id` — `RESTRICT` on
+  `words.created_by_user_id` was tried and made *every* account undeletable,
+  because Postgres checks it before the deck cascade removes the user's own
+  cards. **Order matters in the flow**: delete the user's own decks first, or
+  the `SET NULL` fires against cards whose deck is being cascaded away in the
+  same statement and fails on the deck foreign key.
+
+### Writes that two requests can reach at once
+
+A double-tapped button is the normal case, not an edge case, and each of these
+was a real bug found by hammering a running server:
+
+- **Grades increment counters in SQL**, never write back a value read earlier.
+  Read-modify-write made six simultaneous grades land as one, leaving
+  `review_count` disagreeing with `word_reviews`. `record_grade` returns the row
+  that actually landed, so the response is the truth rather than the hope.
+  `box`/`due_at` stay last-writer-wins: one card can only have one schedule.
+- **Memberships insert with `ON CONFLICT DO NOTHING`** (`add_if_absent`).
+  Check-then-insert turned a second tap on an invite link into a 500. `DO
+  NOTHING` rather than `DO UPDATE`, so re-tapping a viewer link cannot demote a
+  member the owner has since promoted.
+- **The invite row upserts on `deck_id` and never rewrites `code`** — reopening
+  a link must not invalidate one already handed to a class.
+- **A handle conflict is translated at the constraint**, in
+  `SqlAlchemyUserRepository.update`. `/users/username-available` is advisory;
+  the unique index decides, and the loser of a race gets a 409 with copy rather
+  than a stack trace.
+
+`tests/api/test_concurrency.py` holds all of these. One of them needs truly
+independent sessions and is skipped on the SQLite run.
 
 ### Units
 

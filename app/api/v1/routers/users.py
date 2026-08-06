@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.deps import CurrentUser, UserServiceDep, enforce_username_check_limit
 from app.api.v1.schemas.user import (
@@ -90,3 +90,14 @@ async def update_me(
         daily_goal=payload.daily_goal,
     )
     return UserOut.model_validate(user)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(current_user: CurrentUser, users: UserServiceDep) -> None:
+    """Erase the account and everything keyed to it.
+
+    Refused with 409 while the caller still owns a deck other people are in:
+    deleting them would take a class's vocabulary with it. Cards they wrote in
+    someone else's deck stay, uncredited — they belong to that deck.
+    """
+    await users.delete_account(current_user.id)

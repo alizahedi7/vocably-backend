@@ -97,7 +97,10 @@ class RedisFixedWindowRateLimiter:
             count = await self._redis.incr(key)
             if count == 1:
                 await self._redis.expire(key, self._window)
-        except Exception:  # noqa: BLE001 — any Redis failure degrades, never opens
-            logger.warning("rate_limit.redis_unavailable", extra={"key": key}, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 — any Redis failure degrades, never opens
+            # One line, no traceback: an outage means *every* request takes this
+            # path, and a stack trace per request buries the incident it is
+            # reporting. The message names the cause well enough to act on.
+            logger.warning("rate_limit.redis_unavailable: %s", exc)
             return self._fallback.allow(key, max_events)
         return bool(count <= max_events)

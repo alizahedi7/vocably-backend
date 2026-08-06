@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from uuid import UUID
 
 from app.domain.entities.deck import Deck
@@ -23,3 +24,6 @@ class DeckRepository(ABC):
 
     @abstractmethod
     async def delete(self, deck_id: UUID) -> None: ...
+
+    @abstractmethod
+    async def delete_many(self, deck_ids: Sequence[UUID]) -> None: ...

@@ -377,9 +377,10 @@ async def test_the_schema_actually_moved(migrated: AsyncEngine) -> None:
 
     assert "created_by_user_id" in columns
     assert not {"user_id", "box", "due_at", "review_count", "last_grade"} & columns
-    # RESTRICT, so deleting the owner of a shared deck fails loudly rather than
-    # destroying a class's vocabulary.
-    assert "ON DELETE RESTRICT" in fk
+    # SET NULL: a card outlives the account that wrote it, uncredited, so a
+    # class keeps its vocabulary when a member leaves. RESTRICT was tried and
+    # made every account undeletable — see revision e2c6a94f5b70.
+    assert "ON DELETE SET NULL" in fk
     assert "ix_word_progress_user_due" in indexes
     assert "ix_words_user_due" not in indexes
 
