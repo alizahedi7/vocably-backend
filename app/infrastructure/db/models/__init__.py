@@ -5,7 +5,9 @@ and ``create_all`` can see them.
 """
 
 from app.infrastructure.db.models.ai_lookup import AILookupAliasModel, AILookupEntryModel
+from app.infrastructure.db.models.daily_deck_activity import DailyDeckActivityModel
 from app.infrastructure.db.models.deck import DeckModel
+from app.infrastructure.db.models.deck_invite import DeckInviteModel
 from app.infrastructure.db.models.deck_member import DeckMemberModel
 from app.infrastructure.db.models.deck_unit import DeckUnitModel
 from app.infrastructure.db.models.otp_challenge import OtpChallengeModel
@@ -17,6 +19,8 @@ from app.infrastructure.db.models.word_review import WordReviewModel
 __all__ = [
     "AILookupAliasModel",
     "AILookupEntryModel",
+    "DailyDeckActivityModel",
+    "DeckInviteModel",
     "DeckMemberModel",
     "DeckModel",
     "DeckUnitModel",

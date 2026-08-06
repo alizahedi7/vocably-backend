@@ -11,10 +11,12 @@ from app.core.exceptions import NotFoundError
 from app.domain.entities.review_event import ReviewEvent
 from app.domain.entities.studied_word import StudiedWord
 from app.domain.enums import LeitnerBox, ReviewGrade
+from app.domain.repositories.deck_activity_repository import DeckActivityRepository
 from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.services import leitner
+from app.domain.services.calendar import today_for
 
 #: Rough estimate used for the "~N min" hint on the home screen.
 _MINUTES_PER_CARD = 0.5
@@ -28,10 +30,12 @@ class StudyService:
         progress: WordProgressRepository,
         users: UserRepository,
         reviews: ReviewEventRepository,
+        activity: DeckActivityRepository,
     ) -> None:
         self._progress = progress
         self._users = users
         self._reviews = reviews
+        self._activity = activity
 
     async def get_overview(self, user_id: UUID) -> StudyOverview:
         """Every home-screen number, from one grouped query.
@@ -124,7 +128,7 @@ class StudyService:
             latency_ms=latency_ms,
             session_id=session_id,
         )
-        studied.progress.apply_review(grade, outcome.box, outcome.due_at, now)
+        applied = studied.progress.apply_review(grade, outcome.box, outcome.due_at, now)
         # An upsert, so the learner's first sight of a shared word creates their
         # row here rather than thirty rows being fanned out when a deck is shared.
         await self._progress.upsert(studied.progress)
@@ -137,8 +141,18 @@ class StudyService:
         await self._reviews.add(event)
 
         user = await self._users.get(user_id)
+        # The learner's own day, not UTC: a review at 01:00 in Tehran belongs to
+        # that day, and the streak and the roster's week must agree about which.
+        today = today_for(user.timezone if user else None, now)
+        # Rides along on the same transaction. This is what keeps the roster off
+        # word_reviews, which CLAUDE.md forbids aggregating for a user-facing
+        # request — a roster of thirty students would otherwise scan it thirty
+        # times.
+        await self._activity.record_review(
+            user_id, studied.deck_id, today, mastered=applied.became_mastered
+        )
         if user is not None:
-            user.register_study_day(now.date())
+            user.register_study_day(today)
             await self._users.update(user)
 
         return studied
