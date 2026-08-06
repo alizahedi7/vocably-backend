@@ -7,6 +7,7 @@ and ``create_all`` can see them.
 from app.infrastructure.db.models.ai_lookup import AILookupAliasModel, AILookupEntryModel
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.deck_member import DeckMemberModel
+from app.infrastructure.db.models.deck_unit import DeckUnitModel
 from app.infrastructure.db.models.otp_challenge import OtpChallengeModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
@@ -18,6 +19,7 @@ __all__ = [
     "AILookupEntryModel",
     "DeckMemberModel",
     "DeckModel",
+    "DeckUnitModel",
     "OtpChallengeModel",
     "UserModel",
     "WordModel",

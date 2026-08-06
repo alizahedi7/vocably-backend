@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.domain.entities.deck import Deck
 from app.domain.entities.deck_member import DeckMember
+from app.domain.entities.deck_unit import DeckUnit
 from app.domain.entities.otp_challenge import OtpChallenge
 from app.domain.entities.review_event import ReviewEvent
 from app.domain.entities.user import User
@@ -16,6 +17,7 @@ from app.domain.entities.word_progress import WordProgress
 from app.domain.enums import AgeRange, AuthMethod, DeckRole, LeitnerBox, ReviewGrade
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.deck_member import DeckMemberModel
+from app.infrastructure.db.models.deck_unit import DeckUnitModel
 from app.infrastructure.db.models.otp_challenge import OtpChallengeModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
@@ -99,6 +101,7 @@ def word_to_entity(m: WordModel) -> Word:
         id=m.id,
         deck_id=m.deck_id,
         created_by_user_id=m.created_by_user_id,
+        unit_id=m.unit_id,
         term=m.term,
         meaning=m.meaning,
         definition=m.definition,
@@ -116,6 +119,7 @@ def apply_word(entity: Word, m: WordModel) -> None:
     if entity.created_by_user_id is not None:
         m.created_by_user_id = entity.created_by_user_id
     m.deck_id = entity.deck_id
+    m.unit_id = entity.unit_id
     m.term = entity.term
     m.meaning = entity.meaning
     m.definition = entity.definition
@@ -177,6 +181,18 @@ def deck_member_to_entity(m: DeckMemberModel) -> DeckMember:
         role=DeckRole.parse(m.role),
         invited_by_user_id=m.invited_by_user_id,
         joined_at=m.joined_at,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+# ── Deck unit ────────────────────────────────────────────────
+def deck_unit_to_entity(m: DeckUnitModel) -> DeckUnit:
+    return DeckUnit(
+        id=m.id,
+        deck_id=m.deck_id,
+        name=m.name,
+        position=m.position,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )

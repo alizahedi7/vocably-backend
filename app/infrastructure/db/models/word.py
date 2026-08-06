@@ -27,6 +27,13 @@ class WordModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("decks.id", ondelete="CASCADE"), index=True, nullable=False
     )
 
+    #: The unit this card sits in, or NULL. ``ondelete="SET NULL"`` *is* the
+    #: product rule: deleting a unit keeps its cards and drops them back into
+    #: the deck. Removing a heading must never remove what was under it.
+    unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("deck_units.id", ondelete="SET NULL"), index=True
+    )
+
     term: Mapped[str] = mapped_column(String(255), nullable=False)
     meaning: Mapped[str] = mapped_column(Text, nullable=False)
     definition: Mapped[str | None] = mapped_column(Text)

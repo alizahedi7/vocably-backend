@@ -24,6 +24,7 @@ from app.application.services.admin_service import AdminService
 from app.application.services.ai_studio_service import MAX_LOOKUP_SUGGESTIONS, AIStudioService
 from app.application.services.auth_service import AuthService
 from app.application.services.deck_service import DeckService
+from app.application.services.deck_unit_service import DeckUnitService
 from app.application.services.study_service import StudyService
 from app.application.services.user_service import UserService
 from app.application.services.word_service import WordService
@@ -39,6 +40,7 @@ from app.core.security import TokenType, decode_token
 from app.domain.entities.user import User
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_repository import DeckRepository
+from app.domain.repositories.deck_unit_repository import DeckUnitRepository
 from app.domain.repositories.otp_repository import OTPChallengeRepository
 from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
@@ -59,6 +61,9 @@ from app.infrastructure.db.repositories.deck_member_repository import (
     SqlAlchemyDeckMemberRepository,
 )
 from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
+from app.infrastructure.db.repositories.deck_unit_repository import (
+    SqlAlchemyDeckUnitRepository,
+)
 from app.infrastructure.db.repositories.lookup_cache_repository import (
     SqlAlchemyLookupCacheRepository,
 )
@@ -98,6 +103,10 @@ def get_deck_member_repository(session: SessionDep) -> DeckMemberRepository:
     return SqlAlchemyDeckMemberRepository(session)
 
 
+def get_deck_unit_repository(session: SessionDep) -> DeckUnitRepository:
+    return SqlAlchemyDeckUnitRepository(session)
+
+
 def get_otp_repository(session: SessionDep) -> OTPChallengeRepository:
     return SqlAlchemyOTPChallengeRepository(session)
 
@@ -119,6 +128,7 @@ DeckRepoDep = Annotated[DeckRepository, Depends(get_deck_repository)]
 WordRepoDep = Annotated[WordRepository, Depends(get_word_repository)]
 WordProgressRepoDep = Annotated[WordProgressRepository, Depends(get_word_progress_repository)]
 DeckMemberRepoDep = Annotated[DeckMemberRepository, Depends(get_deck_member_repository)]
+DeckUnitRepoDep = Annotated[DeckUnitRepository, Depends(get_deck_unit_repository)]
 OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
 AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
 LookupCacheRepoDep = Annotated[LookupCacheRepository, Depends(get_lookup_cache_repository)]
@@ -325,9 +335,16 @@ def get_deck_service(
 
 
 def get_word_service(
-    words: WordRepoDep, progress: WordProgressRepoDep, members: DeckMemberRepoDep
+    words: WordRepoDep,
+    progress: WordProgressRepoDep,
+    members: DeckMemberRepoDep,
+    units: DeckUnitRepoDep,
 ) -> WordService:
-    return WordService(words, progress, members)
+    return WordService(words, progress, members, units)
+
+
+def get_deck_unit_service(units: DeckUnitRepoDep, members: DeckMemberRepoDep) -> DeckUnitService:
+    return DeckUnitService(units, members)
 
 
 def get_study_service(
@@ -352,6 +369,7 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 DeckServiceDep = Annotated[DeckService, Depends(get_deck_service)]
 WordServiceDep = Annotated[WordService, Depends(get_word_service)]
+DeckUnitServiceDep = Annotated[DeckUnitService, Depends(get_deck_unit_service)]
 StudyServiceDep = Annotated[StudyService, Depends(get_study_service)]
 AIStudioServiceDep = Annotated[AIStudioService, Depends(get_ai_studio_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]

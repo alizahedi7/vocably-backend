@@ -23,6 +23,9 @@ class Word:
     #: Who added the card. **Attribution only** — never an authorization check.
     #: Who may read or edit a card is deck membership, and nothing else.
     created_by_user_id: UUID | None = None
+    #: The unit/lesson this card belongs to within its deck, or ``None``. Most
+    #: decks have no units at all, and a card belonging to none is normal.
+    unit_id: UUID | None = None
 
     # Content
     term: str = ""

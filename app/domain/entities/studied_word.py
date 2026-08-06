@@ -41,6 +41,10 @@ class StudiedWord:
         return self.word.deck_id
 
     @property
+    def unit_id(self) -> UUID | None:
+        return self.word.unit_id
+
+    @property
     def created_by_user_id(self) -> UUID | None:
         return self.word.created_by_user_id
 
