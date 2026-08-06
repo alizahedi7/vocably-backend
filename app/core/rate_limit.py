@@ -11,6 +11,11 @@ import time
 from collections import deque
 from collections.abc import Callable
 from threading import Lock
+from typing import Any
+
+from app.core.logging import get_logger
+
+logger = get_logger("vocably.rate_limit")
 
 
 class SlidingWindowRateLimiter:
@@ -61,3 +66,38 @@ class SlidingWindowRateLimiter:
         ]
         for key in dead:
             del self._events[key]
+
+
+class RedisFixedWindowRateLimiter:
+    """Shared-state limiting, for the limits that are security controls.
+
+    :class:`SlidingWindowRateLimiter` keeps its counters in process memory, so
+    with N workers the real budget is N times the configured one and a restart
+    clears it. That is an acceptable backstop against SMS spend. It is the wrong
+    primitive for handle enumeration and invite-code guessing, where the budget
+    *is* the control.
+
+    A fixed window (INCR + EXPIRE) rather than a sliding one: it is two commands
+    and no Lua, and its worst case — twice the budget across a window boundary —
+    does not matter for limits set to make guessing infeasible rather than to
+    meter precisely.
+
+    **Never fails open.** An unreachable Redis falls back to the in-process
+    limiter, so the limit degrades from global to per-worker rather than
+    disappearing.
+    """
+
+    def __init__(self, redis: Any, window_seconds: int, fallback: SlidingWindowRateLimiter) -> None:
+        self._redis = redis
+        self._window = window_seconds
+        self._fallback = fallback
+
+    async def allow(self, key: str, max_events: int) -> bool:
+        try:
+            count = await self._redis.incr(key)
+            if count == 1:
+                await self._redis.expire(key, self._window)
+        except Exception:  # noqa: BLE001 — any Redis failure degrades, never opens
+            logger.warning("rate_limit.redis_unavailable", extra={"key": key}, exc_info=True)
+            return self._fallback.allow(key, max_events)
+        return bool(count <= max_events)

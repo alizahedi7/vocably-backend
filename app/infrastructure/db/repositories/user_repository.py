@@ -31,6 +31,15 @@ class SqlAlchemyUserRepository(UserRepository):
         model = (await self._session.execute(stmt)).scalar_one_or_none()
         return mappers.user_to_entity(model) if model else None
 
+    async def get_by_username(self, username: str) -> User | None:
+        stmt = select(UserModel).where(UserModel.username == username)
+        model = (await self._session.execute(stmt)).scalar_one_or_none()
+        return mappers.user_to_entity(model) if model else None
+
+    async def username_taken(self, username: str) -> bool:
+        stmt = select(UserModel.id).where(UserModel.username == username).limit(1)
+        return (await self._session.execute(stmt)).scalar_one_or_none() is not None
+
     async def add(self, user: User) -> User:
         model = UserModel(id=user.id)
         mappers.apply_user(user, model)

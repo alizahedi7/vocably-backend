@@ -53,6 +53,21 @@ class Settings(BaseSettings):
     otp_resend_cooldown_seconds: int = 30
     # Cost-abuse backstop: SMS requests allowed per client IP per hour (<= 0 disables).
     otp_requests_per_ip_per_hour: int = 20
+
+    #: Shared store for the limits that are *security* controls rather than
+    #: cost backstops — handle enumeration and invite-code guessing. The
+    #: in-process limiter multiplies its budget by the worker count and resets
+    #: on restart, which is fine for SMS spend and wrong for these two.
+    #: Unreachable Redis degrades to the in-process limiter; it never fails open.
+    rate_limit_redis_url: str = "redis://localhost:6379/2"
+    #: Handle-availability checks per user per hour. The endpoint is typed into
+    #: as the learner types, so this is generous — it exists to stop the
+    #: endpoint being walked as a handle-enumeration oracle, not to stop typing.
+    username_checks_per_user_per_hour: int = 120
+    #: Join attempts per user and per IP per hour. This is the one endpoint
+    #: where guessing wins access to someone else's data.
+    joins_per_user_per_hour: int = 20
+    joins_per_ip_per_hour: int = 60
     # DEV/TEST ONLY: issue this exact code instead of a random one, for every phone
     # number, so mobile/QA can sign in without reading server logs. Forbidden in
     # production (validated below) — it disables OTP secrecy entirely while set.

@@ -5,10 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import AlreadyExistsError, NotFoundError, ValidationError
 from app.domain.entities.user import User
 from app.domain.enums import AgeRange
 from app.domain.repositories.user_repository import UserRepository
+from app.domain.services import usernames
+from app.domain.services.calendar import is_valid_timezone
 
 
 class UserService:
@@ -21,6 +23,36 @@ class UserService:
             raise NotFoundError("User not found.")
         return user
 
+    async def is_username_available(self, username: str) -> bool:
+        """Whether a handle can be claimed right now.
+
+        Malformed and reserved handles answer ``False`` rather than raising: the
+        client treats a *failure* as "unknown" and lets the user through, which
+        is deliberate — being unable to ask is not a rejection — but must not be
+        reachable by typing.
+        """
+        candidate = usernames.normalize(username)
+        if not usernames.is_valid_username(candidate):
+            return False
+        return not await self._users.username_taken(candidate)
+
+    async def _claim_username(self, user: User, raw: str) -> None:
+        """Validate and assign a handle, or raise the copy the user will read."""
+        candidate = usernames.normalize(raw)
+        if candidate == user.username:
+            return
+        if not usernames.is_valid_username(candidate):
+            raise ValidationError(
+                "Handles are 3–20 characters, start with a letter, "
+                "and use only letters, numbers and underscores."
+            )
+        if await self._users.username_taken(candidate):
+            # The unique index is the real guarantee — this check only exists to
+            # turn the race into good copy rather than a 500. The repository
+            # raising on the index is still the backstop.
+            raise AlreadyExistsError("That handle is already taken.")
+        user.username = candidate
+
     async def complete_onboarding(
         self,
         user_id: UUID,
@@ -28,6 +60,11 @@ class UserService:
         name: str,
         age_range: AgeRange | None,
         native_language: str,
+        username: str | None = None,
+        target_language: str | None = None,
+        proficiency: str | None = None,
+        study_time: str | None = None,
+        timezone: str | None = None,
         interests: list[str] | None = None,
         daily_goal: int | None = None,
     ) -> User:
@@ -35,6 +72,16 @@ class UserService:
         user.name = name.strip()
         user.age_range = age_range
         user.native_language = native_language
+        if username is not None:
+            await self._claim_username(user, username)
+        if target_language is not None:
+            user.target_language = target_language
+        if proficiency is not None:
+            user.proficiency = proficiency
+        if study_time is not None:
+            user.study_time = study_time
+        if timezone is not None:
+            user.timezone = _validated_timezone(timezone)
         if interests is not None:
             user.interests = list(interests)
         if daily_goal is not None:
@@ -51,6 +98,11 @@ class UserService:
         age_range: AgeRange | None = None,
         native_language: str | None = None,
         app_language: str | None = None,
+        username: str | None = None,
+        target_language: str | None = None,
+        proficiency: str | None = None,
+        study_time: str | None = None,
+        timezone: str | None = None,
         interests: list[str] | None = None,
         daily_goal: int | None = None,
     ) -> User:
@@ -63,9 +115,31 @@ class UserService:
             user.native_language = native_language
         if app_language is not None:
             user.app_language = app_language
+        if username is not None:
+            await self._claim_username(user, username)
+        if target_language is not None:
+            user.target_language = target_language
+        if proficiency is not None:
+            user.proficiency = proficiency
+        if study_time is not None:
+            user.study_time = study_time
+        if timezone is not None:
+            user.timezone = _validated_timezone(timezone)
         if interests is not None:
             user.interests = list(interests)
         if daily_goal is not None:
             user.daily_goal = daily_goal
         user.updated_at = datetime.now(UTC)
         return await self._users.update(user)
+
+
+def _validated_timezone(timezone: str) -> str:
+    """Reject an unresolvable IANA name at the write.
+
+    Reads fall back to UTC rather than raising (see ``calendar.zone_for``); the
+    write is where a bad value should be refused, so a wrong day boundary is
+    never persisted silently.
+    """
+    if not is_valid_timezone(timezone):
+        raise ValidationError(f"{timezone!r} is not a known timezone.")
+    return timezone

@@ -34,7 +34,7 @@ from app.core.exceptions import (
     PermissionDeniedError,
     RateLimitedError,
 )
-from app.core.rate_limit import SlidingWindowRateLimiter
+from app.core.rate_limit import RedisFixedWindowRateLimiter, SlidingWindowRateLimiter
 from app.core.security import TokenType, decode_token
 from app.domain.entities.user import User
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
@@ -359,6 +359,39 @@ AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
 
 # ── Abuse protection ─────────────────────────────────────────
 _otp_ip_limiter = SlidingWindowRateLimiter(window_seconds=3600.0)
+#: Backs the Redis limiters when Redis is unreachable, so the limit degrades to
+#: per-worker rather than disappearing.
+_shared_limit_fallback = SlidingWindowRateLimiter(window_seconds=3600.0)
+
+
+@lru_cache
+def _hourly_shared_limiter() -> RedisFixedWindowRateLimiter:
+    """One Redis connection pool for every hourly security limit, per process.
+
+    Built lazily and never awaited here, so an unreachable Redis costs nothing
+    at startup — the first call falls back and logs.
+    """
+    from redis.asyncio import Redis
+
+    return RedisFixedWindowRateLimiter(
+        Redis.from_url(settings.rate_limit_redis_url, decode_responses=True),
+        window_seconds=3600,
+        fallback=_shared_limit_fallback,
+    )
+
+
+async def enforce_username_check_limit(current_user: CurrentUser) -> None:
+    """Cap handle-availability checks per user.
+
+    The endpoint answers "does this person exist" for any string, so without a
+    limit it is a handle-enumeration oracle. Keyed per user, not per IP: it
+    requires a token, and a shared IP is a classroom.
+    """
+    limit = settings.username_checks_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"username-check:{current_user.id}", limit):
+        raise RateLimitedError("Too many handle checks. Please try again shortly.")
 
 
 async def enforce_otp_request_ip_limit(request: Request) -> None:

@@ -2,12 +2,42 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Annotated
 
-from app.api.deps import CurrentUser, UserServiceDep
-from app.api.v1.schemas.user import CompleteOnboardingIn, UpdateProfileIn, UserOut
+from fastapi import APIRouter, Depends, Query
+
+from app.api.deps import CurrentUser, UserServiceDep, enforce_username_check_limit
+from app.api.v1.schemas.user import (
+    CompleteOnboardingIn,
+    UpdateProfileIn,
+    UsernameAvailableOut,
+    UserOut,
+)
+from app.domain.services.usernames import USERNAME_MAX_LENGTH
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get(
+    "/username-available",
+    response_model=UsernameAvailableOut,
+    dependencies=[Depends(enforce_username_check_limit)],
+)
+async def username_available(
+    users: UserServiceDep,
+    username: Annotated[str, Query(max_length=USERNAME_MAX_LENGTH, description="Handle to check")],
+) -> UsernameAvailableOut:
+    """Whether a handle can be claimed.
+
+    Called as the learner types and again before the flow advances, since a
+    handle can be claimed between the check and the commit — so this is
+    advisory, and the unique index is what actually decides.
+
+    Malformed and reserved handles answer ``false`` rather than erroring: the
+    client treats a *failure* as "unknown" and lets the user through, which is
+    deliberate, but must not be reachable by typing.
+    """
+    return UsernameAvailableOut(available=await users.is_username_available(username))
 
 
 @router.get("/me", response_model=UserOut)
@@ -24,8 +54,13 @@ async def complete_onboarding(
     user = await users.complete_onboarding(
         current_user.id,
         name=payload.name,
+        username=payload.username,
         age_range=payload.age_range,
         native_language=payload.native_language,
+        target_language=payload.target_language,
+        proficiency=payload.proficiency,
+        study_time=payload.study_time,
+        timezone=payload.timezone,
         interests=[str(topic) for topic in payload.interests],
         daily_goal=payload.daily_goal,
     )
@@ -41,9 +76,14 @@ async def update_me(
     user = await users.update_profile(
         current_user.id,
         name=payload.name,
+        username=payload.username,
         age_range=payload.age_range,
         native_language=payload.native_language,
         app_language=payload.app_language,
+        target_language=payload.target_language,
+        proficiency=payload.proficiency,
+        study_time=payload.study_time,
+        timezone=payload.timezone,
         interests=(
             None if payload.interests is None else [str(topic) for topic in payload.interests]
         ),

@@ -21,9 +21,17 @@ class User:
 
     # Profile
     name: str = ""
+    #: The handle other people address this person by. ``None`` for accounts
+    #: created before handles existed and not yet backfilled.
+    username: str | None = None
     age_range: AgeRange | None = None
     native_language: str = "English"
     app_language: str = "English"
+    target_language: str | None = None
+    proficiency: str | None = None
+    study_time: str | None = None
+    #: IANA name; ``None`` means UTC. See app/domain/services/calendar.py.
+    timezone: str | None = None
 
     # Learning preferences
     interests: list[str] = field(default_factory=list)
