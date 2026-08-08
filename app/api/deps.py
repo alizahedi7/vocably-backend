@@ -99,6 +99,7 @@ from app.infrastructure.db.repositories.word_progress_repository import (
 )
 from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
 from app.infrastructure.db.repositories.xp_repository import SqlAlchemyXpRepository
+from app.infrastructure.dictionary.factory import dictionary_service
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -214,33 +215,14 @@ def _raw_ai_provider() -> AIService:
     return StubAIService()
 
 
-@lru_cache
 def _dictionary_service() -> DictionaryService:
-    """The dictionary adapter and its Redis cache, built once per process.
+    """The process-wide dictionary adapter.
 
-    Memoized for the same reason the provider adapters are: both the HTTP
-    connection pool and the Redis pool should outlive a single request. Redis is
-    created lazily and never awaited here, so an unreachable Redis costs nothing
-    at startup — every cache call is best-effort and a dead one degrades to
-    calling the dictionary directly.
+    The construction moved to ``app.infrastructure.dictionary.factory`` once the
+    phonetic-backfill worker needed the same adapter without importing FastAPI.
+    It is still memoized there, so this stays one instance per process.
     """
-    import httpx
-    from redis.asyncio import Redis
-
-    from app.infrastructure.dictionary.free_dictionary_service import (
-        DictionaryCache,
-        FreeDictionaryService,
-    )
-
-    return FreeDictionaryService(
-        httpx.AsyncClient(),
-        DictionaryCache(
-            Redis.from_url(settings.dictionary_redis_url, decode_responses=True),
-            hit_ttl_seconds=settings.dictionary_cache_ttl_seconds,
-            miss_ttl_seconds=settings.dictionary_cache_miss_ttl_seconds,
-        ),
-        timeout_seconds=settings.dictionary_timeout_seconds,
-    )
+    return dictionary_service()
 
 
 def _effective_prompt_version() -> int:

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.word import Word
@@ -69,3 +70,41 @@ class SqlAlchemyWordRepository(WordRepository):
 
     async def delete(self, word_id: UUID) -> None:
         await self._session.execute(delete(WordModel).where(WordModel.id == word_id))
+
+    # ── phonetic backfill ────────────────────────────────────
+    #: The key both backfill statements group and match on. Trimmed as well as
+    #: lowercased because the API strips a term on the way in but rows written
+    #: before it did are still here, and an untrimmed duplicate would cost a
+    #: second request for an answer already in hand.
+    _TERM_KEY = func.trim(func.lower(WordModel.term))
+
+    async def list_terms_missing_phonetic(self, limit: int) -> list[str]:
+        stmt = (
+            select(self._TERM_KEY)
+            .where(WordModel.phonetic.is_(None))
+            .group_by(self._TERM_KEY)
+            # Random, not oldest-first. A term the dictionary has no entry for
+            # stays NULL forever (an outage and a miss are indistinguishable
+            # through the port, and marking a word "has no IPA" because the
+            # dictionary was down would be permanent), so any stable ordering
+            # lets a handful of unknown words sit at the head of the queue and
+            # consume every run. Sampling instead means each run makes progress.
+            .order_by(func.random())
+            .limit(limit)
+        )
+        return list((await self._session.execute(stmt)).scalars().all())
+
+    async def set_phonetic_for_term(self, term: str, phonetic: str) -> int:
+        result = await self._session.execute(
+            update(WordModel)
+            .where(
+                self._TERM_KEY == term.strip().lower(),  # noqa: SIM300 — SQL expression
+                # Never clobber a transcription the card arrived with, and never
+                # re-answer a term another worker has already answered.
+                WordModel.phonetic.is_(None),
+            )
+            .values(phonetic=phonetic)
+        )
+        # `execute` is typed as returning a Result; an UPDATE always yields a
+        # CursorResult, which is where rowcount lives.
+        return cast("CursorResult[Any]", result).rowcount or 0

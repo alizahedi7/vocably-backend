@@ -166,6 +166,11 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
                     definition=word.definition,
                     example=word.example,
                     sense_label=word.sense_label,
+                    # Copied, unlike authorship: how a word is pronounced is a
+                    # property of the word, not of whose deck it sits in, and
+                    # re-fetching it for every copy would call the dictionary
+                    # five hundred times for an answer already on the row.
+                    phonetic=word.phonetic,
                 )
             )
         # No progress rows: every word is new to this learner, and an absent

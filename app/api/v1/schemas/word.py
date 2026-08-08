@@ -24,6 +24,12 @@ class WordCreateIn(BaseModel):
     definition: str | None = Field(default=None, max_length=2000)
     example: str | None = Field(default=None, max_length=2000)
     sense_label: str | None = Field(default=None, max_length=120)
+    #: IPA for ``term``, e.g. ``/ʌndəˈmaɪn/`` — the client passes through what
+    #: ``POST /ai/lookup`` gave it, which costs nothing since the dictionary was
+    #: already consulted for the senses. Omitted by a hand-written card and by
+    #: clients older than the field; ``vocably.ai.backfill_phonetics`` fills
+    #: those in later, so leaving it out is never wrong, only slower.
+    phonetic: str | None = Field(default=None, max_length=200)
 
 
 class WordUpdateIn(BaseModel):
@@ -39,6 +45,11 @@ class WordUpdateIn(BaseModel):
     definition: str | None = Field(default=None, max_length=2000)
     example: str | None = Field(default=None, max_length=2000)
     sense_label: str | None = Field(default=None, max_length=120)
+    #: Rarely sent. **Editing ``term`` drops the stored phonetic** unless one is
+    #: supplied in the same request, because a transcription of the old spelling
+    #: is a wrong transcription, and a wrong IPA teaches a wrong sound. The
+    #: backfill task puts the new one back.
+    phonetic: str | None = Field(default=None, max_length=200)
 
 
 class WordOut(BaseModel):
@@ -54,6 +65,11 @@ class WordOut(BaseModel):
     definition: str | None
     example: str | None
     sense_label: str | None
+    #: IPA for ``term``, or ``null``. **Null is the ordinary case** — a third of
+    #: words have none in the source, and hand-written cards have none until the
+    #: backfill reaches them. Render it only when present; never substitute a
+    #: dash or a placeholder for it.
+    phonetic: str | None
     box: LeitnerBox
     due_at: datetime
     review_count: int

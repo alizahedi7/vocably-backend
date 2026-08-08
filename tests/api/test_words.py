@@ -287,3 +287,92 @@ async def test_word_payload_still_carries_the_progress_keys(
     )
     assert {"box", "due_at", "review_count", "last_reviewed_at"} <= graded.json().keys()
     assert graded.json()["review_count"] == 1
+
+
+async def test_phonetic_round_trips_and_is_optional(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """The IPA the lookup handed the client is stored, and absence is normal.
+
+    A third of words have no transcription in the source and every hand-written
+    card starts without one, so ``null`` is the ordinary answer here — never an
+    empty string the client would have to distinguish from a real value.
+    """
+    deck_id = await create_deck(client, auth_headers)
+
+    with_ipa = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={
+            "deck_id": deck_id,
+            "term": "undermine",
+            "meaning": "تضعیف کردن",
+            "phonetic": "  /ʌndəˈmaɪn/  ",
+        },
+    )
+    assert with_ipa.status_code == 201, with_ipa.text
+    word = with_ipa.json()
+    assert word["phonetic"] == "/ʌndəˈmaɪn/"  # stripped
+
+    plain = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={"deck_id": deck_id, "term": "reliable", "meaning": "able to be trusted"},
+    )
+    assert plain.status_code == 201
+    assert plain.json()["phonetic"] is None
+
+    # Omitted means "leave it alone", so a client older than the field cannot
+    # blank a transcription it never knew about.
+    untouched = await client.patch(
+        f"/api/v1/words/{word['id']}", headers=auth_headers, json={"meaning": "تضعیف"}
+    )
+    assert untouched.status_code == 200
+    assert untouched.json()["phonetic"] == "/ʌndəˈmaɪn/"
+
+    listed = await client.get("/api/v1/words", headers=auth_headers, params={"deck_id": deck_id})
+    assert {w["term"]: w["phonetic"] for w in listed.json()} == {
+        "undermine": "/ʌndəˈmaɪn/",
+        "reliable": None,
+    }
+
+
+async def test_editing_the_term_drops_a_now_wrong_phonetic(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """Re-spelling the card invalidates its IPA — a wrong one teaches a wrong sound."""
+    deck_id = await create_deck(client, auth_headers)
+    created = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={
+            "deck_id": deck_id,
+            "term": "run",
+            "meaning": "دویدن",
+            "phonetic": "/rʌn/",
+        },
+    )
+    word_id = created.json()["id"]
+
+    retyped = await client.patch(
+        f"/api/v1/words/{word_id}", headers=auth_headers, json={"term": "ran"}
+    )
+    assert retyped.status_code == 200
+    assert retyped.json()["phonetic"] is None
+
+    # Unless the same request supplies the new one, which is what a client that
+    # re-ran the lookup does.
+    with_new = await client.patch(
+        f"/api/v1/words/{word_id}",
+        headers=auth_headers,
+        json={"term": "running", "phonetic": "/ˈrʌnɪŋ/"},
+    )
+    assert with_new.json()["phonetic"] == "/ˈrʌnɪŋ/"
+
+    # Re-sending the same term is not an edit and must not clear anything.
+    same = await client.patch(
+        f"/api/v1/words/{word_id}",
+        headers=auth_headers,
+        json={"term": "running", "meaning": "دویدن"},
+    )
+    assert same.json()["phonetic"] == "/ˈrʌnɪŋ/"

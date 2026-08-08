@@ -69,6 +69,10 @@ class StudiedWord:
         return self.word.sense_label
 
     @property
+    def phonetic(self) -> str | None:
+        return self.word.phonetic
+
+    @property
     def created_at(self) -> datetime:
         return self.word.created_at
 

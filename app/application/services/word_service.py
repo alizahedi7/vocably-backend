@@ -91,6 +91,7 @@ class WordService:
         example: str | None,
         sense_label: str | None,
         definition: str | None = None,
+        phonetic: str | None = None,
         unit_id: UUID | None = None,
     ) -> StudiedWord:
         await self._access.require_edit_words(deck_id, user_id)
@@ -105,6 +106,7 @@ class WordService:
             definition=(definition or "").strip() or None,
             example=(example or "").strip() or None,
             sense_label=sense_label,
+            phonetic=(phonetic or "").strip() or None,
         )
         created = await self._words.add(word)
         # Adding a card is work, whether it was typed or came from the reader.
@@ -132,6 +134,7 @@ class WordService:
         definition: str | None = None,
         example: str | None = None,
         sense_label: str | None = None,
+        phonetic: str | None = None,
         deck_id: UUID | None = None,
         unit_id: UUID | None | _Unset = UNSET,
     ) -> StudiedWord:
@@ -148,6 +151,12 @@ class WordService:
             await self._access.require_edit_words(deck_id, user_id)
             word.deck_id = deck_id
         if term is not None:
+            # Re-spelling the card invalidates its transcription: /rʌn/ under a
+            # term that now reads "ran" is a wrong IPA, and a wrong IPA teaches
+            # a wrong sound. Drop it and let the backfill put the right one
+            # back, unless this same request supplies one.
+            if term.strip() != word.term and phonetic is None:
+                word.phonetic = None
             word.term = term.strip()
         if meaning is not None:
             word.meaning = meaning.strip()
@@ -159,6 +168,8 @@ class WordService:
             word.example = example.strip() or None
         if sense_label is not None:
             word.sense_label = sense_label
+        if phonetic is not None:
+            word.phonetic = phonetic.strip() or None
         if not isinstance(unit_id, _Unset):
             # Explicit null clears; omission left it alone above.
             if unit_id is not None:

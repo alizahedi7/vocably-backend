@@ -131,6 +131,7 @@ async def test_importing_takes_a_copy_that_editing_cannot_leak(
                 "deck_id": source,
                 "term": "improve",
                 "meaning": "to get better",
+                "phonetic": "/ɪmˈpɹuːv/",
                 "unit_id": unit["id"],
             },
         )
@@ -155,6 +156,10 @@ async def test_importing_takes_a_copy_that_editing_cannot_leak(
     # ...pointing at the *copy's* unit, not the original's.
     assert copied_words.json()[0]["unit_id"] == copied_units.json()[0]["id"]
     assert copied_words.json()[0]["id"] != original_word["id"]
+    # The IPA comes with it. How a word is pronounced is a property of the word,
+    # not of whose deck it sits in, and re-fetching it per copy would call the
+    # dictionary five hundred times for an answer already on the row.
+    assert copied_words.json()[0]["phonetic"] == "/ɪmˈpɹuːv/"
 
     # Editing the copy leaves the original untouched — the whole point.
     await client.patch(

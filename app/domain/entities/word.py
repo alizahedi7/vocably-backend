@@ -37,6 +37,14 @@ class Word:
     example: str | None = None
     # e.g. "verb · progress" or "my definition" — mirrors the design's senseLabel.
     sense_label: str | None = None
+    # IPA transcription of ``term``, e.g. ``/ʌndəˈmaɪn/``. **Carried, never
+    # generated**: it comes from the dictionary via ``LookupResult.phonetic``,
+    # and is left empty rather than guessed, because a confidently wrong
+    # transcription teaches a learner to mispronounce a word — worse than
+    # showing nothing. ``None`` is the normal case (a third of words have no
+    # IPA, and every hand-written card starts without one), so every surface
+    # renders it as optional and shows nothing at all when it is absent.
+    phonetic: str | None = None
 
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))

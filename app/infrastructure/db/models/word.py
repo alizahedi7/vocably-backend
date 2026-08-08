@@ -41,3 +41,9 @@ class WordModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     definition: Mapped[str | None] = mapped_column(Text)
     example: Mapped[str | None] = mapped_column(Text)
     sense_label: Mapped[str | None] = mapped_column(String(120))
+
+    #: IPA for ``term``. Nullable and usually null: the dictionary covers most
+    #: but not all words, and a card typed by hand has none until the backfill
+    #: task fills it in. Bounded rather than ``Text`` because it is one short
+    #: transcription of one card front, never prose.
+    phonetic: Mapped[str | None] = mapped_column(String(200))

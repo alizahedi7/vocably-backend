@@ -40,6 +40,7 @@ async def create_word(
         definition=payload.definition,
         example=payload.example,
         sense_label=payload.sense_label,
+        phonetic=payload.phonetic,
         unit_id=payload.unit_id,
     )
     return WordOut.model_validate(word)
@@ -70,6 +71,7 @@ async def update_word(
         definition=payload.definition,
         example=payload.example,
         sense_label=payload.sense_label,
+        phonetic=payload.phonetic,
         deck_id=payload.deck_id,
         # model_fields_set, not `is None`: an omitted unit_id means "leave it
         # alone" while an explicit null means "take it out of its unit", and

@@ -111,6 +111,7 @@ def word_to_entity(m: WordModel) -> Word:
         definition=m.definition,
         example=m.example,
         sense_label=m.sense_label,
+        phonetic=m.phonetic,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -129,6 +130,7 @@ def apply_word(entity: Word, m: WordModel) -> None:
     m.definition = entity.definition
     m.example = entity.example
     m.sense_label = entity.sense_label
+    m.phonetic = entity.phonetic
 
 
 # ── Word progress ────────────────────────────────────────────

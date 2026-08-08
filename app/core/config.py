@@ -167,6 +167,15 @@ class Settings(BaseSettings):
     #: discernment"). Turn it on when card readability matters more than the
     #: extra output tokens.
     dictionary_rewrite_definitions: bool = False
+    #: How many distinct terms one ``vocably.ai.backfill_phonetics`` run looks
+    #: up. Sized against the dictionary's rate limit rather than the size of the
+    #: backlog: the job is nightly and unhurried, and a card without an IPA
+    #: simply renders without one until its turn comes.
+    phonetic_backfill_batch_size: int = Field(default=200, ge=1, le=5000)
+    #: UTC hour of that run. Deliberately not the partition-maintenance hour —
+    #: this one makes hundreds of outbound requests, and the two jobs have no
+    #: reason to contend.
+    phonetic_backfill_hour: int = Field(default=4, ge=0, le=23)
 
     # ── Review history ────────────────────────────────────────
     #: How many months of monthly partitions to keep ahead of today. The

@@ -43,6 +43,7 @@ QUEUE_DEFAULT = "default"
 #: task" at runtime — so every new task module must be added here.
 TASK_MODULES = [
     "app.tasks.maintenance",
+    "app.tasks.phonetics",
 ]
 
 celery_app = Celery("vocably", include=TASK_MODULES)
@@ -81,6 +82,14 @@ celery_app.conf.update(
             "task": "vocably.maintenance.review_partitions",
             "schedule": crontab(hour=settings.review_history_maintenance_hour, minute=0),
             "options": {"queue": QUEUE_MAINTENANCE, "expires": 12 * 3600},
+        },
+        "backfill-phonetics-daily": {
+            "task": "vocably.ai.backfill_phonetics",
+            "schedule": crontab(hour=settings.phonetic_backfill_hour, minute=0),
+            # Expires well inside the day: a worker back from an outage should
+            # run today's batch, not yesterday's as well. The backlog is durable
+            # — it is rows in a table — so a missed run costs nothing but time.
+            "options": {"queue": QUEUE_AI, "expires": 6 * 3600},
         },
     },
 )

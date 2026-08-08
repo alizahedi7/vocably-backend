@@ -12,10 +12,11 @@ import pytest
 from celery.schedules import crontab
 
 from app.core.config import Settings, settings
-from app.tasks import maintenance
+from app.tasks import maintenance, phonetics
 from app.tasks.celery_app import QUEUE_AI, QUEUE_MAINTENANCE, TASK_MODULES, celery_app
 
 TASK_NAME = "vocably.maintenance.review_partitions"
+PHONETIC_TASK_NAME = "vocably.ai.backfill_phonetics"
 
 
 # ── registration and routing ─────────────────────────────────
@@ -23,6 +24,7 @@ def test_every_declared_task_module_is_imported_by_the_worker() -> None:
     # A task in a module missing from TASK_MODULES is never registered, and beat
     # scheduling it fails with "unregistered task" only once it fires.
     assert maintenance.__name__ in TASK_MODULES
+    assert phonetics.__name__ in TASK_MODULES
 
 
 def test_the_maintenance_task_is_registered_under_its_scheduled_name() -> None:
@@ -50,6 +52,37 @@ def test_partition_maintenance_is_scheduled_daily() -> None:
     # Every day of the week and month — i.e. daily, not weekly.
     assert len(schedule.day_of_week) == 7
     assert len(schedule.day_of_month) == 31
+
+
+def test_phonetic_backfill_is_scheduled_daily_on_the_ai_queue() -> None:
+    entry = celery_app.conf.beat_schedule["backfill-phonetics-daily"]
+    assert entry["task"] == PHONETIC_TASK_NAME
+    assert PHONETIC_TASK_NAME in celery_app.tasks
+    # Hundreds of outbound dictionary requests: it belongs on the queue that may
+    # be slow, not the one partition maintenance waits in.
+    assert entry["options"]["queue"] == QUEUE_AI
+    assert entry["schedule"].hour == {settings.phonetic_backfill_hour}
+
+
+def test_the_backfill_does_nothing_when_the_dictionary_is_switched_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DICTIONARY_ENABLED decides whether this deployment calls a dictionary.
+
+    A background job quietly making the calls the request path is configured not
+    to make would turn that flag into a lie.
+    """
+    monkeypatch.setattr(settings, "dictionary_enabled", False)
+    called = False
+
+    def _explode(*_args: Any, **_kwargs: Any) -> Any:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(phonetics, "run_async", _explode)
+
+    assert phonetics.backfill_phonetics() == "disabled"
+    assert not called
 
 
 def test_scheduled_runs_expire_rather_than_pile_up() -> None:
