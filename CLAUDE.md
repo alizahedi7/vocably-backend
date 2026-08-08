@@ -164,6 +164,38 @@ never cached (their word set is one learner's Leitner boxes).
 - `AI_CACHE_ENABLED=false` bypasses it for debugging a provider in isolation. Leaving
   it off in production means paying full price for every repeat of every word.
 
+### Phonetics on the card
+
+`words.phonetic` holds the IPA shown under the term on the card front. It is
+**carried, never generated** — the dictionary supplies it, and it is left blank
+rather than guessed, because a confidently wrong transcription teaches a learner
+to mispronounce a word. Nothing may ask a model for one.
+
+- **NULL and `""` are different, and the difference is load-bearing.** NULL means
+  *no answer yet*; `""` means *the dictionary answered and this word has no IPA*
+  — roughly a third of them. Without the distinction the backfill would re-fetch
+  the same permanent misses nightly, forever. Both render as nothing on the
+  client, which never has to tell them apart.
+- **The client supplies it for free.** `POST /words` accepts `phonetic`, and the
+  value came from the `/ai/lookup` that produced the card, so no extra call is
+  made on the write path.
+- **`vocably.ai.backfill_phonetics`** ([phonetics.py](app/tasks/phonetics.py))
+  covers everything else: hand-written cards, rows older than the column. It is
+  keyed by **term, not card** — one lookup answers for every learner who typed
+  that word — and it is a no-op while `DICTIONARY_ENABLED` is off, or a
+  background job would be making calls the request path is configured not to.
+- **A lookup that fails is never recorded as "this word has no IPA".** The
+  dictionary port collapses a miss and an outage into the same `None`; writing
+  `""` there would let one bad afternoon permanently silence a set of cards. Such
+  terms stay NULL, which is why `list_terms_missing_phonetic` orders **randomly**
+  — under any stable order a few unknown words would sit at the head of the queue
+  and consume every run.
+- **Editing `term` clears `phonetic`** unless the same request supplies a new one
+  (`WordService.update`). A transcription of the old spelling is a wrong
+  transcription. The client applies the same rule to its add-word form.
+- Copies from Explore carry it: how a word is pronounced is a property of the
+  word, not of whose deck it sits in.
+
 ## Shared decks, and where study progress lives
 
 A deck is shared as **the same deck**, not a copy: a word an editor adds is a
@@ -191,12 +223,26 @@ word_progress(user_id, word_id, deck_id, box, due_at, review_count, …)  -- per
   that id exists, which is exactly what someone probing ids wants to learn. A
   *member* who lacks the role for an action does get 403 — they already know it
   exists. Grading is always allowed to any member: study is not an edit.
-- **Progress rows are created lazily.** Only `grade` writes one, via an upsert.
-  A missing row reads as `WordProgress.unstudied` — box 1, due now, counters
-  zero — so sharing a 500-word deck with a class of thirty writes *nothing*.
-  Reads are `words LEFT JOIN word_progress`, and the `user_id` predicate belongs
-  in the **ON clause**: in `WHERE` it silently becomes an inner join and every
-  never-studied word disappears, which is most of them.
+- **Deleting is the owner's; leaving is everyone else's.** `DELETE /decks/{id}`
+  is `require_manage`, so an editor with every right over the words still
+  cannot destroy the deck they live in. The counterpart is
+  `DELETE /decks/{id}/leave` (`DeckSharingService.leave`), which removes exactly
+  one `deck_members` row: the deck leaves *your* list and nothing is deleted —
+  the Telegram rule, and the reason a member never needs the owner to notice.
+  The owner is refused with **409**, not obeyed: leaving would strand a class's
+  deck with nobody who can manage it. Progress rows stay behind, as in
+  `remove_member`, so rejoining restores the boxes.
+- **`GET /decks` carries `role`/`is_owner`.** It comes off the membership row
+  the deck list is already joined to (`list_for_user_with_role`), so the client
+  can offer "delete" or "leave" per deck without one `/membership` request each.
+  It is a convenience for the UI and never an authorization decision — the
+  server re-checks on every write.
+- **Progress rows are created lazily.** Only `grade` and `start` write one, via
+  an upsert. A missing row reads as `WordProgress.unstudied` — box 1, due now,
+  counters zero — so sharing a 500-word deck with a class of thirty writes
+  *nothing*. Reads are `words LEFT JOIN word_progress`, and the `user_id`
+  predicate belongs in the **ON clause**: in `WHERE` it silently becomes an
+  inner join and every never-studied word disappears, which is most of them.
 - **`word_progress.deck_id` is a live mirror** of `words.deck_id`, kept in step
   by `SqlAlchemyWordRepository.update` when a card moves deck. It exists so
   per-deck aggregates and the roster never join `words`. This is deliberately
@@ -223,6 +269,91 @@ word_progress(user_id, word_id, deck_id, box, due_at, review_count, …)  -- per
   cards. **Order matters in the flow**: delete the user's own decks first, or
   the `SET NULL` fires against cards whose deck is being cascaded away in the
   same statement and fails on the deck foreign key.
+
+### A new word's first review is tomorrow
+
+A card is **never due on the day it is added**. Writing a word down is already
+the first exposure, and answering it thirty seconds later tests short-term
+memory rather than recall — the interval is the whole mechanism, which is why
+every box interval starts at a day and the first one does too.
+
+- **The boundary is the learner's day, not a 24-hour clock.**
+  `WordProgress.first_due_at(day_start)` is `day_start + 1 day`, where
+  `day_start` is `calendar.day_start_for(user.timezone)`. A word added at
+  breakfast and one added at midnight both come up in tomorrow's reviews,
+  whenever the learner sits down. `now + 24h` would hide a word added at 9am
+  from someone who studies at 8am, which reads as the app losing it.
+- **No row is written to say so.** A missing progress row still means
+  "unstudied", and `WordProgress.unstudied` now derives the due date from
+  `words.created_at`: added today → due tomorrow, added earlier → due now. In
+  SQL that is one comparison, `_is_due()`: `wp.due_at <= now` when a row exists,
+  otherwise `words.created_at < day_start`. The laziness is untouched.
+- **`day_start` is a keyword on every read that depends on it** — `list_due`,
+  `list_for_user`, `get_for_user`, `tally_by_deck_and_box` — because timezones
+  belong to the service layer. `StudyService`, `WordService` and `DeckService`
+  all resolve it from the user (which is why `DeckService` now takes a
+  `UserRepository`). Passing `None` accepts a UTC boundary and is only honest
+  for reads that ignore due dates, like the story generator's word list.
+- **Starting a word is meeting it**, so `start_words` schedules its first
+  review for tomorrow too, not for the moment of the tap.
+- **Same-day study is still possible, deliberately.** `build_session` falls back
+  to the learner's words when nothing is due, so "practice anyway" works the
+  evening someone adds their first ten. What changed is that the *queue* no
+  longer pushes them.
+- Tests that want a due queue call `sleep_on_it()` (tests/api/conftest.py),
+  which moves the cards back a day rather than the clock forward.
+
+### A saved deck's words wait to be started
+
+`deck_members.self_paced` decides what a *missing* progress row means, and it is
+the one place the lazy-row design carries a second meaning:
+
+| `self_paced` | no progress row means | set by |
+|---|---|---|
+| `false` | unstudied — box 1, due now, in the boxes (what it always meant) | `DeckService.create`, i.e. every deck someone builds |
+| `true` | **not started** — not due, not counted, not in a session | Explore copy, accepted share, `add_member`, invite code |
+
+The problem it solves: saving "504 Essential Words" used to drop five hundred
+cards into one day's review queue, because every one of them read as new-and-due
+the moment the copy landed. The queue is the product; burying it is how someone
+stops opening the app.
+
+- **The whole feature is one SQL expression**,
+  `SqlAlchemyWordProgressRepository._is_started()` — a progress row exists, or
+  the membership is not self-paced. Every read composes it. A query that forgets
+  it either hides a learner's own new words or floods them with a stranger's.
+- **`tally_by_deck_and_box` groups by it rather than filtering on it.** The deck
+  screen still says "504 words" while the boxes say "12 of them are yours", so
+  `DeckView` carries both `word_count` (the deck's size, the same for every
+  member) and `started_count`. `progress_pct` is measured over *started* cards —
+  against the whole deck it would read 0% for months and tell the learner their
+  work counted for nothing.
+- **`POST /decks/{id}/start`** takes `word_ids`, `unit_id` and/or `count`, which
+  compose: "these three", "all of Unit 3", "the next ten", or — with no selector
+  at all — the whole deck. `require_read` is enough: what it writes is the
+  caller's own queue, so a viewer of a class deck may start words in it exactly
+  as the owner may. Idempotent, and it never resets a box someone has moved.
+- **`POST /decks/{id}/unstart`** is the undo behind "Added 20 words · Undo". It
+  deletes only rows with `review_count = 0`: a card that has been answered holds
+  real progress, and an undo is not a delete.
+- **"The next ten" is the next ten of the book.** `list_unstarted` orders by
+  `(created_at, id)` ascending — the exact reverse of the word list's
+  `(created_at, id)` descending — so the two can never disagree, ties included.
+  That is also why `copy_deck_to` now **preserves each card's `created_at`** and
+  reads the source in order: stamping five hundred copies with one timestamp
+  left the deck in uuid order and threw the course's sequence away.
+- **Adding your own card to a self-paced deck starts it.** `WordService.create`
+  reads `member.self_paced` and writes the row. Whoever typed the word is
+  plainly learning it; asking them to then add it to their own boxes would be
+  the second step this feature exists to remove.
+- **Nothing was backfilled.** Every membership that existed before the migration
+  is `false`, so no one's due queue, streak or memory strength changed the night
+  it deployed. Self-pacing applies to decks saved from then on.
+- **Old clients degrade quietly.** `WordOut.started` is additive and an unstarted
+  card still carries box 1 / due-now placeholders, so an Android build that
+  predates the field renders the deck exactly as it always did — it just sees
+  nothing due until the learner starts something on a newer client.
+  `tests/api/test_self_paced_decks.py` holds all of it.
 
 ### Writes that two requests can reach at once
 
@@ -458,6 +589,14 @@ operator at a terminal cannot drift apart.
 expired partitions are reported in the logs and never dropped. Turning it on
 makes a background job delete learners' history irreversibly, which should be a
 deliberate retention policy, not a side effect of installing a scheduler.
+
+`vocably.ai.backfill_phonetics` runs daily at `PHONETIC_BACKFILL_HOUR` (UTC,
+default 04:00) on the **AI queue**, and looks up `PHONETIC_BACKFILL_BATCH_SIZE`
+terms per run. Deliberately not the maintenance hour and not the maintenance
+queue: it makes hundreds of outbound requests, and a backlog of those must not
+delay a partition. It does nothing while `DICTIONARY_ENABLED` is off — see
+[Phonetics on the card](#phonetics-on-the-card) for why the batch is bounded and
+the ordering is random.
 
 ## graphify
 
