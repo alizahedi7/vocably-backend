@@ -30,6 +30,11 @@ class StudiedWord:
     #: :meth:`WordProgress.unstudied`, so every read has a full set of values
     #: without a row having to exist.
     progress: WordProgress
+    #: Whether this learner has started the card, per ``self_paced``. Defaults
+    #: to ``True`` for call sites that only ever construct an already-started
+    #: word (e.g. after grading a review) rather than reading from a query
+    #: that computed it.
+    started: bool = True
 
     # ── the card: shared by everyone in the deck ──
     @property
