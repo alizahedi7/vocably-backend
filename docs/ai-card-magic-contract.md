@@ -64,6 +64,18 @@ confidently and wrongly, and a wrong IPA teaches a learner to mispronounce the
 word — worse than showing nothing. Adding it is backwards-compatible: clients
 that ignore the field are unaffected.
 
+**Pass it back when saving the card.** `POST /words` accepts `phonetic`, and the
+value the lookup just returned is the cheapest one there is — the dictionary has
+already been consulted. A card saved without it is not wrong, only slower to
+show one: `vocably.ai.backfill_phonetics` fills in cards that have none. Sending
+`""` and omitting the field mean the same thing, so a client that has no
+transcription should simply leave it out.
+
+The client must **drop the phonetic if the learner edits the term after the
+lookup**. `/rʌn/` under a card that now reads "ran" is a wrong transcription, and
+the server applies the same rule to `PATCH /words/{id}`: a changed `term` with no
+`phonetic` in the same request clears the stored one.
+
 > **Breaking change — clients built against the previous shape must update.**
 > A suggestion now carries **exactly these five fields**. Removed: `meaning`
 > (the gloss sub-headline), `examples[]` (now a single `example`), `synonyms`,

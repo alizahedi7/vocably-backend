@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tests.api.conftest import UserFactory, bearer
+from tests.api.conftest import UserFactory, bearer, sleep_on_it
 
 
 async def create_deck(
@@ -41,7 +42,11 @@ async def test_deck_crud_roundtrip(client: AsyncClient, auth_headers: dict[str, 
     assert gone.json()["error"]["code"] == "not_found"
 
 
-async def test_deck_list_includes_stats(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+async def test_deck_list_includes_stats(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     deck = await create_deck(client, auth_headers)
     for term in ("reliable", "improve"):
         response = await client.post(
@@ -51,12 +56,20 @@ async def test_deck_list_includes_stats(client: AsyncClient, auth_headers: dict[
         )
         assert response.status_code == 201
 
+    # Added today, so neither is due yet: a word is first reviewed the day
+    # after it is written down.
+    (today,) = (await client.get("/api/v1/decks", headers=auth_headers)).json()
+    assert today["word_count"] == 2
+    assert today["due_count"] == 0
+    assert today["progress_pct"] == 20  # both words in box 1 of 5
+
+    await sleep_on_it(session_factory)
     listed = await client.get("/api/v1/decks", headers=auth_headers)
     assert listed.status_code == 200
     (stats,) = listed.json()
     assert stats["word_count"] == 2
-    assert stats["due_count"] == 2  # new words are due immediately
-    assert stats["progress_pct"] == 20  # both words in box 1 of 5
+    assert stats["due_count"] == 2
+    assert stats["progress_pct"] == 20
 
 
 async def test_deleting_a_deck_deletes_its_words(

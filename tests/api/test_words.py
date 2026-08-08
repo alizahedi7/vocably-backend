@@ -218,8 +218,8 @@ async def test_cannot_move_word_into_another_users_deck(
         headers=auth_headers,
         json={"deck_id": foreign_deck.json()["id"]},
     )
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "permission_denied"
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 async def test_cannot_create_word_in_another_users_deck(
@@ -233,8 +233,8 @@ async def test_cannot_create_word_in_another_users_deck(
         headers=bearer(other.id),
         json={"deck_id": deck_id, "term": "steal", "meaning": "should not work"},
     )
-    assert response.status_code == 403
-    assert response.json()["error"]["code"] == "permission_denied"
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 async def test_cannot_read_another_users_word(
@@ -249,4 +249,130 @@ async def test_cannot_read_another_users_word(
     other = await make_user(phone="+989121110000")
 
     response = await client.get(f"/api/v1/words/{created.json()['id']}", headers=bearer(other.id))
-    assert response.status_code == 403
+    # 404, not 403: a stranger walking word ids must not learn which exist.
+    assert response.status_code == 404
+
+
+async def test_word_payload_still_carries_the_progress_keys(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """An Android build from before the words/word_progress split must not notice.
+
+    ``box``, ``due_at``, ``review_count`` and ``last_reviewed_at`` moved to a
+    different table; they are read back onto the same flat object deliberately,
+    and the client hard-casts every one of them.
+    """
+    deck_id = await create_deck(client, auth_headers)
+    created = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={"deck_id": deck_id, "term": "improve", "meaning": "to get better"},
+    )
+    word = created.json()
+
+    assert {"box", "due_at", "review_count", "last_reviewed_at"} <= word.keys()
+    assert word["box"] == 1
+    assert word["review_count"] == 0
+    assert word["last_reviewed_at"] is None
+    assert word["due_at"] is not None
+
+    listed = await client.get("/api/v1/words", headers=auth_headers)
+    assert {"box", "due_at", "review_count", "last_reviewed_at"} <= listed.json()[0].keys()
+
+    session = await client.get("/api/v1/study/session", headers=auth_headers)
+    assert {"box", "due_at", "review_count"} <= session.json()["words"][0].keys()
+
+    graded = await client.post(
+        f"/api/v1/study/words/{word['id']}/grade", headers=auth_headers, json={"grade": "good"}
+    )
+    assert {"box", "due_at", "review_count", "last_reviewed_at"} <= graded.json().keys()
+    assert graded.json()["review_count"] == 1
+
+
+async def test_phonetic_round_trips_and_is_optional(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """The IPA the lookup handed the client is stored, and absence is normal.
+
+    A third of words have no transcription in the source and every hand-written
+    card starts without one, so ``null`` is the ordinary answer here — never an
+    empty string the client would have to distinguish from a real value.
+    """
+    deck_id = await create_deck(client, auth_headers)
+
+    with_ipa = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={
+            "deck_id": deck_id,
+            "term": "undermine",
+            "meaning": "تضعیف کردن",
+            "phonetic": "  /ʌndəˈmaɪn/  ",
+        },
+    )
+    assert with_ipa.status_code == 201, with_ipa.text
+    word = with_ipa.json()
+    assert word["phonetic"] == "/ʌndəˈmaɪn/"  # stripped
+
+    plain = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={"deck_id": deck_id, "term": "reliable", "meaning": "able to be trusted"},
+    )
+    assert plain.status_code == 201
+    assert plain.json()["phonetic"] is None
+
+    # Omitted means "leave it alone", so a client older than the field cannot
+    # blank a transcription it never knew about.
+    untouched = await client.patch(
+        f"/api/v1/words/{word['id']}", headers=auth_headers, json={"meaning": "تضعیف"}
+    )
+    assert untouched.status_code == 200
+    assert untouched.json()["phonetic"] == "/ʌndəˈmaɪn/"
+
+    listed = await client.get("/api/v1/words", headers=auth_headers, params={"deck_id": deck_id})
+    assert {w["term"]: w["phonetic"] for w in listed.json()} == {
+        "undermine": "/ʌndəˈmaɪn/",
+        "reliable": None,
+    }
+
+
+async def test_editing_the_term_drops_a_now_wrong_phonetic(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """Re-spelling the card invalidates its IPA — a wrong one teaches a wrong sound."""
+    deck_id = await create_deck(client, auth_headers)
+    created = await client.post(
+        "/api/v1/words",
+        headers=auth_headers,
+        json={
+            "deck_id": deck_id,
+            "term": "run",
+            "meaning": "دویدن",
+            "phonetic": "/rʌn/",
+        },
+    )
+    word_id = created.json()["id"]
+
+    retyped = await client.patch(
+        f"/api/v1/words/{word_id}", headers=auth_headers, json={"term": "ran"}
+    )
+    assert retyped.status_code == 200
+    assert retyped.json()["phonetic"] is None
+
+    # Unless the same request supplies the new one, which is what a client that
+    # re-ran the lookup does.
+    with_new = await client.patch(
+        f"/api/v1/words/{word_id}",
+        headers=auth_headers,
+        json={"term": "running", "phonetic": "/ˈrʌnɪŋ/"},
+    )
+    assert with_new.json()["phonetic"] == "/ˈrʌnɪŋ/"
+
+    # Re-sending the same term is not an edit and must not clear anything.
+    same = await client.patch(
+        f"/api/v1/words/{word_id}",
+        headers=auth_headers,
+        json={"term": "running", "meaning": "دویدن"},
+    )
+    assert same.json()["phonetic"] == "/ˈrʌnɪŋ/"

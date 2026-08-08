@@ -53,6 +53,30 @@ class Settings(BaseSettings):
     otp_resend_cooldown_seconds: int = 30
     # Cost-abuse backstop: SMS requests allowed per client IP per hour (<= 0 disables).
     otp_requests_per_ip_per_hour: int = 20
+
+    #: Shared store for the limits that are *security* controls rather than
+    #: cost backstops — handle enumeration and invite-code guessing. The
+    #: in-process limiter multiplies its budget by the worker count and resets
+    #: on restart, which is fine for SMS spend and wrong for these two.
+    #: Unreachable Redis degrades to the in-process limiter; it never fails open.
+    rate_limit_redis_url: str = "redis://localhost:6379/2"
+    #: Handle-availability checks per user per hour. The endpoint is typed into
+    #: as the learner types, so this is generous — it exists to stop the
+    #: endpoint being walked as a handle-enumeration oracle, not to stop typing.
+    username_checks_per_user_per_hour: int = 120
+    #: Join attempts per user and per IP per hour. This is the one endpoint
+    #: where guessing wins access to someone else's data.
+    joins_per_user_per_hour: int = 20
+    #: Deliberately loose: a class joins from one school's WiFi, so this is a
+    #: shared budget for everyone behind that NAT. It is a brute-force ceiling,
+    #: not a fairness quota — the code's own entropy is what makes guessing
+    #: hopeless, and a teacher's second class must not be locked out by the
+    #: first one's joins.
+    joins_per_ip_per_hour: int = 600
+    #: Shares and friend-adds per user per hour. Both resolve a handle to a
+    #: person, so without a cap they are a slower handle-enumeration oracle
+    #: than the availability endpoint.
+    shares_per_user_per_hour: int = 60
     # DEV/TEST ONLY: issue this exact code instead of a random one, for every phone
     # number, so mobile/QA can sign in without reading server logs. Forbidden in
     # production (validated below) — it disables OTP secrecy entirely while set.
@@ -143,6 +167,15 @@ class Settings(BaseSettings):
     #: discernment"). Turn it on when card readability matters more than the
     #: extra output tokens.
     dictionary_rewrite_definitions: bool = False
+    #: How many distinct terms one ``vocably.ai.backfill_phonetics`` run looks
+    #: up. Sized against the dictionary's rate limit rather than the size of the
+    #: backlog: the job is nightly and unhurried, and a card without an IPA
+    #: simply renders without one until its turn comes.
+    phonetic_backfill_batch_size: int = Field(default=200, ge=1, le=5000)
+    #: UTC hour of that run. Deliberately not the partition-maintenance hour —
+    #: this one makes hundreds of outbound requests, and the two jobs have no
+    #: reason to contend.
+    phonetic_backfill_hour: int = Field(default=4, ge=0, le=23)
 
     # ── Review history ────────────────────────────────────────
     #: How many months of monthly partitions to keep ahead of today. The

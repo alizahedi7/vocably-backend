@@ -13,12 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domain.enums import LeitnerBox, ReviewGrade
-from app.infrastructure.db.models.word import WordModel
+from app.infrastructure.db.models.user import UserModel
+from app.infrastructure.db.models.word_progress import WordProgressModel
 from app.infrastructure.db.models.word_review import WordReviewModel
 from app.infrastructure.db.repositories.review_event_repository import (
     SqlAlchemyReviewEventRepository,
 )
-from tests.api.conftest import UserFactory, bearer
+from tests.api.conftest import UserFactory, bearer, sleep_on_it
 from tests.api.test_study import seed_deck_with_words
 
 
@@ -121,9 +122,10 @@ async def test_grading_without_the_optional_fields_still_works(
     assert event.session_id is None
 
 
-async def test_counters_on_the_card_track_difficulty_and_mastery(
+async def test_counters_on_the_progress_row_track_difficulty_and_mastery(
     client: AsyncClient,
     auth_headers: dict[str, str],
+    user: UserModel,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     _, (word_id,) = await seed_deck_with_words(client, auth_headers, ["improve"])
@@ -131,33 +133,44 @@ async def test_counters_on_the_card_track_difficulty_and_mastery(
     for value in ("again", "good", "again", "easy", "easy"):
         await grade(client, auth_headers, word_id, value)
 
+    # The counters live on the learner's progress row, not the card: the card
+    # is shared, and two members' counters against it are different numbers.
     async with session_factory() as session:
-        word = await session.get(WordModel, UUID(word_id))
-    assert word is not None
-    assert word.review_count == 5
-    assert word.lapse_count == 2
-    assert word.consecutive_correct == 2  # the run since the last `again`
-    assert word.last_grade == ReviewGrade.EASY.ordinal
-    assert word.first_reviewed_at is not None
-    assert word.mastered_at is not None  # reached box 5
-    assert word.box == LeitnerBox.MASTERED
+        progress = await session.get(WordProgressModel, (user.id, UUID(word_id)))
+    assert progress is not None
+    assert progress.review_count == 5
+    assert progress.lapse_count == 2
+    assert progress.consecutive_correct == 2  # the run since the last `again`
+    assert progress.last_grade == ReviewGrade.EASY.ordinal
+    assert progress.first_reviewed_at is not None
+    assert progress.mastered_at is not None  # reached box 5
+    assert progress.box == LeitnerBox.MASTERED
 
 
-async def test_counters_stay_zero_until_the_card_is_reviewed(
+async def test_no_progress_row_exists_until_the_card_is_reviewed(
     client: AsyncClient,
     auth_headers: dict[str, str],
+    user: UserModel,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     _, (word_id,) = await seed_deck_with_words(client, auth_headers, ["improve"])
 
+    # Not "a row of zeroes" but *no row at all*: progress is created lazily, and
+    # an unreviewed card reads as box 1 without one existing.
     async with session_factory() as session:
-        word = await session.get(WordModel, UUID(word_id))
-    assert word is not None
-    assert (word.lapse_count, word.consecutive_correct) == (0, 0)
-    # NULL, not created_at: a card that was never reviewed has no learning curve.
-    assert word.first_reviewed_at is None
-    assert word.mastered_at is None
-    assert word.last_grade is None
+        progress = await session.get(WordProgressModel, (user.id, UUID(word_id)))
+    assert progress is None
+
+    # Added today, so it is tomorrow's work — the row still does not exist, and
+    # the due count says so.
+    overview = await client.get("/api/v1/study/overview", headers=auth_headers)
+    assert overview.json()["due_count"] == 0
+
+    await sleep_on_it(session_factory)
+    overview = await client.get("/api/v1/study/overview", headers=auth_headers)
+    assert overview.json()["due_count"] == 1
+    async with session_factory() as session:
+        assert await session.get(WordProgressModel, (user.id, UUID(word_id))) is None
 
 
 async def test_rejected_grades_write_no_event(
@@ -172,7 +185,9 @@ async def test_rejected_grades_write_no_event(
     denied = await client.post(
         f"/api/v1/study/words/{word_id}/grade", headers=bearer(other.id), json={"grade": "good"}
     )
-    assert denied.status_code == 403
+    # 404, not 403: someone who is in none of the card's decks must not be able
+    # to learn that the card exists by probing its id.
+    assert denied.status_code == 404
     assert await fetch_events(session_factory, word_id) == []
 
 

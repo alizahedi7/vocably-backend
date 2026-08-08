@@ -1,30 +1,39 @@
-"""Word (flashcard) ORM model."""
+"""Word (flashcard) ORM model — the card, shared by everyone in its deck."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, SmallInteger, String, Text
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 from app.infrastructure.db.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
-from app.infrastructure.db.types import UTCDateTime
 
 
 class WordModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "words"
-    __table_args__ = (
-        # The due-queue query filters by user + due_at; index it.
-        Index("ix_words_user_due", "user_id", "due_at"),
-    )
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
+    #: Attribution only — never an authorization check. Who may read or edit
+    #: this card is deck membership (``deck_members``), and nothing else.
+    #:
+    #: ``SET NULL``, and nullable, because attribution is precisely what may be
+    #: lost when someone leaves: a word an editor added to a teacher's deck
+    #: belongs to the deck, so their account going away must leave the class's
+    #: vocabulary standing, merely uncredited. RESTRICT was tried and made
+    #: every account undeletable — see revision e2c6a94f5b70.
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
     )
     deck_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("decks.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+
+    #: The unit this card sits in, or NULL. ``ondelete="SET NULL"`` *is* the
+    #: product rule: deleting a unit keeps its cards and drops them back into
+    #: the deck. Removing a heading must never remove what was under it.
+    unit_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("deck_units.id", ondelete="SET NULL"), index=True
     )
 
     term: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -33,17 +42,8 @@ class WordModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     example: Mapped[str | None] = mapped_column(Text)
     sense_label: Mapped[str | None] = mapped_column(String(120))
 
-    box: Mapped[int] = mapped_column(default=1, nullable=False)
-    due_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False, index=True)
-    review_count: Mapped[int] = mapped_column(default=0, nullable=False)
-    last_reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-
-    # Review summary counters, maintained by Word.apply_review on the UPDATE the
-    # grade already issues. Redundant with `word_reviews` by design — they keep
-    # "hardest words" and time-to-mastery off the event log entirely.
-    lapse_count: Mapped[int] = mapped_column(default=0, nullable=False)
-    consecutive_correct: Mapped[int] = mapped_column(default=0, nullable=False)
-    first_reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-    mastered_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-    #: ReviewGrade.ordinal of the most recent grade; NULL until first reviewed.
-    last_grade: Mapped[int | None] = mapped_column(SmallInteger())
+    #: IPA for ``term``. Nullable and usually null: the dictionary covers most
+    #: but not all words, and a card typed by hand has none until the backfill
+    #: task fills it in. Bounded rather than ``Text`` because it is one short
+    #: transcription of one card front, never prose.
+    phonetic: Mapped[str | None] = mapped_column(String(200))

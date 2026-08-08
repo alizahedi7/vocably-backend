@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.deck import Deck
+from app.domain.enums import DeckRole
 from app.domain.repositories.deck_repository import DeckRepository
 from app.infrastructure.db import mappers
 from app.infrastructure.db.models.deck import DeckModel
+from app.infrastructure.db.models.deck_member import DeckMemberModel
 
 
 class SqlAlchemyDeckRepository(DeckRepository):
@@ -22,13 +25,30 @@ class SqlAlchemyDeckRepository(DeckRepository):
         return mappers.deck_to_entity(model) if model else None
 
     async def list_for_user(self, user_id: UUID) -> list[Deck]:
+        # Membership, not decks.user_id: "my decks" now includes decks shared
+        # with me, and the owner is a member like anyone else. decks.user_id is
+        # creator attribution and is never an access check.
         stmt = (
             select(DeckModel)
-            .where(DeckModel.user_id == user_id)
+            .join(DeckMemberModel, DeckMemberModel.deck_id == DeckModel.id)
+            .where(DeckMemberModel.user_id == user_id)
             .order_by(DeckModel.created_at.asc())
         )
         models = (await self._session.execute(stmt)).scalars().all()
         return [mappers.deck_to_entity(m) for m in models]
+
+    async def list_for_user_with_role(self, user_id: UUID) -> list[tuple[Deck, DeckRole]]:
+        # The same join as above with the one column the client needs to tell a
+        # deck it may delete from one it may only leave. Free: the membership
+        # row is already being read to decide which decks these are.
+        stmt = (
+            select(DeckModel, DeckMemberModel.role)
+            .join(DeckMemberModel, DeckMemberModel.deck_id == DeckModel.id)
+            .where(DeckMemberModel.user_id == user_id)
+            .order_by(DeckModel.created_at.asc())
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [(mappers.deck_to_entity(model), DeckRole.parse(role)) for model, role in rows]
 
     async def add(self, deck: Deck) -> Deck:
         model = DeckModel(id=deck.id)
@@ -49,3 +69,8 @@ class SqlAlchemyDeckRepository(DeckRepository):
 
     async def delete(self, deck_id: UUID) -> None:
         await self._session.execute(delete(DeckModel).where(DeckModel.id == deck_id))
+
+    async def delete_many(self, deck_ids: Sequence[UUID]) -> None:
+        if not deck_ids:
+            return
+        await self._session.execute(delete(DeckModel).where(DeckModel.id.in_(list(deck_ids))))

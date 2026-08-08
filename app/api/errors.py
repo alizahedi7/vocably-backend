@@ -13,6 +13,7 @@ from app.core.exceptions import (
     AlreadyExistsError,
     AppError,
     AuthenticationError,
+    ConflictError,
     ExternalServiceError,
     NotFoundError,
     PermissionDeniedError,
@@ -23,6 +24,7 @@ from app.core.exceptions import (
 _STATUS_MAP: dict[type[AppError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     AlreadyExistsError: status.HTTP_409_CONFLICT,
+    ConflictError: status.HTTP_409_CONFLICT,
     ValidationError: 422,  # Unprocessable Content
     PermissionDeniedError: status.HTTP_403_FORBIDDEN,
     AuthenticationError: status.HTTP_401_UNAUTHORIZED,
@@ -43,5 +45,13 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _handle_app_error(_request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=_status_for(exc),
-            content={"error": {"code": exc.code, "message": exc.message}},
+            # ``detail`` duplicates ``error.message`` because the two clients read
+            # different keys: vocably-admin reads ``error.code``, while the Flutter
+            # client's ApiClient._extractDetail reads ``detail`` and falls back to
+            # "Request failed (409)" without it. 4xx messages are user-visible copy
+            # on that client, so the key it actually parses has to be there.
+            content={
+                "error": {"code": exc.code, "message": exc.message},
+                "detail": exc.message,
+            },
         )

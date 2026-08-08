@@ -171,9 +171,9 @@ async def test_rows_route_to_the_partition_for_their_month(migrated_engine: Asyn
         )
         await conn.execute(
             text(
-                "INSERT INTO words (id, user_id, deck_id, term, meaning, box, due_at,"
-                " review_count, lapse_count, consecutive_correct, created_at, updated_at)"
-                " VALUES (:id, :user_id, :deck_id, 'x', 'y', 1, now(), 0, 0, 0, now(), now())"
+                "INSERT INTO words (id, created_by_user_id, deck_id, term, meaning,"
+                " created_at, updated_at)"
+                " VALUES (:id, :user_id, :deck_id, 'x', 'y', now(), now())"
             ),
             {"id": word_id, "user_id": user_id, "deck_id": deck_id},
         )

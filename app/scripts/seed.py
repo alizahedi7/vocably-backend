@@ -13,11 +13,13 @@ from sqlalchemy import select
 
 from app.core.database import async_session_factory
 from app.core.logging import configure_logging, get_logger
-from app.domain.enums import AgeRange, AuthMethod, LeitnerBox
+from app.domain.enums import AgeRange, AuthMethod, DeckRole, LeitnerBox
 from app.domain.services.leitner import interval_for
 from app.infrastructure.db.models.deck import DeckModel
+from app.infrastructure.db.models.deck_member import DeckMemberModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
+from app.infrastructure.db.models.word_progress import WordProgressModel
 
 logger = get_logger("vocably.seed")
 
@@ -154,18 +156,39 @@ async def seed() -> None:
             decks.append(deck)
         await session.flush()
 
+        # Membership, not decks.user_id, is what the app reads: a deck with no
+        # deck_members row is invisible to everyone, including its creator.
+        for deck in decks:
+            session.add(
+                DeckMemberModel(
+                    deck_id=deck.id,
+                    user_id=user.id,
+                    role=DeckRole.OWNER.value,
+                    joined_at=now,
+                )
+            )
+
         for deck_idx, term, meaning, sense, example, box in _WORDS:
             leitner_box = LeitnerBox(box)
             # Lower boxes are due now; higher boxes are scheduled into the future.
             due_at = now - timedelta(days=1) if box <= 3 else now + interval_for(leitner_box)
+            word = WordModel(
+                created_by_user_id=user.id,
+                deck_id=decks[deck_idx].id,
+                term=term,
+                meaning=meaning,
+                sense_label=sense,
+                example=example,
+            )
+            session.add(word)
+            await session.flush()
+            # The seed deliberately writes progress rows: it exists to show a
+            # populated account, and boxes only exist per learner now.
             session.add(
-                WordModel(
+                WordProgressModel(
                     user_id=user.id,
-                    deck_id=decks[deck_idx].id,
-                    term=term,
-                    meaning=meaning,
-                    sense_label=sense,
-                    example=example,
+                    word_id=word.id,
+                    deck_id=word.deck_id,
                     box=box,
                     due_at=due_at,
                 )

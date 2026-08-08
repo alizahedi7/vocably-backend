@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from collections import defaultdict
+from datetime import UTC, date, datetime
+from typing import Literal
 from uuid import UUID
 
 from app.application.dto import BoxCount, MemoryStrength, StudyOverview
-from app.core.exceptions import NotFoundError, PermissionDeniedError
+from app.core.exceptions import NotFoundError
 from app.domain.entities.review_event import ReviewEvent
-from app.domain.entities.word import Word
+from app.domain.entities.studied_word import StudiedWord
+from app.domain.entities.xp import XpAction
 from app.domain.enums import LeitnerBox, ReviewGrade
+from app.domain.repositories.deck_activity_repository import DeckActivityRepository
 from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
-from app.domain.repositories.word_repository import WordRepository
+from app.domain.repositories.word_progress_repository import WordProgressRepository
+from app.domain.repositories.xp_repository import XpRepository
 from app.domain.services import leitner
+from app.domain.services.calendar import day_start_for, today_for
+
+#: Where a graded answer came from. A review session and a practice drill
+#: are worth different amounts, and the client says which.
+ReviewSource = Literal["session", "drill"]
 
 #: Rough estimate used for the "~N min" hint on the home screen.
 _MINUTES_PER_CARD = 0.5
@@ -24,37 +34,68 @@ LEARNED_BOXES = (LeitnerBox.KNOWN, LeitnerBox.MASTERED)
 class StudyService:
     def __init__(
         self,
-        words: WordRepository,
+        progress: WordProgressRepository,
         users: UserRepository,
         reviews: ReviewEventRepository,
+        activity: DeckActivityRepository,
+        xp: XpRepository,
     ) -> None:
-        self._words = words
+        self._progress = progress
         self._users = users
         self._reviews = reviews
+        self._activity = activity
+        self._xp = xp
 
     async def get_overview(self, user_id: UUID) -> StudyOverview:
-        now = datetime.now(UTC)
-        distribution = await self._words.box_distribution(user_id)
-        total = sum(distribution.values())
-        learned = sum(distribution.get(box, 0) for box in LEARNED_BOXES)
+        """Every home-screen number, from one grouped query.
 
-        due_words = await self._words.list_due(user_id, now)
-        due_count = len(due_words)
-        due_deck_count = len({w.deck_id for w in due_words})
+        This used to fetch every due row and count them in Python, which made
+        the home screen cost one row per due card. The response is unchanged —
+        deliberately, so the migration that moved these columns can be proved
+        against it byte for byte.
+        """
+        now = datetime.now(UTC)
+        user = await self._users.get(user_id)
+        # Where *this* learner's day starts. It decides which never-answered
+        # words have come due — a word added today is tomorrow's work.
+        day_start = day_start_for(user.timezone if user else None, now)
+        tallies = await self._progress.tally_by_deck_and_box(user_id, now, day_start=day_start)
+
+        per_box: dict[LeitnerBox, int] = defaultdict(int)
+        total = due_count = learned = 0
+        due_decks: set[UUID] = set()
+        for tally in tallies:
+            # A card in a self-paced deck that nobody has started is not part of
+            # this learner's memory at all — counting it would put five hundred
+            # bars in box 1 and read as "you have forgotten everything".
+            if not tally.started:
+                continue
+            per_box[tally.box] += tally.word_count
+            total += tally.word_count
+            due_count += tally.due_count
+            if tally.box in LEARNED_BOXES:
+                learned += tally.word_count
+            if tally.due_count:
+                due_decks.add(tally.deck_id)
 
         memory = MemoryStrength(
             total=total,
+            # Every box, including the empty ones: the client renders five bars
+            # and hard-casts each one.
             distribution=[
-                BoxCount(box=box, label=box.label, count=distribution.get(box, 0))
-                for box in LeitnerBox
+                BoxCount(box=box, label=box.label, count=per_box.get(box, 0)) for box in LeitnerBox
             ],
         )
-        user = await self._users.get(user_id)
+        today = today_for(user.timezone if user else None, now)
         return StudyOverview(
             due_count=due_count,
             total_count=total,
             learned_count=learned,
-            due_deck_count=due_deck_count,
+            mastered_count=per_box.get(LeitnerBox.MASTERED, 0),
+            # From the rollup, so it costs a handful of indexed rows rather
+            # than an aggregate over the review log.
+            reviewed_today=await self._activity.reviews_on(user_id, today),
+            due_deck_count=len(due_decks),
             estimated_minutes=max(1, round(due_count * _MINUTES_PER_CARD)),
             streak=user.streak if user else 0,
             memory_strength=memory,
@@ -66,7 +107,7 @@ class StudyService:
         *,
         deck_id: UUID | None = None,
         limit: int = 20,
-    ) -> list[Word]:
+    ) -> list[StudiedWord]:
         """Return the queue of cards for a study session.
 
         Due cards take priority; if nothing is due (the deck, or the whole
@@ -74,10 +115,20 @@ class StudyService:
         "practice anyway" sessions always have something to show.
         """
         now = datetime.now(UTC)
-        due = await self._words.list_due(user_id, now, deck_id=deck_id, limit=limit)
+        user = await self._users.get(user_id)
+        day_start = day_start_for(user.timezone if user else None, now)
+        due = await self._progress.list_due(
+            user_id, now, deck_id=deck_id, limit=limit, day_start=day_start
+        )
         if due:
             return due
-        return await self._words.list_for_user(user_id, deck_id=deck_id, limit=limit)
+        # Nothing is due — which now includes the evening a learner adds their
+        # first words, since those are tomorrow's. "Practice anyway" is the
+        # answer to that: it practises what they have taken on, never the four
+        # hundred cards they have not started.
+        return await self._progress.list_for_user(
+            user_id, deck_id=deck_id, limit=limit, started_only=True, day_start=day_start
+        )
 
     async def grade(
         self,
@@ -87,31 +138,45 @@ class StudyService:
         *,
         latency_ms: int | None = None,
         session_id: UUID | None = None,
-    ) -> Word:
-        """Apply a review grade to a card, log the review, and advance the streak."""
-        word = await self._words.get(word_id)
-        if word is None:
+        source: ReviewSource = "session",
+    ) -> StudiedWord:
+        """Apply a review grade to a card, log the review, and advance the streak.
+
+        ``source`` decides what the answer is worth: a practice drill pays
+        differently from a review session, and a *wrong* drill answer still
+        pays — turning up to be tested on your weakest words is the behaviour
+        worth rewarding.
+        """
+        # Grading a card you can read is always allowed — study is not an edit,
+        # so a viewer in a class deck may study it like anyone else. A
+        # non-member gets 404: a 403 would confirm the card exists.
+        studied = await self._progress.get_for_user(word_id, user_id)
+        if studied is None:
             raise NotFoundError("Word not found.")
-        if word.user_id != user_id:
-            raise PermissionDeniedError("This word belongs to another user.")
 
         now = datetime.now(UTC)
-        outcome = leitner.review(word.box, grade, now)
+        outcome = leitner.review(studied.box, grade, now)
 
         # Built before apply_review, which overwrites the pre-review box, due
         # date and last-reviewed time the event needs.
         event = ReviewEvent.from_review(
-            word,
+            studied,
             grade,
             outcome.box,
             now,
             latency_ms=latency_ms,
             session_id=session_id,
         )
-        word.apply_review(grade, outcome.box, outcome.due_at, now)
-        updated = await self._words.update(word)
+        applied = studied.progress.apply_review(grade, outcome.box, outcome.due_at, now)
+        # Returns the row that actually landed, which under two concurrent
+        # grades of the same card is not the one computed above: the counters
+        # are incremented in SQL so neither review is lost.
+        studied = StudiedWord(
+            word=studied.word,
+            progress=await self._progress.record_grade(studied.progress, is_lapse=grade.is_lapse),
+        )
 
-        # Written in the same transaction as the card update, unlike the AI
+        # Written in the same transaction as the progress update, unlike the AI
         # lookup cache's best-effort writes. That cache is derived data — a lost
         # write costs one repeat API call. A lost review is gone for good and
         # leaves the log disagreeing with review_count, so a failure here must
@@ -119,8 +184,66 @@ class StudyService:
         await self._reviews.add(event)
 
         user = await self._users.get(user_id)
+        # The learner's own day, not UTC: a review at 01:00 in Tehran belongs to
+        # that day, and the streak and the roster's week must agree about which.
+        today = today_for(user.timezone if user else None, now)
+        # Rides along on the same transaction. This is what keeps the roster off
+        # word_reviews, which CLAUDE.md forbids aggregating for a user-facing
+        # request — a roster of thirty students would otherwise scan it thirty
+        # times.
+        await self._activity.record_review(
+            user_id, studied.deck_id, today, mastered=applied.became_mastered
+        )
         if user is not None:
-            user.register_study_day(now.date())
+            user.register_study_day(today)
             await self._users.update(user)
 
-        return updated
+        await self._award_for_grade(user_id, grade, source, today, now)
+        return studied
+
+    async def _award_for_grade(
+        self,
+        user_id: UUID,
+        grade: ReviewGrade,
+        source: ReviewSource,
+        today: date,
+        now: datetime,
+    ) -> None:
+        if source == "drill":
+            action = XpAction.DRILL_WRONG if grade.is_lapse else XpAction.DRILL_CORRECT
+        else:
+            action = XpAction.GRADE_WORD
+        await self._xp.award(user_id, action, occurred_at=now, day=today)
+        await self._award_daily_goal_if_met(user_id, today, now)
+
+    async def _award_daily_goal_if_met(self, user_id: UUID, today: date, now: datetime) -> None:
+        """Pay the daily goal the first time it is met, and only then.
+
+        Derived from the rollup rather than trusted from the client: an
+        endpoint that accepts "I met my goal" is an endpoint that hands out
+        25 points on request. The once-a-day guarantee is a partial unique
+        index, not a check here, so two sessions finishing together cannot
+        both collect.
+        """
+        user = await self._users.get(user_id)
+        if user is None:  # pragma: no cover
+            return
+        if await self._activity.reviews_on(user_id, today) < user.daily_goal:
+            return
+        await self._xp.award(
+            user_id, XpAction.DAILY_GOAL, occurred_at=now, day=today, once_per_day=True
+        )
+
+    async def complete_session(self, user_id: UUID) -> int:
+        """Award the end-of-session bonus, on top of the cards.
+
+        Separate from grading because finishing is its own act: the client
+        calls it when the last card of a queue is answered, and a session
+        abandoned halfway earns the cards but not the bonus.
+        """
+        now = datetime.now(UTC)
+        user = await self._users.get(user_id)
+        today = today_for(user.timezone if user else None, now)
+        awarded = await self._xp.award(user_id, XpAction.FINISH_SESSION, occurred_at=now, day=today)
+        await self._award_daily_goal_if_met(user_id, today, now)
+        return awarded

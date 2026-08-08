@@ -12,12 +12,13 @@ does; the schema is created and dropped around every test.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -33,6 +34,8 @@ from app.core.database import Base, get_session
 from app.core.security import create_access_token
 from app.domain.enums import AuthMethod
 from app.infrastructure.db.models.user import UserModel
+from app.infrastructure.db.models.word import WordModel
+from app.infrastructure.db.models.word_progress import WordProgressModel
 from app.main import app
 
 UserFactory = Callable[..., Awaitable[UserModel]]
@@ -69,6 +72,38 @@ def _fresh_otp_ip_limiter() -> None:
 
 
 _TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_shared_limiters() -> Iterator[None]:
+    """Give every test the full rate-limit budget.
+
+    The Redis-backed limiters are process-global and their counters outlive a
+    test — without this the suite throttles itself, and which test fails
+    depends on the order they ran in.
+    """
+    from app.api import deps
+
+    deps._hourly_shared_limiter.cache_clear()
+    deps._shared_limit_fallback.reset()
+    # A developer with Redis running would otherwise share one budget across
+    # every run of the suite, so which test fails would depend on how many
+    # times it had been run today.
+    previous = (
+        settings.joins_per_ip_per_hour,
+        settings.joins_per_user_per_hour,
+        settings.username_checks_per_user_per_hour,
+    )
+    settings.joins_per_ip_per_hour = 0
+    settings.joins_per_user_per_hour = 0
+    settings.username_checks_per_user_per_hour = 0
+    yield
+    (
+        settings.joins_per_ip_per_hour,
+        settings.joins_per_user_per_hour,
+        settings.username_checks_per_user_per_hour,
+    ) = previous
+    deps._hourly_shared_limiter.cache_clear()
 
 
 @pytest.fixture
@@ -167,3 +202,27 @@ def auth_headers(user: UserModel) -> dict[str, str]:
 def bearer(user_id: Any) -> dict[str, str]:
     """Auth headers for an arbitrary user id (e.g. a second user in ownership tests)."""
     return {"Authorization": f"Bearer {create_access_token(user_id)}"}
+
+
+async def sleep_on_it(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    days: int = 1,
+) -> None:
+    """Let a night pass over every card, so unreviewed ones come due.
+
+    A word is first reviewed the day *after* it is added — writing it down is
+    the first exposure, and testing it in the same minute measures nothing. A
+    test that wants a due queue therefore has to wait a day, and this is how it
+    waits: by moving the cards back rather than the clock forward, which keeps
+    the tests free of time control.
+    """
+    shift = timedelta(days=days)
+    async with session_factory() as session:
+        # Row by row rather than one arithmetic UPDATE: the timestamps go
+        # through a custom type that binds datetimes, not intervals.
+        for word in (await session.execute(select(WordModel))).scalars().all():
+            word.created_at = word.created_at - shift
+        for progress in (await session.execute(select(WordProgressModel))).scalars().all():
+            progress.due_at = progress.due_at - shift
+        await session.commit()

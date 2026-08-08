@@ -34,7 +34,26 @@ async def test_unmapped_app_error_returns_400_envelope(client: AsyncClient) -> N
 
     response = await client.post("/api/v1/auth/otp/request", json={"phone": PHONE})
     assert response.status_code == 400
-    assert response.json() == {"error": {"code": "odd", "message": "odd failure"}}
+    assert response.json() == {
+        "error": {"code": "odd", "message": "odd failure"},
+        "detail": "odd failure",
+    }
+
+
+async def test_error_envelope_carries_a_detail_key(client: AsyncClient) -> None:
+    """The Flutter client reads ``detail``; vocably-admin reads ``error.code``.
+
+    Both keys carry the same message so a 4xx written as user-facing copy
+    actually reaches the user instead of rendering as "Request failed (404)".
+    """
+    app.dependency_overrides.pop(get_otp_sender, None)
+
+    response = await client.post("/api/v1/auth/otp/verify", json={"phone": PHONE, "code": "000000"})
+
+    assert response.status_code >= 400
+    body = response.json()
+    assert body["detail"] == body["error"]["message"]
+    assert body["detail"]
 
 
 async def test_unexpected_errors_do_not_leak_details(client: AsyncClient) -> None:

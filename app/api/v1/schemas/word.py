@@ -12,6 +12,9 @@ from app.domain.enums import LeitnerBox
 
 class WordCreateIn(BaseModel):
     deck_id: UUID
+    #: Optional grouping. Omitted by clients older than units, and by every
+    #: deck that has none — a card belonging to no unit is the normal case.
+    unit_id: UUID | None = None
     term: str = Field(min_length=1, max_length=255)
     meaning: str = Field(min_length=1, max_length=2000)
     #: Dictionary definition of the sense being learned — the "DEFINITION" body
@@ -21,15 +24,62 @@ class WordCreateIn(BaseModel):
     definition: str | None = Field(default=None, max_length=2000)
     example: str | None = Field(default=None, max_length=2000)
     sense_label: str | None = Field(default=None, max_length=120)
+    #: IPA for ``term``, e.g. ``/ʌndəˈmaɪn/`` — the client passes through what
+    #: ``POST /ai/lookup`` gave it, which costs nothing since the dictionary was
+    #: already consulted for the senses. Omitted by a hand-written card and by
+    #: clients older than the field; ``vocably.ai.backfill_phonetics`` fills
+    #: those in later, so leaving it out is never wrong, only slower.
+    phonetic: str | None = Field(default=None, max_length=200)
 
 
 class WordUpdateIn(BaseModel):
     deck_id: UUID | None = None
+    #: Three-valued on purpose. A PATCH omits what it is not given, so
+    #: *omitting* ``unit_id`` means "leave it alone" while an explicit
+    #: ``null`` means "take this card out of its unit" — the client sends the
+    #: explicit null via ``updateWord(clearUnit: true)``. ``x is None`` cannot
+    #: tell those apart, so the router reads ``model_fields_set`` instead.
+    unit_id: UUID | None = None
     term: str | None = Field(default=None, min_length=1, max_length=255)
     meaning: str | None = Field(default=None, min_length=1, max_length=2000)
     definition: str | None = Field(default=None, max_length=2000)
     example: str | None = Field(default=None, max_length=2000)
     sense_label: str | None = Field(default=None, max_length=120)
+    #: Rarely sent. **Editing ``term`` drops the stored phonetic** unless one is
+    #: supplied in the same request, because a transcription of the old spelling
+    #: is a wrong transcription, and a wrong IPA teaches a wrong sound. The
+    #: backfill task puts the new one back.
+    phonetic: str | None = Field(default=None, max_length=200)
+
+
+class StartWordsIn(BaseModel):
+    """Which of a saved deck's cards to put into the learner's boxes.
+
+    All three selectors are optional and compose. Sending none of them starts
+    the whole deck, which is the "add all 504" button — deliberately reachable,
+    just not the default.
+    """
+
+    #: Specific cards — the one-at-a-time path down the word list.
+    word_ids: list[UUID] | None = None
+    #: A whole unit or lesson at once.
+    unit_id: UUID | None = None
+    #: At most this many, in the deck's own order: "add the next 10".
+    count: int | None = Field(default=None, ge=1, le=500)
+
+
+class UnstartWordsIn(BaseModel):
+    """Take cards back out — the undo behind the "added N words" toast."""
+
+    word_ids: list[UUID]
+
+
+class StartResultOut(BaseModel):
+    """What changed, so the screen can update without a second request."""
+
+    started_ids: list[UUID]
+    started: int
+    remaining: int
 
 
 class WordOut(BaseModel):
@@ -37,12 +87,25 @@ class WordOut(BaseModel):
 
     id: UUID
     deck_id: UUID
+    #: ``null`` when the card is in no unit. The client reads that as "" and
+    #: renders it ungrouped; it is not an error state.
+    unit_id: UUID | None
     term: str
     meaning: str
     definition: str | None
     example: str | None
     sense_label: str | None
+    #: IPA for ``term``, or ``null``. **Null is the ordinary case** — a third of
+    #: words have none in the source, and hand-written cards have none until the
+    #: backfill reaches them. Render it only when present; never substitute a
+    #: dash or a placeholder for it.
+    phonetic: str | None
     box: LeitnerBox
+    #: Whether the card is in this learner's boxes at all. False only in a
+    #: self-paced deck they have not started it in — and then ``box`` and
+    #: ``due_at`` are the placeholder values a never-studied card has always
+    #: read as, so a client that predates the field still renders the row.
+    started: bool
     due_at: datetime
     review_count: int
     last_reviewed_at: datetime | None

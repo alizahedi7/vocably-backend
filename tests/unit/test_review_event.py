@@ -8,22 +8,38 @@ from uuid import uuid4
 import pytest
 
 from app.domain.entities.review_event import MAX_LATENCY_MS, ReviewEvent
+from app.domain.entities.studied_word import StudiedWord
 from app.domain.entities.word import Word
+from app.domain.entities.word_progress import WordProgress
 from app.domain.enums import LeitnerBox, ReviewGrade
 
 NOW = datetime(2026, 7, 30, 12, 0, tzinfo=UTC)
 
 
-def make_word(**overrides: object) -> Word:
+def make_word(**progress_overrides: object) -> StudiedWord:
+    """A card paired with one learner's state — what a review is captured from.
+
+    The overrides all land on the progress half: the event records what the
+    grade is about to overwrite, and none of that lives on the card any more.
+    """
+    user_id, word_id, deck_id = uuid4(), uuid4(), uuid4()
     fields: dict[str, object] = {
-        "user_id": uuid4(),
-        "deck_id": uuid4(),
-        "term": "improve",
-        "meaning": "to get better",
+        "user_id": user_id,
+        "word_id": word_id,
+        "deck_id": deck_id,
         "due_at": NOW,
     }
-    fields.update(overrides)
-    return Word(**fields)  # type: ignore[arg-type]
+    fields.update(progress_overrides)
+    return StudiedWord(
+        word=Word(
+            id=word_id,
+            deck_id=deck_id,
+            created_by_user_id=user_id,
+            term="improve",
+            meaning="to get better",
+        ),
+        progress=WordProgress(**fields),  # type: ignore[arg-type]
+    )
 
 
 # ── ReviewGrade ordinals ─────────────────────────────────────
@@ -54,88 +70,13 @@ def test_only_again_is_a_lapse() -> None:
     assert not ReviewGrade.EASY.is_lapse
 
 
-# ── Word.apply_review ────────────────────────────────────────
-def test_apply_review_updates_scheduling_state() -> None:
-    word = make_word()
-    due = NOW + timedelta(days=2)
-
-    word.apply_review(ReviewGrade.GOOD, LeitnerBox.LEARNING, due, NOW)
-
-    assert word.box is LeitnerBox.LEARNING
-    assert word.due_at == due
-    assert word.review_count == 1
-    assert word.last_reviewed_at == NOW
-    assert word.updated_at == NOW
-    assert word.last_grade is ReviewGrade.GOOD
-
-
-def test_first_reviewed_at_is_stamped_once_and_never_moves() -> None:
-    word = make_word()
-    later = NOW + timedelta(days=5)
-
-    word.apply_review(ReviewGrade.GOOD, LeitnerBox.LEARNING, later, NOW)
-    word.apply_review(ReviewGrade.GOOD, LeitnerBox.FAMILIAR, later, later)
-
-    assert word.first_reviewed_at == NOW  # the start of the learning curve
-
-
-def test_lapse_count_and_streak_track_again() -> None:
-    word = make_word()
-
-    word.apply_review(ReviewGrade.GOOD, LeitnerBox.LEARNING, NOW, NOW)
-    word.apply_review(ReviewGrade.HARD, LeitnerBox.NEW, NOW, NOW)
-    assert word.lapse_count == 0
-    assert word.consecutive_correct == 2  # `hard` is a pass, not a lapse
-
-    word.apply_review(ReviewGrade.AGAIN, LeitnerBox.NEW, NOW, NOW)
-    assert word.lapse_count == 1
-    assert word.consecutive_correct == 0
-
-    word.apply_review(ReviewGrade.GOOD, LeitnerBox.LEARNING, NOW, NOW)
-    assert word.consecutive_correct == 1
-
-
-def test_mastered_at_is_stamped_on_first_entry_to_box_five_and_survives_a_lapse() -> None:
-    word = make_word()
-    mastered = NOW + timedelta(days=10)
-    relapsed = NOW + timedelta(days=20)
-
-    word.apply_review(ReviewGrade.EASY, LeitnerBox.FAMILIAR, NOW, NOW)
-    assert word.mastered_at is None
-
-    word.apply_review(ReviewGrade.EASY, LeitnerBox.MASTERED, mastered, mastered)
-    assert word.mastered_at == mastered
-    assert word.time_to_mastery == mastered - NOW
-
-    # Forgetting it later does not un-master it — time-to-mastery is a fact
-    # about the past, not a description of the card's current strength.
-    word.apply_review(ReviewGrade.AGAIN, LeitnerBox.NEW, relapsed, relapsed)
-    assert word.mastered_at == mastered
-
-
-def test_time_to_mastery_is_none_until_mastered() -> None:
-    word = make_word()
-    assert word.time_to_mastery is None
-    word.apply_review(ReviewGrade.GOOD, LeitnerBox.LEARNING, NOW, NOW)
-    assert word.time_to_mastery is None
-
-
-def test_lapse_rate_ranks_difficulty_independently_of_review_volume() -> None:
-    word = make_word()
-    assert word.lapse_rate == 0.0  # never reviewed — no signal, not "easy"
-
-    for grade in (ReviewGrade.AGAIN, ReviewGrade.GOOD, ReviewGrade.AGAIN, ReviewGrade.GOOD):
-        word.apply_review(grade, LeitnerBox.NEW, NOW, NOW)
-    assert word.lapse_rate == 0.5
-
-
 # ── ReviewEvent.from_review ──────────────────────────────────
 def test_from_review_captures_state_before_the_card_is_mutated() -> None:
     word = make_word(box=LeitnerBox.FAMILIAR, due_at=NOW - timedelta(days=3))
-    word.last_reviewed_at = NOW - timedelta(days=7)
+    word.progress.last_reviewed_at = NOW - timedelta(days=7)
 
     event = ReviewEvent.from_review(word, ReviewGrade.GOOD, LeitnerBox.KNOWN, NOW)
-    word.apply_review(ReviewGrade.GOOD, LeitnerBox.KNOWN, NOW + timedelta(days=9), NOW)
+    word.progress.apply_review(ReviewGrade.GOOD, LeitnerBox.KNOWN, NOW + timedelta(days=9), NOW)
 
     assert event.box_before is LeitnerBox.FAMILIAR  # not clobbered by apply_review
     assert event.box_after is LeitnerBox.KNOWN

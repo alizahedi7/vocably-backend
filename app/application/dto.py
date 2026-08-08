@@ -13,7 +13,7 @@ from uuid import UUID
 from app.domain.entities.deck import Deck
 from app.domain.entities.user import User
 from app.domain.entities.word import Word
-from app.domain.enums import AuthMethod, LeitnerBox
+from app.domain.enums import AuthMethod, DeckRole, LeitnerBox
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,9 +50,24 @@ class DeckView:
     """A deck plus the aggregate stats the UI shows on each deck card."""
 
     deck: Deck
+    #: Every card in the deck, started or not — its size, which is the same
+    #: number for every member and is what the deck screen says out loud.
     word_count: int
+    #: Of those, the ones in *this* learner's boxes. Equal to ``word_count``
+    #: for every deck anyone built themselves; smaller for a self-paced deck
+    #: they are working through at their own rate.
+    started_count: int
     due_count: int
-    progress_pct: int  # 0..100, mean box normalised to the 5-box scale
+    #: 0..100, mean box normalised to the 5-box scale — over *started* cards.
+    #: Measured against the whole deck it would read 0% for months and tell the
+    #: learner their work counted for nothing.
+    progress_pct: int
+    #: This user's role in *this* deck. On the list it is what tells a deck the
+    #: client may delete from one it may only leave.
+    role: DeckRole = DeckRole.OWNER
+    #: Whether this deck's words wait to be started by this member. The client
+    #: shows the "add to my boxes" affordances on the strength of it.
+    self_paced: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +77,14 @@ class StudyOverview:
     due_count: int
     total_count: int
     learned_count: int
+    #: Words in box 5 across every deck. Distinct from ``learned_count``, which
+    #: counts boxes 4 and 5 — the mastery badges are a pure function of this
+    #: one, which is why no badge table exists.
+    mastered_count: int
+    #: Cards answered today, in the learner's own timezone. The client keeps a
+    #: local counter too and takes the larger of the two: a grade that never
+    #: reached the server is still work the learner did.
+    reviewed_today: int
     due_deck_count: int
     estimated_minutes: int
     streak: int
@@ -115,11 +138,15 @@ class AdminDeckRow:
 
 @dataclass(frozen=True, slots=True)
 class AdminWordRow:
-    """A word with the deck ("category") and owner it belongs to."""
+    """A word with the deck ("category") and creator it belongs to."""
 
     word: Word
     deck_name: str
     owner_name: str
+    #: The *creator's* Leitner box. Study state is per member, so a shared card
+    #: has one box per learner and none of them is the card's; this is the one
+    #: belonging to whoever added it. 1 when they have never studied it.
+    box: int
 
 
 @dataclass(frozen=True, slots=True)

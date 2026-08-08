@@ -7,9 +7,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query
 
-from app.api.deps import CurrentUser, StudyServiceDep
-from app.api.v1.schemas.study import GradeIn, StudyOverviewOut, StudySessionOut
+from app.api.deps import CurrentUser, StudyServiceDep, UserServiceDep
+from app.api.v1.schemas.study import (
+    GradeIn,
+    SessionCompleteOut,
+    StudyOverviewOut,
+    StudySessionOut,
+)
 from app.api.v1.schemas.word import WordOut
+from app.domain.entities.xp import level_for
 
 router = APIRouter(prefix="/study", tags=["study"])
 
@@ -54,5 +60,23 @@ async def grade_word(
         payload.grade,
         latency_ms=payload.latency_ms,
         session_id=payload.session_id,
+        source=payload.source,
     )
     return WordOut.model_validate(word)
+
+
+@router.post("/session/complete", response_model=SessionCompleteOut)
+async def complete_session(
+    current_user: CurrentUser,
+    study: StudyServiceDep,
+    users: UserServiceDep,
+) -> SessionCompleteOut:
+    """Claim the end-of-session bonus, on top of the cards.
+
+    Called when the last card of a queue is answered. A session abandoned
+    halfway earns its cards but not this. The daily goal is evaluated here too
+    — server-side from the activity rollup, never from a client claiming it.
+    """
+    awarded = await study.complete_session(current_user.id)
+    user = await users.get(current_user.id)
+    return SessionCompleteOut(awarded=awarded, xp=user.xp, level=level_for(user.xp))

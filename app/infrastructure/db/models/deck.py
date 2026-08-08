@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 from app.infrastructure.db.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
+from app.infrastructure.db.types import UTCDateTime
 
 
 class DeckModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -19,3 +21,22 @@ class DeckModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     hue: Mapped[int] = mapped_column(default=262, nullable=False)
+
+    # ── Explore ──────────────────────────────────────────────
+    #: Whether the deck is listed for anyone to browse and copy. Writable by
+    #: admins only for now: there is no report path and no moderation queue,
+    #: and an open publish button without one is an unreviewed-content problem
+    #: rather than a feature. See CLAUDE.md.
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    #: A key from the client's kDeckCategories. Free-form for the same reason
+    #: proficiency is: the list is a product surface.
+    category: Mapped[str] = mapped_column(String(32), default="general", nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    #: Persian description, shown to learners reading the app in Persian.
+    description_fa: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    #: Published by Vocably itself rather than by a learner.
+    is_official: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: How many people have taken a copy — the only quality signal Explore
+    #: shows, and a better one than a rating nobody fills in.
+    save_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

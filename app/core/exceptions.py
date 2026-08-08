@@ -30,6 +30,17 @@ class AlreadyExistsError(AppError):
     message = "The resource already exists."
 
 
+class ConflictError(AppError):
+    """The request is well-formed but the current state forbids it.
+
+    Distinct from :class:`AlreadyExistsError`, which is specifically a
+    duplicate; this is "not while that is true" — deleting an account that
+    still owns a class deck, for instance.
+    """
+
+    code = "conflict"
+
+
 class ValidationError(AppError):
     code = "validation_error"
     message = "The request was invalid."
