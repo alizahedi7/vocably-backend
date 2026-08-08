@@ -52,6 +52,13 @@ class DeckAccess:
         return member
 
     @staticmethod
-    def owner(deck_id: UUID, user_id: UUID) -> DeckMember:
-        """The membership row a newly created deck's creator gets."""
-        return DeckMember(deck_id=deck_id, user_id=user_id, role=DeckRole.OWNER)
+    def owner(deck_id: UUID, user_id: UUID, *, self_paced: bool = False) -> DeckMember:
+        """The membership row a newly created deck's creator gets.
+
+        ``self_paced`` is the one thing that differs between a deck someone
+        typed and one they *copied* from Explore: both are theirs outright, but
+        nobody chose the five hundred words in the second one card by card.
+        """
+        return DeckMember(
+            deck_id=deck_id, user_id=user_id, role=DeckRole.OWNER, self_paced=self_paced
+        )

@@ -173,9 +173,7 @@ DeckMemberRepoDep = Annotated[DeckMemberRepository, Depends(get_deck_member_repo
 DeckUnitRepoDep = Annotated[DeckUnitRepository, Depends(get_deck_unit_repository)]
 DeckInviteRepoDep = Annotated[DeckInviteRepository, Depends(get_deck_invite_repository)]
 DeckActivityRepoDep = Annotated[DeckActivityRepository, Depends(get_deck_activity_repository)]
-DeckDiscoveryRepoDep = Annotated[
-    DeckDiscoveryRepository, Depends(get_deck_discovery_repository)
-]
+DeckDiscoveryRepoDep = Annotated[DeckDiscoveryRepository, Depends(get_deck_discovery_repository)]
 FriendRepoDep = Annotated[FriendRepository, Depends(get_friend_repository)]
 XpRepoDep = Annotated[XpRepository, Depends(get_xp_repository)]
 OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
@@ -361,9 +359,12 @@ def get_user_service(
 
 
 def get_deck_service(
-    decks: DeckRepoDep, progress: WordProgressRepoDep, members: DeckMemberRepoDep
+    decks: DeckRepoDep,
+    progress: WordProgressRepoDep,
+    members: DeckMemberRepoDep,
+    users: UserRepoDep,
 ) -> DeckService:
-    return DeckService(decks, progress, members)
+    return DeckService(decks, progress, members, users)
 
 
 def get_word_service(
@@ -432,9 +433,7 @@ DeckServiceDep = Annotated[DeckService, Depends(get_deck_service)]
 WordServiceDep = Annotated[WordService, Depends(get_word_service)]
 DeckUnitServiceDep = Annotated[DeckUnitService, Depends(get_deck_unit_service)]
 DeckSharingServiceDep = Annotated[DeckSharingService, Depends(get_deck_sharing_service)]
-DeckDiscoveryServiceDep = Annotated[
-    DeckDiscoveryService, Depends(get_deck_discovery_service)
-]
+DeckDiscoveryServiceDep = Annotated[DeckDiscoveryService, Depends(get_deck_discovery_service)]
 FriendServiceDep = Annotated[FriendService, Depends(get_friend_service)]
 StudyServiceDep = Annotated[StudyService, Depends(get_study_service)]
 AIStudioServiceDep = Annotated[AIStudioService, Depends(get_ai_studio_service)]

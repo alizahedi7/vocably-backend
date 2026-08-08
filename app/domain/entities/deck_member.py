@@ -16,6 +16,13 @@ class DeckMember:
     role: DeckRole = DeckRole.VIEWER
     invited_by_user_id: UUID | None = None
     joined_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    #: Whether this deck's words wait to be started by this member.
+    #:
+    #: True for a deck that arrived from elsewhere — an Explore copy, an
+    #: accepted share, an invite code — where a word with no progress row is
+    #: *not started* rather than new-and-due. False for a deck the member built
+    #: themselves, where adding a card already said "I am learning this".
+    self_paced: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 

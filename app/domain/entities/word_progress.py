@@ -73,21 +73,48 @@ class WordProgress:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
+    @staticmethod
+    def first_due_at(day_start: datetime) -> datetime:
+        """When a word met today is first reviewed: the start of tomorrow.
+
+        Not "in a moment". Writing a card down is already the first exposure,
+        and a review thirty seconds later tests nothing but short-term memory —
+        the interval is the whole mechanism. Sleeping on it is the first real
+        repetition, which is why every box interval starts at a day and this
+        one does too.
+
+        The boundary is the *day*, not the clock: a word added at breakfast and
+        one added at midnight both come up in tomorrow's reviews, whenever the
+        learner sits down. Tying it to ``now + 24h`` instead would hide a word
+        added at 9am from someone who studies at 8am, which reads as the app
+        losing it.
+        """
+        return day_start + timedelta(days=1)
+
     @classmethod
     def unstudied(
         cls,
         user_id: UUID,
         word_id: UUID,
         deck_id: UUID,
-        now: datetime,
+        *,
+        created_at: datetime,
+        day_start: datetime,
     ) -> WordProgress:
-        """The value a *missing* row reads as: box 1, due now, nothing recorded.
+        """The value a *missing* row reads as: box 1, nothing recorded, and due
+        the day after the card was added.
 
         Constructed on read and never persisted by itself — only :meth:`grade`
-        writes a row, which is what keeps sharing a deck with thirty students
-        from writing fifteen thousand rows for people who may never open it.
+        and a start write a row, which is what keeps sharing a deck with thirty
+        students from writing fifteen thousand rows for people who may never
+        open it.
+
+        A card added today is due tomorrow; one added any earlier is due now
+        (its day has come and gone). That single comparison is what makes "new
+        words are tomorrow's work" true without a row existing to say so.
         """
-        return cls(user_id=user_id, word_id=word_id, deck_id=deck_id, due_at=now)
+        due_at = cls.first_due_at(day_start) if created_at >= day_start else day_start
+        return cls(user_id=user_id, word_id=word_id, deck_id=deck_id, due_at=due_at)
 
     def is_due(self, now: datetime) -> bool:
         return self.due_at <= now

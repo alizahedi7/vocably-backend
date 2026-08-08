@@ -9,6 +9,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.deck import Deck
+from app.domain.enums import DeckRole
 from app.domain.repositories.deck_repository import DeckRepository
 from app.infrastructure.db import mappers
 from app.infrastructure.db.models.deck import DeckModel
@@ -35,6 +36,19 @@ class SqlAlchemyDeckRepository(DeckRepository):
         )
         models = (await self._session.execute(stmt)).scalars().all()
         return [mappers.deck_to_entity(m) for m in models]
+
+    async def list_for_user_with_role(self, user_id: UUID) -> list[tuple[Deck, DeckRole]]:
+        # The same join as above with the one column the client needs to tell a
+        # deck it may delete from one it may only leave. Free: the membership
+        # row is already being read to decide which decks these are.
+        stmt = (
+            select(DeckModel, DeckMemberModel.role)
+            .join(DeckMemberModel, DeckMemberModel.deck_id == DeckModel.id)
+            .where(DeckMemberModel.user_id == user_id)
+            .order_by(DeckModel.created_at.asc())
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [(mappers.deck_to_entity(model), DeckRole.parse(role)) for model, role in rows]
 
     async def add(self, deck: Deck) -> Deck:
         model = DeckModel(id=deck.id)

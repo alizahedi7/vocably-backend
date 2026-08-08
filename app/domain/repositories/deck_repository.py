@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from app.domain.entities.deck import Deck
+from app.domain.enums import DeckRole
 
 
 class DeckRepository(ABC):
@@ -15,6 +16,9 @@ class DeckRepository(ABC):
 
     @abstractmethod
     async def list_for_user(self, user_id: UUID) -> list[Deck]: ...
+
+    @abstractmethod
+    async def list_for_user_with_role(self, user_id: UUID) -> list[tuple[Deck, DeckRole]]: ...
 
     @abstractmethod
     async def add(self, deck: Deck) -> Deck: ...

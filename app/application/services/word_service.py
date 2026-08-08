@@ -8,6 +8,7 @@ shares.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from app.application.services.deck_access import DeckAccess
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities.studied_word import StudiedWord
 from app.domain.entities.word import Word
+from app.domain.entities.word_progress import WordProgress
 from app.domain.entities.xp import XpAction
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_unit_repository import DeckUnitRepository
@@ -22,7 +24,21 @@ from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.domain.repositories.xp_repository import XpRepository
-from app.domain.services.calendar import today_for
+from app.domain.services.calendar import day_start_for, today_for
+
+
+@dataclass(frozen=True, slots=True)
+class StartResult:
+    """What a start (or an undo) changed, for a client that shows it at once."""
+
+    #: The cards that were selected, so an undo knows what to take back out.
+    started_ids: list[UUID]
+    #: How many rows were actually written. Lower than ``len(started_ids)`` when
+    #: another device got there first; negative for an undo.
+    started: int
+    #: Cards in the deck still waiting to be started, so the screen can say
+    #: "484 left" without asking again.
+    remaining: int
 
 
 class _Unset:
@@ -67,7 +83,11 @@ class WordService:
         if deck_id is not None:
             await self._access.require_read(deck_id, user_id)
         return await self._progress.list_for_user(
-            user_id, deck_id=deck_id, limit=limit, offset=offset
+            user_id,
+            deck_id=deck_id,
+            limit=limit,
+            offset=offset,
+            day_start=await self._day_start(user_id),
         )
 
     async def get_readable(self, word_id: UUID, user_id: UUID) -> StudiedWord:
@@ -76,10 +96,17 @@ class WordService:
         404 rather than 403 for a non-member: a stranger walking word ids must
         not be able to learn which ones exist.
         """
-        studied = await self._progress.get_for_user(word_id, user_id)
+        studied = await self._progress.get_for_user(
+            word_id, user_id, day_start=await self._day_start(user_id)
+        )
         if studied is None:
             raise NotFoundError("Word not found.")
         return studied
+
+    async def _day_start(self, user_id: UUID) -> datetime:
+        """Where this learner's day begins, so a card reports the right due date."""
+        user = await self._users.get(user_id)
+        return day_start_for(user.timezone if user else None)
 
     async def create(
         self,
@@ -94,7 +121,7 @@ class WordService:
         phonetic: str | None = None,
         unit_id: UUID | None = None,
     ) -> StudiedWord:
-        await self._access.require_edit_words(deck_id, user_id)
+        member = await self._access.require_edit_words(deck_id, user_id)
         if unit_id is not None:
             await self._assert_unit_in_deck(unit_id, deck_id)
         word = Word(
@@ -122,7 +149,70 @@ class WordService:
         )
         # No progress row is written: the card is new to everyone, and an
         # unstudied word already reads as box 1, due now.
+        #
+        # Except in a self-paced deck, where a missing row means *not started*.
+        # Whoever typed the card is plainly learning it — asking them to add
+        # their own word to their own boxes would be the second step this
+        # feature exists to remove. Everyone else in the deck still starts it
+        # themselves.
+        if member.self_paced:
+            day_start = day_start_for(user.timezone if user else None, now)
+            await self._progress.start_words(
+                user_id,
+                deck_id,
+                [created.id],
+                now,
+                due_at=WordProgress.first_due_at(day_start),
+            )
         return await self.get_readable(created.id, user_id)
+
+    async def start(
+        self,
+        user_id: UUID,
+        deck_id: UUID,
+        *,
+        word_ids: list[UUID] | None = None,
+        unit_id: UUID | None = None,
+        count: int | None = None,
+    ) -> StartResult:
+        """Put some of a saved deck's cards into the learner's boxes.
+
+        Three ways to say which, because there are three ways people work
+        through a 500-word deck: *these cards* (word_ids — tapped one at a
+        time), *this unit* (unit_id — a lesson at a time), or *the next N*
+        (count — the batch the deck screen offers). They compose: a unit plus a
+        count is "the next ten of Unit 3".
+
+        Reading the deck is enough. Starting a card writes nothing anyone else
+        can see — it is this learner's own queue — so a viewer of a class deck
+        may do it exactly as the owner may.
+        """
+        await self._access.require_read(deck_id, user_id)
+        if count is not None and count <= 0:
+            raise ValidationError("Choose at least one word")
+        ids = await self._progress.list_unstarted(
+            user_id, deck_id, unit_id=unit_id, word_ids=word_ids, limit=count
+        )
+        now = datetime.now(UTC)
+        user = await self._users.get(user_id)
+        # Starting a word is meeting it, and a word met today is reviewed
+        # tomorrow — the same rule as a word typed today.
+        due_at = WordProgress.first_due_at(day_start_for(user.timezone if user else None, now))
+        started = await self._progress.start_words(user_id, deck_id, ids, now, due_at=due_at)
+        remaining = len(await self._progress.list_unstarted(user_id, deck_id))
+        return StartResult(started_ids=ids, started=started, remaining=remaining)
+
+    async def unstart(self, user_id: UUID, deck_id: UUID, word_ids: list[UUID]) -> StartResult:
+        """Undo a start. Cards that have been answered are left alone.
+
+        This is what makes "Added 20 words · Undo" safe to offer: the toast can
+        call it blind, and a card the learner has already reviewed in the
+        meantime keeps its box.
+        """
+        await self._access.require_read(deck_id, user_id)
+        removed = await self._progress.unstart_words(user_id, word_ids)
+        remaining = len(await self._progress.list_unstarted(user_id, deck_id))
+        return StartResult(started_ids=[], started=-removed, remaining=remaining)
 
     async def update(
         self,

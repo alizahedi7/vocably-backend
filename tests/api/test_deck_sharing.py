@@ -442,3 +442,159 @@ async def test_the_roster_is_a_fixed_number_of_queries_whatever_the_class_size(
     # Auth, membership, members, users, invite, totals, week — a constant.
     # Seven members must not cost seven user lookups.
     assert len(selects) <= 8, "\n".join(selects)
+
+
+async def test_only_the_owner_deletes_the_deck(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """A shared deck is one deck, so deleting it is not a member's to do.
+
+    An editor may change every word in it — that is what edit access is — and
+    still cannot destroy the deck it belongs to.
+    """
+    deck_id = await create_deck(client, auth_headers)
+    editor_id = await named(client, make_user, "+989121110080", "editor_d")
+    viewer_id = await named(client, make_user, "+989121110081", "viewer_d")
+    for handle, role in (("editor_d", "editor"), ("viewer_d", "viewer")):
+        await client.post(
+            f"/api/v1/decks/{deck_id}/members",
+            headers=auth_headers,
+            json={"username": handle, "role": role},
+        )
+
+    for user_id in (editor_id, viewer_id):
+        refused = await client.delete(f"/api/v1/decks/{deck_id}", headers=bearer(user_id))
+        assert refused.status_code == 403, refused.text
+        assert refused.json()["error"]["code"] == "permission_denied"
+
+    # A stranger is not told the deck exists at all.
+    stranger = await make_user(phone="+989121110082")
+    assert (
+        await client.delete(f"/api/v1/decks/{deck_id}", headers=bearer(stranger.id))
+    ).status_code == 404
+
+    # The editor may still do what edit access is for.
+    added = await client.post(
+        "/api/v1/words",
+        headers=bearer(editor_id),
+        json={"deck_id": deck_id, "term": "resilient", "meaning": "tough"},
+    )
+    assert added.status_code == 201, added.text
+
+    deleted = await client.delete(f"/api/v1/decks/{deck_id}", headers=auth_headers)
+    assert deleted.status_code == 204
+
+
+async def test_leaving_removes_the_deck_from_your_list_and_nothing_else(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    deck_id = await create_deck(client, auth_headers)
+    word_id = (
+        await client.post(
+            "/api/v1/words",
+            headers=auth_headers,
+            json={"deck_id": deck_id, "term": "leave", "meaning": "go away"},
+        )
+    ).json()["id"]
+    student_id = await named(client, make_user, "+989121110083", "parisa_l")
+    await client.post(
+        f"/api/v1/decks/{deck_id}/members",
+        headers=auth_headers,
+        json={"username": "parisa_l", "role": "viewer"},
+    )
+    headers = bearer(student_id)
+
+    left = await client.delete(f"/api/v1/decks/{deck_id}/leave", headers=headers)
+    assert left.status_code == 204, left.text
+
+    # Gone from their list, and back to being a deck they cannot see at all.
+    assert (await client.get("/api/v1/decks", headers=headers)).json() == []
+    assert (await client.get(f"/api/v1/decks/{deck_id}", headers=headers)).status_code == 404
+    twice = await client.delete(f"/api/v1/decks/{deck_id}/leave", headers=headers)
+    assert twice.status_code == 404
+
+    # The deck, its words and its owner are untouched: leaving deletes nothing.
+    still_there = await client.get(f"/api/v1/decks/{deck_id}", headers=auth_headers)
+    assert still_there.status_code == 200
+    assert (await client.get(f"/api/v1/words/{word_id}", headers=auth_headers)).status_code == 200
+    roster = await client.get(f"/api/v1/decks/{deck_id}/membership", headers=auth_headers)
+    assert [m["username"] for m in roster.json()["members"]] != ["parisa_l"]
+
+
+async def test_the_owner_cannot_leave_their_own_deck(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """Otherwise "leave" would be a way to strand a class's deck with nobody
+    who can manage it — for the owner the action is deleting it."""
+    deck_id = await create_deck(client, auth_headers)
+
+    refused = await client.delete(f"/api/v1/decks/{deck_id}/leave", headers=auth_headers)
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "conflict"
+    # Both keys: vocably-admin reads error.code, the Flutter client reads detail.
+    assert "Delete it instead" in refused.json()["detail"]
+    assert (await client.get(f"/api/v1/decks/{deck_id}", headers=auth_headers)).status_code == 200
+
+
+async def test_rejoining_after_leaving_restores_the_boxes(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """Progress rows survive leaving, which is why leaving is not destructive."""
+    deck_id = await create_deck(client, auth_headers)
+    word_id = (
+        await client.post(
+            "/api/v1/words",
+            headers=auth_headers,
+            json={"deck_id": deck_id, "term": "return", "meaning": "come back"},
+        )
+    ).json()["id"]
+    student_id = await named(client, make_user, "+989121110084", "parisa_r")
+    await client.post(
+        f"/api/v1/decks/{deck_id}/members",
+        headers=auth_headers,
+        json={"username": "parisa_r", "role": "viewer"},
+    )
+    headers = bearer(student_id)
+    for _ in range(2):
+        graded = await client.post(
+            f"/api/v1/study/words/{word_id}/grade", headers=headers, json={"grade": "good"}
+        )
+        assert graded.status_code == 200, graded.text
+    box_before = graded.json()["box"]
+    assert box_before > 1
+
+    left = await client.delete(f"/api/v1/decks/{deck_id}/leave", headers=headers)
+    assert left.status_code == 204
+
+    code = (
+        await client.post(
+            f"/api/v1/decks/{deck_id}/invite", headers=auth_headers, json={"role": "viewer"}
+        )
+    ).json()["invite_code"]
+    rejoined = await client.post("/api/v1/decks/join", headers=headers, json={"code": code})
+    assert rejoined.status_code == 200, rejoined.text
+
+    back = await client.get(f"/api/v1/words/{word_id}", headers=headers)
+    assert back.json()["box"] == box_before
+
+
+async def test_the_deck_list_says_what_the_caller_may_do_with_each_deck(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """So the client can offer "delete" or "leave" without a request per deck."""
+    deck_id = await create_deck(client, auth_headers)
+    editor_id = await named(client, make_user, "+989121110085", "editor_r")
+    viewer_id = await named(client, make_user, "+989121110086", "viewer_r")
+    for handle, role in (("editor_r", "editor"), ("viewer_r", "viewer")):
+        await client.post(
+            f"/api/v1/decks/{deck_id}/members",
+            headers=auth_headers,
+            json={"username": handle, "role": role},
+        )
+
+    mine = (await client.get("/api/v1/decks", headers=auth_headers)).json()
+    assert [(d["role"], d["is_owner"]) for d in mine] == [("owner", True)]
+
+    for user_id, role in ((editor_id, "editor"), (viewer_id, "viewer")):
+        theirs = (await client.get("/api/v1/decks", headers=bearer(user_id))).json()
+        assert [(d["id"], d["role"], d["is_owner"]) for d in theirs] == [(deck_id, role, False)]

@@ -69,6 +69,17 @@ def day_bounds(day: date, timezone: str | None) -> tuple[datetime, datetime]:
     return start.astimezone(UTC), end.astimezone(UTC)
 
 
+def day_start_for(timezone: str | None, now: datetime | None = None) -> datetime:
+    """The UTC instant the learner's current day began.
+
+    The boundary "today" is measured from — what makes a word added this
+    afternoon and one added at breakfast equally *not due until tomorrow*.
+    """
+    moment = now or datetime.now(UTC)
+    start, _ = day_bounds(today_for(timezone, moment), timezone)
+    return start
+
+
 def week_bounds(day: date, timezone: str | None) -> tuple[datetime, datetime]:
     """The UTC interval covering the Monday-to-Sunday week containing ``day``."""
     monday = day - timedelta(days=day.weekday())

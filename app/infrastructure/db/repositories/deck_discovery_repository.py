@@ -146,8 +146,19 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
                 DeckUnitModel(id=new_id, deck_id=copy.id, name=unit.name, position=unit.position)
             )
 
+        # In the source deck's own order, and *keeping* each card's created_at.
+        # A course deck is a sequence — Unit 1's first word is first for a
+        # reason — and stamping five hundred copies with one timestamp threw
+        # that away, leaving the list in uuid order. It also matters now that
+        # "start the next ten" means the next ten of the book.
         words = (
-            (await self._session.execute(select(WordModel).where(WordModel.deck_id == deck_id)))
+            (
+                await self._session.execute(
+                    select(WordModel)
+                    .where(WordModel.deck_id == deck_id)
+                    .order_by(WordModel.created_at.asc(), WordModel.id.asc())
+                )
+            )
             .scalars()
             .all()
         )
@@ -171,10 +182,13 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
                     # re-fetching it for every copy would call the dictionary
                     # five hundred times for an answer already on the row.
                     phonetic=word.phonetic,
+                    created_at=word.created_at,
                 )
             )
-        # No progress rows: every word is new to this learner, and an absent
-        # row already reads as box 1, due now.
+        # No progress rows — and for a copy that now means *not started*, not
+        # "new and due". The membership added alongside this copy is self-paced,
+        # so the learner takes these words on at their own rate instead of
+        # finding all five hundred in tomorrow's review queue.
         await self._session.flush()
         await self._session.refresh(copy)
         return mappers.deck_to_entity(copy)

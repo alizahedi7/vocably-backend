@@ -187,6 +187,7 @@ def deck_member_to_entity(m: DeckMemberModel) -> DeckMember:
         role=DeckRole.parse(m.role),
         invited_by_user_id=m.invited_by_user_id,
         joined_at=m.joined_at,
+        self_paced=m.self_paced,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )

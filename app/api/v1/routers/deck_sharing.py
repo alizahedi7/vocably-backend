@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 
 from app.api.deps import CurrentUser, DeckSharingServiceDep, enforce_join_limit
 from app.api.v1.schemas.deck_sharing import (
@@ -58,6 +58,21 @@ async def get_roster(
 ) -> RosterOut:
     members = await sharing.roster(deck_id, current_user.id)
     return RosterOut(members=[DeckMemberOut.from_view(m) for m in members])
+
+
+@router.delete("/{deck_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
+async def leave_deck(
+    deck_id: UUID,
+    current_user: CurrentUser,
+    sharing: DeckSharingServiceDep,
+) -> None:
+    """Leave a deck shared with you.
+
+    It removes the deck from *your* list and deletes nothing: the words, the
+    other members and the deck itself stay exactly as they were. The owner gets
+    409 — for them the action is deleting the deck, which is a different thing.
+    """
+    await sharing.leave(deck_id, current_user.id)
 
 
 @router.post("/{deck_id}/members", response_model=DeckMembershipOut)

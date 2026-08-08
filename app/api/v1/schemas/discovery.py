@@ -98,9 +98,7 @@ class FriendOut(BaseModel):
 
     @classmethod
     def from_view(cls, view: FriendView) -> FriendOut:
-        return cls(
-            username=view.username, name=view.name, last_shared_at=view.last_shared_at
-        )
+        return cls(username=view.username, name=view.name, last_shared_at=view.last_shared_at)
 
 
 class FriendsOut(BaseModel):

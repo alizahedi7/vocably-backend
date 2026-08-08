@@ -40,6 +40,7 @@ class SqlAlchemyDeckMemberRepository(DeckMemberRepository):
             role=member.role.value,
             invited_by_user_id=member.invited_by_user_id,
             joined_at=member.joined_at,
+            self_paced=member.self_paced,
         )
         self._session.add(model)
         await self._session.flush()
@@ -55,6 +56,7 @@ class SqlAlchemyDeckMemberRepository(DeckMemberRepository):
                 role=member.role.value,
                 invited_by_user_id=member.invited_by_user_id,
                 joined_at=member.joined_at,
+                self_paced=member.self_paced,
             )
             # DO NOTHING, not DO UPDATE: someone already in the deck keeps the
             # role and join date they have. A second tap on a link must not
@@ -75,6 +77,13 @@ class SqlAlchemyDeckMemberRepository(DeckMemberRepository):
         await self._session.flush()
         await self._session.refresh(model)
         return mappers.deck_member_to_entity(model)
+
+    async def self_paced_deck_ids(self, user_id: UUID) -> set[UUID]:
+        stmt = select(DeckMemberModel.deck_id).where(
+            DeckMemberModel.user_id == user_id,
+            DeckMemberModel.self_paced.is_(True),
+        )
+        return set((await self._session.execute(stmt)).scalars().all())
 
     async def owned_deck_ids(self, user_id: UUID) -> list[UUID]:
         stmt = select(DeckMemberModel.deck_id).where(

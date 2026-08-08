@@ -6,8 +6,9 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tests.api.conftest import UserFactory, bearer
+from tests.api.conftest import UserFactory, bearer, sleep_on_it
 
 
 async def seed_deck_with_words(
@@ -30,15 +31,25 @@ async def seed_deck_with_words(
 
 
 async def test_overview_reflects_box_distribution(
-    client: AsyncClient, auth_headers: dict[str, str]
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     await seed_deck_with_words(client, auth_headers, ["reliable", "improve", "borrow"])
 
+    # Today they are in the boxes but not in the queue: a word is first
+    # reviewed the day after it is added.
+    same_day = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    assert same_day["total_count"] == 3
+    assert same_day["due_count"] == 0
+    assert same_day["memory_strength"]["total"] == 3
+
+    await sleep_on_it(session_factory)
     response = await client.get("/api/v1/study/overview", headers=auth_headers)
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["total_count"] == 3
-    assert body["due_count"] == 3  # new words are due immediately
+    assert body["due_count"] == 3
     assert body["learned_count"] == 0
     assert body["due_deck_count"] == 1
     assert body["estimated_minutes"] >= 1

@@ -13,7 +13,7 @@ from uuid import UUID
 from app.domain.entities.deck import Deck
 from app.domain.entities.user import User
 from app.domain.entities.word import Word
-from app.domain.enums import AuthMethod, LeitnerBox
+from app.domain.enums import AuthMethod, DeckRole, LeitnerBox
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,9 +50,24 @@ class DeckView:
     """A deck plus the aggregate stats the UI shows on each deck card."""
 
     deck: Deck
+    #: Every card in the deck, started or not — its size, which is the same
+    #: number for every member and is what the deck screen says out loud.
     word_count: int
+    #: Of those, the ones in *this* learner's boxes. Equal to ``word_count``
+    #: for every deck anyone built themselves; smaller for a self-paced deck
+    #: they are working through at their own rate.
+    started_count: int
     due_count: int
-    progress_pct: int  # 0..100, mean box normalised to the 5-box scale
+    #: 0..100, mean box normalised to the 5-box scale — over *started* cards.
+    #: Measured against the whole deck it would read 0% for months and tell the
+    #: learner their work counted for nothing.
+    progress_pct: int
+    #: This user's role in *this* deck. On the list it is what tells a deck the
+    #: client may delete from one it may only leave.
+    role: DeckRole = DeckRole.OWNER
+    #: Whether this deck's words wait to be started by this member. The client
+    #: shows the "add to my boxes" affordances on the strength of it.
+    self_paced: bool = False
 
 
 @dataclass(frozen=True, slots=True)

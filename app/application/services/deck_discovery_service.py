@@ -79,7 +79,10 @@ class DeckDiscoveryService:
 
         copy = await self._discovery.copy_deck_to(deck_id, user_id)
         # The copier owns their copy outright — membership, like every deck.
-        await self._members.add_if_absent(DeckAccess.owner(copy.id, user_id))
+        # Self-paced, though: nobody picked these five hundred words card by
+        # card, so they wait in the deck until the learner starts them rather
+        # than landing in one day's review queue.
+        await self._members.add_if_absent(DeckAccess.owner(copy.id, user_id, self_paced=True))
         await self._discovery.increment_saves(deck_id)
         return copy
 
@@ -169,6 +172,9 @@ class DeckDiscoveryService:
                 # Whatever the sender offered; DeckRole.parse fails closed to
                 # viewer if the stored value is one this deploy does not know.
                 role=DeckRole.parse(share.role),
+                # Someone else's list: the learner decides what enters their
+                # boxes, and when.
+                self_paced=True,
             )
         )
         await self._discovery.mark_accepted(share_id)

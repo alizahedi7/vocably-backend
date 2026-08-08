@@ -19,7 +19,7 @@ from app.infrastructure.db.models.deck_member import DeckMemberModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
 from app.infrastructure.db.models.word_progress import WordProgressModel
-from tests.api.conftest import UserFactory, bearer
+from tests.api.conftest import UserFactory, bearer, sleep_on_it
 
 
 async def create_deck(client: AsyncClient, headers: dict[str, str], name: str = "Class 5B") -> str:
@@ -91,7 +91,7 @@ async def test_two_members_hold_different_boxes_against_one_card(
     assert teacher_view.json()["term"] == student_view.json()["term"] == "improve"
 
 
-async def test_a_word_nobody_has_studied_reads_as_new_and_due(
+async def test_a_word_nobody_has_studied_reads_as_new_and_due_the_next_day(
     client: AsyncClient,
     auth_headers: dict[str, str],
     make_user: UserFactory,
@@ -115,10 +115,15 @@ async def test_a_word_nobody_has_studied_reads_as_new_and_due(
         )
     assert rows == []
 
-    # ...and the word still reads correctly for them: box 1, due now.
+    # ...and the word still reads correctly for them: box 1.
     listed = await client.get("/api/v1/words", headers=bearer(student.id))
     assert listed.status_code == 200
     assert [w["box"] for w in listed.json()] == [1]
+
+    # A card added today is tomorrow's work, for the member as for anyone.
+    today = await client.get("/api/v1/study/overview", headers=bearer(student.id))
+    assert today.json()["due_count"] == 0
+    await sleep_on_it(session_factory)
 
     overview = await client.get("/api/v1/study/overview", headers=bearer(student.id))
     assert overview.status_code == 200

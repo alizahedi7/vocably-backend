@@ -19,7 +19,7 @@ from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.xp_repository import XpRepository
 from app.domain.services import leitner
-from app.domain.services.calendar import today_for
+from app.domain.services.calendar import day_start_for, today_for
 
 #: Where a graded answer came from. A review session and a practice drill
 #: are worth different amounts, and the client says which.
@@ -55,12 +55,21 @@ class StudyService:
         against it byte for byte.
         """
         now = datetime.now(UTC)
-        tallies = await self._progress.tally_by_deck_and_box(user_id, now)
+        user = await self._users.get(user_id)
+        # Where *this* learner's day starts. It decides which never-answered
+        # words have come due — a word added today is tomorrow's work.
+        day_start = day_start_for(user.timezone if user else None, now)
+        tallies = await self._progress.tally_by_deck_and_box(user_id, now, day_start=day_start)
 
         per_box: dict[LeitnerBox, int] = defaultdict(int)
         total = due_count = learned = 0
         due_decks: set[UUID] = set()
         for tally in tallies:
+            # A card in a self-paced deck that nobody has started is not part of
+            # this learner's memory at all — counting it would put five hundred
+            # bars in box 1 and read as "you have forgotten everything".
+            if not tally.started:
+                continue
             per_box[tally.box] += tally.word_count
             total += tally.word_count
             due_count += tally.due_count
@@ -77,7 +86,6 @@ class StudyService:
                 BoxCount(box=box, label=box.label, count=per_box.get(box, 0)) for box in LeitnerBox
             ],
         )
-        user = await self._users.get(user_id)
         today = today_for(user.timezone if user else None, now)
         return StudyOverview(
             due_count=due_count,
@@ -107,10 +115,20 @@ class StudyService:
         "practice anyway" sessions always have something to show.
         """
         now = datetime.now(UTC)
-        due = await self._progress.list_due(user_id, now, deck_id=deck_id, limit=limit)
+        user = await self._users.get(user_id)
+        day_start = day_start_for(user.timezone if user else None, now)
+        due = await self._progress.list_due(
+            user_id, now, deck_id=deck_id, limit=limit, day_start=day_start
+        )
         if due:
             return due
-        return await self._progress.list_for_user(user_id, deck_id=deck_id, limit=limit)
+        # Nothing is due — which now includes the evening a learner adds their
+        # first words, since those are tomorrow's. "Practice anyway" is the
+        # answer to that: it practises what they have taken on, never the four
+        # hundred cards they have not started.
+        return await self._progress.list_for_user(
+            user_id, deck_id=deck_id, limit=limit, started_only=True, day_start=day_start
+        )
 
     async def grade(
         self,
@@ -226,8 +244,6 @@ class StudyService:
         now = datetime.now(UTC)
         user = await self._users.get(user_id)
         today = today_for(user.timezone if user else None, now)
-        awarded = await self._xp.award(
-            user_id, XpAction.FINISH_SESSION, occurred_at=now, day=today
-        )
+        awarded = await self._xp.award(user_id, XpAction.FINISH_SESSION, occurred_at=now, day=today)
         await self._award_daily_goal_if_met(user_id, today, now)
         return awarded

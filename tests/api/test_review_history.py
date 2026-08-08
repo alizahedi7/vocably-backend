@@ -19,7 +19,7 @@ from app.infrastructure.db.models.word_review import WordReviewModel
 from app.infrastructure.db.repositories.review_event_repository import (
     SqlAlchemyReviewEventRepository,
 )
-from tests.api.conftest import UserFactory, bearer
+from tests.api.conftest import UserFactory, bearer, sleep_on_it
 from tests.api.test_study import seed_deck_with_words
 
 
@@ -156,13 +156,21 @@ async def test_no_progress_row_exists_until_the_card_is_reviewed(
     _, (word_id,) = await seed_deck_with_words(client, auth_headers, ["improve"])
 
     # Not "a row of zeroes" but *no row at all*: progress is created lazily, and
-    # an unreviewed card reads as box 1 / due now without one existing.
+    # an unreviewed card reads as box 1 without one existing.
     async with session_factory() as session:
         progress = await session.get(WordProgressModel, (user.id, UUID(word_id)))
     assert progress is None
 
+    # Added today, so it is tomorrow's work — the row still does not exist, and
+    # the due count says so.
+    overview = await client.get("/api/v1/study/overview", headers=auth_headers)
+    assert overview.json()["due_count"] == 0
+
+    await sleep_on_it(session_factory)
     overview = await client.get("/api/v1/study/overview", headers=auth_headers)
     assert overview.json()["due_count"] == 1
+    async with session_factory() as session:
+        assert await session.get(WordProgressModel, (user.id, UUID(word_id))) is None
 
 
 async def test_rejected_grades_write_no_event(

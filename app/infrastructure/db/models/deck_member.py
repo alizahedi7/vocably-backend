@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy import Boolean, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -45,3 +45,11 @@ class DeckMemberModel(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="SET NULL")
     )
     joined_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    #: What a *missing* ``word_progress`` row means for this member.
+    #:
+    #: False (a deck they built themselves): unstudied — box 1, due now, in the
+    #: boxes. True (a deck that arrived from elsewhere — an Explore copy, a
+    #: share, an invite code): **not started** — invisible to the due queue, the
+    #: tallies and every session until the learner starts it. Saving a 504-word
+    #: deck must not empty a week of reviews into one afternoon.
+    self_paced: Mapped[bool] = mapped_column(Boolean(), default=False, nullable=False)

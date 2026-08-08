@@ -41,6 +41,15 @@ class DeckMemberRepository(ABC):
     async def remove(self, deck_id: UUID, user_id: UUID) -> None: ...
 
     @abstractmethod
+    async def self_paced_deck_ids(self, user_id: UUID) -> set[UUID]:
+        """Decks whose words this user starts themselves.
+
+        One query for the whole deck list rather than a membership read per
+        deck: the client needs the flag on every card it draws, and asking per
+        deck would put a round trip behind each one.
+        """
+
+    @abstractmethod
     async def owned_deck_ids(self, user_id: UUID) -> list[UUID]:
         """Decks this user owns, shared or not."""
 

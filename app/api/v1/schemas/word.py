@@ -52,6 +52,36 @@ class WordUpdateIn(BaseModel):
     phonetic: str | None = Field(default=None, max_length=200)
 
 
+class StartWordsIn(BaseModel):
+    """Which of a saved deck's cards to put into the learner's boxes.
+
+    All three selectors are optional and compose. Sending none of them starts
+    the whole deck, which is the "add all 504" button — deliberately reachable,
+    just not the default.
+    """
+
+    #: Specific cards — the one-at-a-time path down the word list.
+    word_ids: list[UUID] | None = None
+    #: A whole unit or lesson at once.
+    unit_id: UUID | None = None
+    #: At most this many, in the deck's own order: "add the next 10".
+    count: int | None = Field(default=None, ge=1, le=500)
+
+
+class UnstartWordsIn(BaseModel):
+    """Take cards back out — the undo behind the "added N words" toast."""
+
+    word_ids: list[UUID]
+
+
+class StartResultOut(BaseModel):
+    """What changed, so the screen can update without a second request."""
+
+    started_ids: list[UUID]
+    started: int
+    remaining: int
+
+
 class WordOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -71,6 +101,11 @@ class WordOut(BaseModel):
     #: dash or a placeholder for it.
     phonetic: str | None
     box: LeitnerBox
+    #: Whether the card is in this learner's boxes at all. False only in a
+    #: self-paced deck they have not started it in — and then ``box`` and
+    #: ``due_at`` are the placeholder values a never-studied card has always
+    #: read as, so a client that predates the field still renders the row.
+    started: bool
     due_at: datetime
     review_count: int
     last_reviewed_at: datetime | None

@@ -28,20 +28,44 @@ def make_progress(**overrides: object) -> WordProgress:
 
 
 # ── the default a missing row reads as ───────────────────────
-def test_unstudied_reads_as_a_new_card_due_now() -> None:
+def test_unstudied_reads_as_a_new_card_due_tomorrow() -> None:
     # Progress rows are created lazily, so this is what most words in a freshly
     # shared deck look like — and it must be indistinguishable from a real row.
-    progress = WordProgress.unstudied(uuid4(), uuid4(), uuid4(), NOW)
+    #
+    # A card added *today* is not due today. Writing a word down is already the
+    # first exposure; testing it minutes later measures nothing but short-term
+    # memory, and the interval is the whole mechanism.
+    day_start = NOW.replace(hour=0, minute=0, second=0, microsecond=0)
+    progress = WordProgress.unstudied(
+        uuid4(), uuid4(), uuid4(), created_at=NOW, day_start=day_start
+    )
 
     assert progress.box is LeitnerBox.NEW
-    assert progress.due_at == NOW
-    assert progress.is_due(NOW)
+    assert progress.due_at == day_start + timedelta(days=1)
+    assert not progress.is_due(NOW)
+    assert progress.is_due(day_start + timedelta(days=1))
     assert progress.review_count == 0
     assert progress.lapse_count == 0
     assert progress.consecutive_correct == 0
     assert progress.first_reviewed_at is None
     assert progress.mastered_at is None
     assert progress.last_grade is None
+
+
+def test_a_word_added_on_an_earlier_day_is_due_now() -> None:
+    # The other side of the same rule: yesterday's word has had its night, and
+    # is waiting the moment the learner opens the app.
+    day_start = NOW.replace(hour=0, minute=0, second=0, microsecond=0)
+    progress = WordProgress.unstudied(
+        uuid4(),
+        uuid4(),
+        uuid4(),
+        created_at=day_start - timedelta(hours=2),
+        day_start=day_start,
+    )
+
+    assert progress.due_at == day_start
+    assert progress.is_due(NOW)
 
 
 # ── WordProgress.apply_review ────────────────────────────────

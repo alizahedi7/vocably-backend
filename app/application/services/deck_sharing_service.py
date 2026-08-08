@@ -13,7 +13,12 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from app.application.services.deck_access import DeckAccess
-from app.core.exceptions import AlreadyExistsError, NotFoundError, ValidationError
+from app.core.exceptions import (
+    AlreadyExistsError,
+    ConflictError,
+    NotFoundError,
+    ValidationError,
+)
 from app.domain.entities.deck_invite import DeckInvite
 from app.domain.entities.deck_member import DeckMember
 from app.domain.entities.user import User
@@ -166,6 +171,8 @@ class DeckSharingService:
                 # is a separate action.
                 role=DeckRole.VIEWER if role is DeckRole.OWNER else role,
                 invited_by_user_id=user_id,
+                # Someone else's deck: its words wait to be started.
+                self_paced=True,
             )
         )
         if not added:
@@ -184,6 +191,25 @@ class DeckSharingService:
         member.role = DeckRole.VIEWER if role is DeckRole.OWNER else role
         await self._members.update(member)
         return await self._build(deck_id, me, with_progress=False)
+
+    async def leave(self, deck_id: UUID, user_id: UUID) -> None:
+        """Walk out of a deck someone shared with you.
+
+        The counterpart of :meth:`remove_member`, and the only exit a member has
+        that does not depend on the owner noticing. It removes exactly one row:
+        the deck, its words and everyone else's access are untouched, which is
+        the whole difference between leaving and deleting.
+
+        The owner is refused rather than quietly deleting a deck a class is in —
+        for them the actions are "delete it" or, one day, "hand it over".
+        """
+        member = await self._access.require_read(deck_id, user_id)
+        if member.is_owner:
+            raise ConflictError("You created this deck. Delete it instead of leaving it.")
+        # Their word_progress rows are deliberately left behind, exactly as in
+        # remove_member: coming back restores the boxes, and every aggregate is
+        # scoped through deck_members, so the rows are invisible until then.
+        await self._members.remove(deck_id, user_id)
 
     async def remove_member(self, deck_id: UUID, user_id: UUID, *, username: str) -> MembershipView:
         me = await self._access.require_manage(deck_id, user_id)
@@ -236,6 +262,7 @@ class DeckSharingService:
                 user_id=user_id,
                 role=invite.role,
                 invited_by_user_id=invite.created_by_user_id,
+                self_paced=True,
             )
         )
         return invite.deck_id
