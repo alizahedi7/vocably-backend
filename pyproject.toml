@@ -18,6 +18,7 @@ dependencies = [
     "anthropic>=0.69",
     "openai>=1.54",
     "celery[redis]>=5.4",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +30,7 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "celery-types>=0.22",
+    "types-PyYAML>=6.0",
 ]
 
 [build-system]
