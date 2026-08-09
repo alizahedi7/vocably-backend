@@ -27,8 +27,12 @@ from app.application.ports.ai_service import (
     MeaningSuggestion,
 )
 from app.application.ports.dictionary_service import DictionaryEntry
-from app.application.services.deck_build_service import DeckBuildService
+from app.application.services.deck_build_service import (
+    PROVIDER_FAILURE_STREAK,
+    DeckBuildService,
+)
 from app.application.services.lexicon_service import LexiconService
+from app.core.exceptions import ExternalServiceError
 from app.domain.enums import DeckBuildItemState, DeckBuildState, SenseSelection
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.deck_build import DeckBuildItemModel
@@ -89,9 +93,13 @@ class ScriptedProvider(AIService):
         self.fail_for: set[str] = set()
         self.senses: dict[str, list[MeaningSuggestion]] = {}
         self.enrichment: list[MeaningSuggestion] = []
+        #: Raised for every term — stands in for a provider that is down.
+        self.fail_with: Exception | None = None
 
     async def look_up_meanings(self, term: str, learner: LearnerContext) -> LookupResult:
         self.calls.append(term)
+        if self.fail_with is not None:
+            raise self.fail_with
         if term in self.fail_for:
             raise RuntimeError(f"provider is down for {term}")
         senses = self.senses.get(term) or [
@@ -673,3 +681,66 @@ def _service_with(
         enricher=provider,
         dictionary=dictionary,  # type: ignore[arg-type]
     )
+
+
+async def test_a_run_of_provider_failures_halts_the_build(
+    build_service,
+    session_factory: async_sessionmaker[AsyncSession],
+    tmp_path: Path,
+    provider: ScriptedProvider,
+    make_user: UserFactory,
+) -> None:
+    """One bad word must not stop the deck; a dead provider must.
+
+    Found in production: a gateway started refusing every request, and the build
+    marched on through the plan spending two wasted calls per word — the grounded
+    attempt and its generative fallback — three times over.
+    """
+    base = tmp_path / "many"
+    base.mkdir()
+    (base / "deck.yaml").write_text(
+        "slug: many\nname: Many\ncategory: general\n"
+        "generation:\n  native_language: Persian\n"
+        "structure:\n  expected_units: 1\n  expected_words: 20\n"
+    )
+    words = "\n".join(f"      - word{i}" for i in range(20))
+    (base / "words.yaml").write_text(f"units:\n  - name: Unit 1\n    words:\n{words}\n")
+
+    provider.fail_with = ExternalServiceError("The AI service is unavailable right now.")
+    owner = await make_user(phone="+989120009030")
+
+    template = load_template("many", root=tmp_path)
+    async with session_factory() as session:
+        job = await build_service(session).plan(template, owner_id=owner.id)
+        await session.commit()
+
+    outcome = await _run(build_service, session_factory, job.id, limit=20)
+
+    assert outcome.finished_state is DeckBuildState.PARTIAL
+    assert outcome.has_more is False
+    # It stopped at the streak rather than walking all 20 words.
+    assert outcome.processed <= PROVIDER_FAILURE_STREAK + 1
+    assert len(provider.calls) <= PROVIDER_FAILURE_STREAK + 1
+
+    async with session_factory() as session:
+        refreshed = await SqlAlchemyDeckBuildRepository(session).get_job(job.id)
+    assert refreshed is not None
+    assert "consecutive provider failures" in (refreshed.last_error or "")
+
+
+async def test_ordinary_word_failures_do_not_halt_the_build(
+    build_service,
+    session_factory: async_sessionmaker[AsyncSession],
+    template_root: Path,
+    provider: ScriptedProvider,
+    make_user: UserFactory,
+) -> None:
+    """A word the model simply cannot describe is not an outage."""
+    provider.fail_for = {"tact"}  # raises RuntimeError, not ExternalServiceError
+    owner = await make_user(phone="+989120009031")
+    job = await _plan(build_service, session_factory, template_root, owner.id)
+
+    outcome = await _run(build_service, session_factory, job.id)
+
+    assert outcome.done == 2, "the other words must still be built"
+    assert outcome.finished_state is not DeckBuildState.PARTIAL

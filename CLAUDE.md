@@ -705,8 +705,8 @@ make deck-build    job=…    # spends (queue=1 hands it to Celery instead)
   need a result backend and `CELERY_RESULT_BACKEND` is empty by design; the item
   table is a better coordinator anyway, and batch size × worker concurrency *is*
   the rate limit.
-- **Failure is per item.** Three attempts with 2/4/8-minute backoff computed on
-  the row, then `failed`, and the job ends `PARTIAL` — 501 good cards and three
+- **Failure is per item, until it isn't.** Three attempts with 2/4/8-minute
+  backoff computed on the row, then `failed`, and the job ends `PARTIAL` — 501 good cards and three
   holes is worth reviewing, not restarting. `reset_failed` retries just those.
 - **A job carries its own `category` and `strategies`**, copied at plan time. The
   template file is never re-read mid-build: the plan is already in the database

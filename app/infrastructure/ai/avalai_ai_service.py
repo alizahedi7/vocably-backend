@@ -59,6 +59,13 @@ _MAX_SENSES: Final = 4
 #: for this schema, and retrying further just burns the learner's spinner time.
 _MAX_ATTEMPTS: Final = 2
 
+#: How much of a gateway's error body to keep in the log.
+_ERROR_BODY_CHARS: Final = 300
+
+
+def _short(body: object) -> str:
+    return str(body)[:_ERROR_BODY_CHARS].replace("\n", " ")
+
 
 class AvalAIService(AIService):
     def __init__(
@@ -371,7 +378,17 @@ class AvalAIService(AIService):
                 system=system, user=user, schema=schema, schema_name=schema_name
             )
         except openai.APIStatusError as exc:
-            logger.error("AvalAI request failed with status %s", exc.status_code)
+            # Log the body, not just the status. A gateway can answer 403 for
+            # "over your plan's burst quota", "model not enabled", or "bad key",
+            # and the three need completely different responses — without the
+            # body, an operator sees only a number and has to go probing the
+            # gateway by hand to tell them apart. Truncated because an HTML
+            # error page from a proxy is otherwise pages of noise.
+            logger.error(
+                "AvalAI request failed with status %s: %s",
+                exc.status_code,
+                _short(getattr(exc, "body", None) or getattr(exc.response, "text", "")),
+            )
             raise ExternalServiceError("The AI service is unavailable right now.") from None
         except openai.APIError as exc:
             logger.error("AvalAI request failed: %s", type(exc).__name__)

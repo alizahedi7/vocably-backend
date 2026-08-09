@@ -33,7 +33,7 @@ from app.application.ports.dictionary_service import DictionaryService
 from app.application.ports.lookup_cache import normalize_lookup_input
 from app.application.services.deck_access import DeckAccess
 from app.application.services.lexicon_service import LexiconService
-from app.core.exceptions import NotFoundError, ValidationError
+from app.core.exceptions import ExternalServiceError, NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.domain.entities.deck import Deck
 from app.domain.entities.deck_build import (
@@ -66,6 +66,19 @@ logger = get_logger("vocably.deckbuild")
 #: Longer than the slowest plausible provider call plus its retries, short enough
 #: that a worker killed by a deploy does not park a word for the afternoon.
 CLAIM_TIMEOUT_SECONDS = 600
+
+#: Consecutive provider failures that stop a build.
+#:
+#: A single failing word is ordinary and must not stop 503 others — that is why
+#: failure is per item. A *run* of them is a different event: the provider is
+#: down, over quota, or refusing this key, and every further word costs two
+#: wasted calls (the grounded attempt and its generative fallback) times three
+#: item attempts. Marching a 504-word plan through that turns one outage into
+#: thousands of requests, which is how a rate limit becomes a deeper block.
+#:
+#: Five is low on purpose. The cost of stopping early is one command to resume;
+#: the cost of not stopping is the rest of the deck's budget.
+PROVIDER_FAILURE_STREAK = 5
 
 #: How many senses one enrichment call may add. Small: it is asked for a specific
 #: missing sense, and a model offered room for four will find four.
@@ -243,17 +256,22 @@ class DeckBuildService:
         selector = self._selector_for(job)
 
         processed = done = failed = retrying = 0
+        streak = 0
         for item in items:
             processed += 1
             try:
                 await self._resolve(job, item, learner, selector, unit_ids)
                 done += 1
+                streak = 0
             except Exception as exc:  # noqa: BLE001 — one word must not stop the job
                 outcome = await self._record_failure(job, item, exc)
                 if outcome is DeckBuildItemState.FAILED:
                     failed += 1
                 else:
                     retrying += 1
+                streak += 1 if _is_provider_failure(exc) else 0
+                if streak >= PROVIDER_FAILURE_STREAK:
+                    return await self._halt(job, streak)
 
         has_more = await self._builds.has_open_items(job.id)
         if not has_more:
@@ -512,6 +530,27 @@ class DeckBuildService:
         )
         return DeckBuildItemState.PENDING
 
+    async def _halt(self, job: DeckBuildJob, streak: int) -> BatchOutcome:
+        """Stop the whole build after a run of provider failures.
+
+        Left as ``PARTIAL`` rather than ``FAILED``: the words already built are
+        good, nothing needs replanning, and ``reset_failed`` plus one more run
+        picks up exactly where this stopped once the provider is healthy again.
+        """
+        message = (
+            f"Stopped after {streak} consecutive provider failures — the provider "
+            "looks unavailable rather than the words being bad. Fix it, then retry "
+            "the failed items and run the build again."
+        )
+        logger.error("build %s halted: %s", job.id, message)
+        await self._builds.set_job_state(
+            job.id,
+            DeckBuildState.PARTIAL,
+            last_error=message,
+            finished_at=datetime.now(UTC),
+        )
+        return BatchOutcome(has_more=False, finished_state=DeckBuildState.PARTIAL)
+
     async def _finalise(self, job: DeckBuildJob) -> BatchOutcome:
         """Settle the job once no item is open.
 
@@ -590,6 +629,15 @@ class DeckBuildService:
             return {}
         units = await self._units.list_for_deck(job.deck_id)
         return {unit.position: unit.id for unit in units}
+
+
+def _is_provider_failure(exc: Exception) -> bool:
+    """Whether this failure is about the provider rather than about the word.
+
+    A word the model cannot describe fails on its own; a provider that is down
+    fails identically for every word, and only the second is worth stopping for.
+    """
+    return isinstance(exc, ExternalServiceError)
 
 
 def _pin_description(item: DeckBuildItem) -> str:
