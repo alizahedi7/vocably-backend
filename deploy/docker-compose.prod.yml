@@ -63,6 +63,12 @@ services:
       # that are security controls (handle enumeration, invite guessing).
       DICTIONARY_REDIS_URL: redis://redis:6379/1
       RATE_LIMIT_REDIS_URL: redis://redis:6379/2
+      # The single-flight lock for lexicon generation. Its own database, and
+      # unset it would default to localhost — i.e. the container itself, where
+      # nothing is listening — so concurrent builds would each buy the same
+      # word. Not a correctness problem (unique constraints handle that), but
+      # it is money.
+      LEXICON_REDIS_URL: redis://redis:6379/3
     # This is the only service that migrates; worker and beat deliberately do
     # not, so a deploy never runs two migration attempts concurrently.
     command: >
@@ -92,6 +98,12 @@ services:
       # that are security controls (handle enumeration, invite guessing).
       DICTIONARY_REDIS_URL: redis://redis:6379/1
       RATE_LIMIT_REDIS_URL: redis://redis:6379/2
+      # The single-flight lock for lexicon generation. Its own database, and
+      # unset it would default to localhost — i.e. the container itself, where
+      # nothing is listening — so concurrent builds would each buy the same
+      # word. Not a correctness problem (unique constraints handle that), but
+      # it is money.
+      LEXICON_REDIS_URL: redis://redis:6379/3
     # Memory, not CPU, is the binding constraint on this VPS: a single process
     # running this app measures ~110 MiB, against under 1 GiB of RAM shared
     # with Postgres, Caddy, the API and the admin dashboard. Prefork spawns
@@ -140,6 +152,12 @@ services:
       # that are security controls (handle enumeration, invite guessing).
       DICTIONARY_REDIS_URL: redis://redis:6379/1
       RATE_LIMIT_REDIS_URL: redis://redis:6379/2
+      # The single-flight lock for lexicon generation. Its own database, and
+      # unset it would default to localhost — i.e. the container itself, where
+      # nothing is listening — so concurrent builds would each buy the same
+      # word. Not a correctness problem (unique constraints handle that), but
+      # it is money.
+      LEXICON_REDIS_URL: redis://redis:6379/3
     # /tmp because the image runs as a non-root user that cannot write to the
     # working directory. Losing this file only re-evaluates the schedule.
     command: celery -A app.tasks beat --loglevel=info --schedule=/tmp/celerybeat-schedule

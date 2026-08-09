@@ -184,10 +184,12 @@ class Settings(BaseSettings):
     #: a prompt version is bumped, is every one of them. Off means a prompt edit
     #: re-buys the entire corpus, so leave it on outside of debugging.
     lexicon_enabled: bool = True
-    #: Where the single-flight lock lives. Defaults to a third logical database
-    #: on the same Redis: it holds nothing durable, and a flush of it costs at
-    #: most a few duplicated provider calls.
-    lexicon_redis_url: str = "redis://localhost:6379/2"
+    #: Where the single-flight lock lives. Its own logical database on the same
+    #: Redis — deliberately **not** database 2, which the rate limiter owns:
+    #: sharing one would let a lock key and a limiter key collide by name, and
+    #: would make flushing the disposable one wipe a security control. It holds
+    #: nothing durable, so flushing this one costs a few duplicated calls.
+    lexicon_redis_url: str = "redis://localhost:6379/3"
     #: Deduplicate concurrent generation of the same word across workers and
     #: requests. Pure cost saving — correctness comes from the lexicon's unique
     #: constraints — so an unreachable Redis degrades to "both generate".
