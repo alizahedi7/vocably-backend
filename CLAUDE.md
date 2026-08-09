@@ -480,6 +480,26 @@ That distinction is the whole design and is easy to invert by accident:
   inheriting the original author would let their account deletion touch rows in
   a deck they have nothing to do with. Progress is never copied: an absent row
   already reads as box 1, due now.
+- **A published deck can be read before it is taken.** `GET /decks/public/{id}`
+  returns the listing plus its **sections** (name, position, card count), and
+  `GET /decks/public/{id}/words` returns the cards a page at a time, optionally
+  one `unit_id`. Saving a five-hundred-word deck is a decision about the next
+  month of someone's studying, and the only way to see inside one used to be to
+  take it. Two endpoints rather than one because a coursebook's *shape* is
+  twelve lessons of forty — drawing that must not fetch two thousand cards.
+  `PublicWordOut` is deliberately **not** `WordOut`: `box`, `started` and
+  `due_at` are one learner's progress and this reader has none, so sending
+  placeholders would be a claim about a deck they have not begun. Both endpoints
+  check `is_public` **first** and 404 otherwise — this is the one place card
+  content leaves a deck's membership, and it is only acceptable because the
+  owner published it.
+- **`decks.copied_from_deck_id` is why Explore can say "Saved".** Set when a
+  copy is made, read back as `PublicDeckOut.saved` via a correlated EXISTS
+  against the browsing user. Provenance only — the copy is independent, and
+  `SET NULL` means unpublishing the original never touches it. Nothing was
+  backfilled, so copies taken before the column existed read as unsaved; the
+  alternative, remembering it on the device, is wrong after a reinstall and
+  wrong on the second device the same account is signed into.
 - `POST /decks/{id}/share` + `POST /decks/shared/{id}/accept` make the
   recipient a **member of the same deck**. `deck_shares` is the pending offer;
   accepting writes a `deck_members` row. Only someone who could already invite

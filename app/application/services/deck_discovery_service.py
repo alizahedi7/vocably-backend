@@ -16,11 +16,13 @@ from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.domain.entities.deck import Deck
 from app.domain.entities.deck_invite import DeckInvite
 from app.domain.entities.deck_member import DeckMember
+from app.domain.entities.word import Word
 from app.domain.enums import DeckRole
 from app.domain.repositories.deck_discovery_repository import (
     DeckDiscoveryRepository,
     OutgoingShareView,
     PublicDeckView,
+    PublicUnitView,
     SharedDeckView,
 )
 from app.domain.repositories.deck_invite_repository import DeckInviteRepository
@@ -33,6 +35,13 @@ from app.domain.repositories.user_repository import UserRepository
 #: catalogue never turns the screen into a full-table read.
 DEFAULT_PUBLIC_LIMIT = 50
 MAX_PUBLIC_LIMIT = 100
+
+#: A preview is read, not studied, so its words page like any list. The ceiling
+#: is generous because the client pages until the server runs out — a cap that
+#: silently truncates is the bug ``GET /words`` already had once, and a preview
+#: showing eight of a lesson's twelve cards would misrepresent the deck.
+DEFAULT_PREVIEW_WORD_LIMIT = 100
+MAX_PREVIEW_WORD_LIMIT = 500
 
 
 class DeckDiscoveryService:
@@ -55,6 +64,7 @@ class DeckDiscoveryService:
     async def list_public(
         self,
         *,
+        viewer_id: UUID | None = None,
         category: str | None = None,
         query: str | None = None,
         limit: int = DEFAULT_PUBLIC_LIMIT,
@@ -64,6 +74,46 @@ class DeckDiscoveryService:
             category=category,
             query=query,
             limit=min(max(limit, 1), MAX_PUBLIC_LIMIT),
+            offset=max(offset, 0),
+            viewer_id=viewer_id,
+        )
+
+    async def get_public(self, deck_id: UUID, viewer_id: UUID) -> PublicDeckView:
+        """One published deck, for the preview a learner reads before saving.
+
+        Same visibility rule as :meth:`import_public`: checked against
+        ``is_public``, never membership, or the endpoint becomes a way to read a
+        private deck by id.
+        """
+        public = await self._discovery.get_public(deck_id, viewer_id=viewer_id)
+        if public is None:
+            raise NotFoundError("Deck not found")
+        return public
+
+    async def list_public_units(self, deck_id: UUID, viewer_id: UUID) -> list[PublicUnitView]:
+        await self.get_public(deck_id, viewer_id)
+        return await self._discovery.list_public_units(deck_id)
+
+    async def list_public_words(
+        self,
+        deck_id: UUID,
+        viewer_id: UUID,
+        *,
+        unit_id: UUID | None = None,
+        limit: int = DEFAULT_PREVIEW_WORD_LIMIT,
+        offset: int = 0,
+    ) -> list[Word]:
+        """A page of a published deck's cards, so it can be read before saving.
+
+        The visibility check comes first and is the whole security story: this
+        returns card content to someone who is not a member, which is only ever
+        acceptable because the deck's owner published it.
+        """
+        await self.get_public(deck_id, viewer_id)
+        return await self._discovery.list_public_words(
+            deck_id,
+            unit_id=unit_id,
+            limit=min(max(limit, 1), MAX_PREVIEW_WORD_LIMIT),
             offset=max(offset, 0),
         )
 

@@ -10,12 +10,13 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.enums import DeckRole
 from app.domain.repositories.deck_discovery_repository import (
     OutgoingShareView,
     PublicDeckView,
+    PublicUnitView,
     SharedDeckView,
 )
 from app.domain.repositories.friend_repository import FriendView
@@ -33,6 +34,11 @@ class PublicDeckOut(BaseModel):
     description: str
     description_fa: str
     saves: int
+    #: Whether this learner already took a copy. The Explore card reads it to
+    #: show a tick instead of "Save" — a second copy of the same deck is never
+    #: what someone tapping twice meant. Additive and defaulted, so a client
+    #: that predates it parses the response unchanged.
+    saved: bool = False
 
     @classmethod
     def from_view(cls, view: PublicDeckView) -> PublicDeckOut:
@@ -48,6 +54,7 @@ class PublicDeckOut(BaseModel):
             description=view.description,
             description_fa=view.description_fa,
             saves=view.saves,
+            saved=view.saved,
         )
 
 
@@ -55,6 +62,58 @@ class PublicDecksOut(BaseModel):
     """Wrapped, not a bare array — the client reads ``decks``."""
 
     decks: list[PublicDeckOut]
+
+
+class PublicUnitOut(BaseModel):
+    """One section of a published deck, in the preview's section list."""
+
+    id: UUID
+    name: str
+    position: int
+    word_count: int
+
+    @classmethod
+    def from_view(cls, view: PublicUnitView) -> PublicUnitOut:
+        return cls(id=view.id, name=view.name, position=view.position, word_count=view.word_count)
+
+
+class PublicDeckDetailOut(PublicDeckOut):
+    """A published deck with its sections — what the preview screen opens on.
+
+    The sections but not the cards: a coursebook's shape is twelve lessons of
+    forty, and fetching two thousand cards to draw that is a page the learner
+    has not asked to read yet. The words come from
+    ``GET /decks/public/{id}/words``, a section at a time.
+    """
+
+    units: list[PublicUnitOut]
+
+    @classmethod
+    def from_views(cls, view: PublicDeckView, units: list[PublicUnitView]) -> PublicDeckDetailOut:
+        return cls(
+            **PublicDeckOut.from_view(view).model_dump(),
+            units=[PublicUnitOut.from_view(u) for u in units],
+        )
+
+
+class PublicWordOut(BaseModel):
+    """A card as someone who has not saved the deck may read it.
+
+    Deliberately not :class:`~app.api.v1.schemas.word.WordOut`: ``box``,
+    ``started`` and ``due_at`` are one learner's progress against a card, and
+    this reader has none of it. Placeholder values would be a claim about a deck
+    they have not begun.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    unit_id: UUID | None
+    term: str
+    meaning: str
+    definition: str | None
+    example: str | None
+    phonetic: str | None
 
 
 class SharedDeckOut(BaseModel):

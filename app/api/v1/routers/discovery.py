@@ -20,13 +20,16 @@ from app.api.v1.schemas.discovery import (
     FriendsOut,
     PendingShareOut,
     PendingSharesOut,
+    PublicDeckDetailOut,
     PublicDeckOut,
     PublicDecksOut,
+    PublicWordOut,
     SharedDeckOut,
     SharedDecksOut,
     ShareDeckIn,
     ShareDeckOut,
 )
+from app.application.services.deck_discovery_service import MAX_PREVIEW_WORD_LIMIT
 
 decks_router = APIRouter(prefix="/decks", tags=["discovery"])
 friends_router = APIRouter(prefix="/users/me/friends", tags=["friends"])
@@ -42,8 +45,49 @@ async def list_public_decks(
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PublicDecksOut:
-    views = await discovery.list_public(category=category, query=q, limit=limit, offset=offset)
+    views = await discovery.list_public(
+        viewer_id=current_user.id, category=category, query=q, limit=limit, offset=offset
+    )
     return PublicDecksOut(decks=[PublicDeckOut.from_view(v) for v in views])
+
+
+@decks_router.get("/public/{deck_id}", response_model=PublicDeckDetailOut)
+async def get_public_deck(
+    deck_id: UUID,
+    current_user: CurrentUser,
+    discovery: DeckDiscoveryServiceDep,
+) -> PublicDeckDetailOut:
+    """A published deck and its sections — what someone reads before saving.
+
+    Saving a five-hundred-word deck is a decision about the next month of
+    someone's studying, and until this existed the only way to see what was in
+    one was to take it. Sections only; the cards come from the endpoint below,
+    so opening a preview does not fetch a coursebook.
+    """
+    view = await discovery.get_public(deck_id, current_user.id)
+    units = await discovery.list_public_units(deck_id, current_user.id)
+    return PublicDeckDetailOut.from_views(view, units)
+
+
+@decks_router.get("/public/{deck_id}/words", response_model=list[PublicWordOut])
+async def list_public_deck_words(
+    deck_id: UUID,
+    current_user: CurrentUser,
+    discovery: DeckDiscoveryServiceDep,
+    unit_id: Annotated[UUID | None, Query(description="Only this section's cards")] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_PREVIEW_WORD_LIMIT)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[PublicWordOut]:
+    """A page of a published deck's cards, oldest first.
+
+    A bare array, like ``GET /words``, and paged the same way — the client asks
+    again until a short page comes back, so a deck's size is never a constant
+    anyone has to keep in step.
+    """
+    words = await discovery.list_public_words(
+        deck_id, current_user.id, unit_id=unit_id, limit=limit, offset=offset
+    )
+    return [PublicWordOut.model_validate(w) for w in words]
 
 
 @decks_router.post("/public/{deck_id}/import", response_model=DeckOut)

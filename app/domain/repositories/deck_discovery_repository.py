@@ -8,6 +8,7 @@ from datetime import datetime
 from uuid import UUID
 
 from app.domain.entities.deck import Deck
+from app.domain.entities.word import Word
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,26 @@ class PublicDeckView:
     description: str
     description_fa: str
     saves: int
+    #: Whether the person browsing already took a copy of this deck. Answered
+    #: from ``decks.copied_from_deck_id`` rather than remembered on the device,
+    #: so the tick survives a reinstall and agrees across a phone and the PWA.
+    #: ``False`` whenever nobody in particular is browsing.
+    saved: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PublicUnitView:
+    """One section of a published deck, as the preview lists it.
+
+    Carries its own ``word_count`` so the preview can show the shape of a
+    coursebook — twelve lessons of forty — without fetching two thousand cards
+    to count them.
+    """
+
+    id: UUID
+    name: str
+    position: int
+    word_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,12 +90,50 @@ class OutgoingShareView:
 class DeckDiscoveryRepository(ABC):
     @abstractmethod
     async def list_public(
-        self, *, category: str | None = None, query: str | None = None, limit: int, offset: int
+        self,
+        *,
+        category: str | None = None,
+        query: str | None = None,
+        limit: int,
+        offset: int,
+        viewer_id: UUID | None = None,
     ) -> list[PublicDeckView]:
-        """Published decks, newest first. One query, counts included."""
+        """Published decks, newest first. One query, counts included.
+
+        ``viewer_id`` only fills in :attr:`PublicDeckView.saved`; omitting it
+        answers ``False`` for everyone rather than failing, which is what the
+        deck-build tooling wants.
+        """
 
     @abstractmethod
-    async def get_public(self, deck_id: UUID) -> PublicDeckView | None: ...
+    async def get_public(
+        self, deck_id: UUID, *, viewer_id: UUID | None = None
+    ) -> PublicDeckView | None: ...
+
+    @abstractmethod
+    async def list_public_units(self, deck_id: UUID) -> list[PublicUnitView]:
+        """The deck's sections, in the author's order, with their card counts.
+
+        Visibility is the caller's business — this reads a deck by id and says
+        nothing about whether it is published.
+        """
+
+    @abstractmethod
+    async def list_public_words(
+        self,
+        deck_id: UUID,
+        *,
+        unit_id: UUID | None = None,
+        limit: int,
+        offset: int,
+    ) -> list[Word]:
+        """A page of the deck's cards, in the deck's own order.
+
+        The *cards*, with no progress: the person reading has none, and a box
+        or a due date invented for them would be a lie about a deck they have
+        not started. Ordered oldest-first like a copy, so a coursebook previews
+        in the order it is meant to be worked through.
+        """
 
     @abstractmethod
     async def copy_deck_to(self, deck_id: UUID, user_id: UUID) -> Deck:
@@ -88,6 +147,23 @@ class DeckDiscoveryRepository(ABC):
 
     @abstractmethod
     async def increment_saves(self, deck_id: UUID) -> None: ...
+
+    @abstractmethod
+    async def set_listing_metadata(
+        self,
+        deck_id: UUID,
+        *,
+        category: str,
+        description: str,
+        description_fa: str,
+    ) -> None:
+        """Update what Explore *shows*, without touching whether it shows it.
+
+        Deliberately separate from :meth:`set_published`, which asserts
+        ``is_public`` and ``published_at`` and would therefore unpublish a live
+        deck if it were reused to fix a description. Publishing stays one
+        deliberate act; re-wording is another.
+        """
 
     @abstractmethod
     async def set_published(

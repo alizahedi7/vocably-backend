@@ -8,14 +8,17 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Select, delete, func, select, update
+from sqlalchemy import false as sa_false
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.domain.entities.deck import Deck
+from app.domain.entities.word import Word
 from app.domain.repositories.deck_discovery_repository import (
     DeckDiscoveryRepository,
     OutgoingShareView,
     PublicDeckView,
+    PublicUnitView,
     SharedDeckView,
 )
 from app.infrastructure.db import mappers
@@ -37,14 +40,31 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
         self._session = session
 
     # ── Explore ──────────────────────────────────────────────
-    def _public_select(self) -> Select[Any]:
+    def _public_select(self, viewer_id: UUID | None) -> Select[Any]:
         counts = _word_counts().subquery()
+        # A correlated EXISTS rather than a join: one boolean per row, and no
+        # risk of a learner who somehow holds two copies duplicating the deck
+        # in Explore.
+        copy = aliased(DeckModel)
+        saved = (
+            select(1)
+            .where(
+                copy.user_id == viewer_id,
+                copy.copied_from_deck_id == DeckModel.id,
+            )
+            .exists()
+            if viewer_id is not None
+            else None
+        )
         return (
             select(
                 DeckModel,
                 UserModel.name,
                 UserModel.username,
                 func.coalesce(counts.c.n, 0),
+                # Literal false when nobody in particular is browsing, so every
+                # caller reads the same five columns.
+                saved if saved is not None else sa_false(),
             )
             # An outer join on the author: an official deck may have no author
             # to show, and a published deck must not vanish because of it.
@@ -54,7 +74,12 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
         )
 
     def _to_public(
-        self, deck: DeckModel, name: str | None, username: str | None, words: int
+        self,
+        deck: DeckModel,
+        name: str | None,
+        username: str | None,
+        words: int,
+        saved: bool,
     ) -> PublicDeckView:
         return PublicDeckView(
             deck=mappers.deck_to_entity(deck),
@@ -70,12 +95,19 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
             description=deck.description,
             description_fa=deck.description_fa,
             saves=deck.save_count,
+            saved=bool(saved),
         )
 
     async def list_public(
-        self, *, category: str | None = None, query: str | None = None, limit: int, offset: int
+        self,
+        *,
+        category: str | None = None,
+        query: str | None = None,
+        limit: int,
+        offset: int,
+        viewer_id: UUID | None = None,
     ) -> list[PublicDeckView]:
-        stmt = self._public_select()
+        stmt = self._public_select(viewer_id)
         if category:
             stmt = stmt.where(DeckModel.category == category)
         if query:
@@ -99,10 +131,54 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
         rows = (await self._session.execute(stmt)).all()
         return [self._to_public(*row) for row in rows]
 
-    async def get_public(self, deck_id: UUID) -> PublicDeckView | None:
-        stmt = self._public_select().where(DeckModel.id == deck_id)
+    async def get_public(
+        self, deck_id: UUID, *, viewer_id: UUID | None = None
+    ) -> PublicDeckView | None:
+        stmt = self._public_select(viewer_id).where(DeckModel.id == deck_id)
         row = (await self._session.execute(stmt)).first()
         return None if row is None else self._to_public(*row)
+
+    async def list_public_units(self, deck_id: UUID) -> list[PublicUnitView]:
+        counts = (
+            select(WordModel.unit_id, func.count().label("n"))
+            .where(WordModel.deck_id == deck_id)
+            .group_by(WordModel.unit_id)
+            .subquery()
+        )
+        stmt = (
+            select(DeckUnitModel, func.coalesce(counts.c.n, 0))
+            # Outer: an empty section is still a section, and a coursebook
+            # whose last lesson has no cards yet must still list it.
+            .outerjoin(counts, counts.c.unit_id == DeckUnitModel.id)
+            .where(DeckUnitModel.deck_id == deck_id)
+            .order_by(DeckUnitModel.position, DeckUnitModel.id)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [
+            PublicUnitView(id=unit.id, name=unit.name, position=unit.position, word_count=int(n))
+            for unit, n in rows
+        ]
+
+    async def list_public_words(
+        self,
+        deck_id: UUID,
+        *,
+        unit_id: UUID | None = None,
+        limit: int,
+        offset: int,
+    ) -> list[Word]:
+        stmt = select(WordModel).where(WordModel.deck_id == deck_id)
+        if unit_id is not None:
+            stmt = stmt.where(WordModel.unit_id == unit_id)
+        stmt = (
+            # The same order a copy is made in, and for the same reason: a
+            # coursebook is a sequence, so Lesson 1's first word is first.
+            stmt.order_by(WordModel.created_at.asc(), WordModel.id.asc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [mappers.word_to_entity(row) for row in rows]
 
     async def copy_deck_to(self, deck_id: UUID, user_id: UUID) -> Deck:
         source = await self._session.get(DeckModel, deck_id)
@@ -122,6 +198,9 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
             category=source.category,
             description=source.description,
             description_fa=source.description_fa,
+            # Provenance, so Explore can say "Saved" on the deck this came
+            # from. Nothing else reads it: the copy is independent.
+            copied_from_deck_id=deck_id,
         )
         self._session.add(copy)
         await self._session.flush()
@@ -199,6 +278,24 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
             update(DeckModel)
             .where(DeckModel.id == deck_id)
             .values(save_count=DeckModel.save_count + 1)
+        )
+
+    async def set_listing_metadata(
+        self,
+        deck_id: UUID,
+        *,
+        category: str,
+        description: str,
+        description_fa: str,
+    ) -> None:
+        await self._session.execute(
+            update(DeckModel)
+            .where(DeckModel.id == deck_id)
+            .values(
+                category=category,
+                description=description,
+                description_fa=description_fa,
+            )
         )
 
     async def set_published(

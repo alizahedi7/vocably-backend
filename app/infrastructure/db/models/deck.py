@@ -40,3 +40,13 @@ class DeckModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: How many people have taken a copy — the only quality signal Explore
     #: shows, and a better one than a rating nobody fills in.
     save_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: The published deck this one was copied from, or ``None`` for a deck its
+    #: owner built. Provenance, and only that: the copy is independent in every
+    #: other respect. It exists so Explore can say "Saved" on a deck the learner
+    #: already took — without it the tick would have to be remembered on the
+    #: device, and would be wrong after a reinstall or on a second phone.
+    #: ``SET NULL`` on delete, because unpublishing or removing the original
+    #: must not touch the copy.
+    copied_from_deck_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("decks.id", ondelete="SET NULL"), index=True, nullable=True
+    )

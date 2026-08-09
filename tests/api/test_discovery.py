@@ -180,6 +180,160 @@ async def test_importing_takes_a_copy_that_editing_cannot_leak(
     assert saves["saves"] == 1
 
 
+async def test_a_public_deck_can_be_read_before_it_is_saved(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    make_user: UserFactory,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The preview: sections from the detail endpoint, cards from the words one.
+
+    Saving a five-hundred-word deck is a decision about the next month of
+    someone's studying. Before this, the only way to see what was in one was to
+    take it.
+    """
+    source = await create_deck(client, auth_headers, "Coursebook")
+    lesson_one = (
+        await client.post(
+            f"/api/v1/decks/{source}/units", headers=auth_headers, json={"name": "Lesson 1"}
+        )
+    ).json()
+    lesson_two = (
+        await client.post(
+            f"/api/v1/decks/{source}/units", headers=auth_headers, json={"name": "Lesson 2"}
+        )
+    ).json()
+    for unit, term in ((lesson_one, "abandon"), (lesson_one, "abate"), (lesson_two, "candid")):
+        await client.post(
+            "/api/v1/words",
+            headers=auth_headers,
+            json={
+                "deck_id": source,
+                "term": term,
+                "meaning": f"meaning of {term}",
+                "unit_id": unit["id"],
+            },
+        )
+    # A card in no section at all, which the preview must not lose.
+    await add_word(client, auth_headers, source, "loose")
+    await publish(session_factory, source)
+
+    stranger = await make_user(phone="+989121112010")
+    headers = bearer(stranger.id)
+
+    detail = await client.get(f"/api/v1/decks/public/{source}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    assert body["name"] == "Coursebook"
+    assert body["word_count"] == 4
+    # Sections in the author's order, each carrying its own count — the shape of
+    # the book, without fetching the book.
+    assert [(u["name"], u["word_count"]) for u in body["units"]] == [
+        ("Lesson 1", 2),
+        ("Lesson 2", 1),
+    ]
+    # Not saved: nobody has taken a copy.
+    assert body["saved"] is False
+
+    # Every card, oldest first — the order the book is meant to be worked in.
+    # Compared as a set: four cards written inside one test share a timestamp,
+    # so the tie-break is the uuid and the *sequence* here says nothing. What
+    # the order has to be is stable, which the paging assertion below pins.
+    words = await client.get(f"/api/v1/decks/public/{source}/words", headers=headers)
+    assert words.status_code == 200, words.text
+    order = [w["term"] for w in words.json()]
+    assert sorted(order) == ["abandon", "abate", "candid", "loose"]
+    # The content, and nothing that would be a claim about progress this reader
+    # does not have.
+    assert set(words.json()[0]) == {
+        "id",
+        "unit_id",
+        "term",
+        "meaning",
+        "definition",
+        "example",
+        "phonetic",
+    }
+
+    # One section at a time is what the preview actually asks for.
+    just_one = await client.get(
+        f"/api/v1/decks/public/{source}/words",
+        headers=headers,
+        params={"unit_id": lesson_one["id"]},
+    )
+    assert sorted(w["term"] for w in just_one.json()) == ["abandon", "abate"]
+
+    # And it pages, so a deck's size is never a constant to keep in step. The
+    # pages have to be the one list cut in two: a page boundary that shuffles
+    # drops a card silently, which is exactly the bug `GET /words` once had.
+    page = await client.get(
+        f"/api/v1/decks/public/{source}/words",
+        headers=headers,
+        params={"limit": 2, "offset": 2},
+    )
+    assert [w["term"] for w in page.json()] == order[2:]
+
+
+async def test_a_private_deck_cannot_be_previewed_by_id(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """The preview is the one place card content leaves a deck's membership.
+
+    Which is only acceptable because the owner published it — so an unpublished
+    deck must 404 here exactly as it does at import, or the endpoint becomes a
+    way to read anyone's deck by id.
+    """
+    private = await create_deck(client, auth_headers, "Private")
+    await add_word(client, auth_headers, private, "secret")
+    stranger = await make_user(phone="+989121112011")
+
+    assert (
+        await client.get(f"/api/v1/decks/public/{private}", headers=bearer(stranger.id))
+    ).status_code == 404
+    assert (
+        await client.get(f"/api/v1/decks/public/{private}/words", headers=bearer(stranger.id))
+    ).status_code == 404
+
+
+async def test_explore_says_which_decks_the_learner_already_saved(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    make_user: UserFactory,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The tick on the Save button, answered by the server rather than the phone.
+
+    Remembering it on the device is wrong after a reinstall, wrong on a second
+    phone, and wrong in the PWA the same account is signed into.
+    """
+    taken = await create_deck(client, auth_headers, "Taken")
+    untaken = await create_deck(client, auth_headers, "Untaken")
+    await publish(session_factory, taken)
+    await publish(session_factory, untaken)
+
+    learner = await make_user(phone="+989121112012")
+    headers = bearer(learner.id)
+
+    before = (await client.get("/api/v1/decks/public", headers=headers)).json()["decks"]
+    assert {d["name"]: d["saved"] for d in before} == {"Taken": False, "Untaken": False}
+
+    await client.post(f"/api/v1/decks/public/{taken}/import", headers=headers)
+
+    after = (await client.get("/api/v1/decks/public", headers=headers)).json()["decks"]
+    assert {d["name"]: d["saved"] for d in after} == {"Taken": True, "Untaken": False}
+    # The detail endpoint agrees, so the preview's own button is not the one
+    # control in the app that forgets.
+    detail = await client.get(f"/api/v1/decks/public/{taken}", headers=headers)
+    assert detail.json()["saved"] is True
+
+    # It is the *learner's* copy that counts, not anyone's.
+    someone_else = await make_user(phone="+989121112013")
+    theirs = (await client.get("/api/v1/decks/public", headers=bearer(someone_else.id))).json()[
+        "decks"
+    ]
+    assert {d["name"]: d["saved"] for d in theirs} == {"Taken": False, "Untaken": False}
+
+
 async def test_a_private_deck_cannot_be_imported_by_id(
     client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
 ) -> None:
