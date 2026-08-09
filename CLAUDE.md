@@ -607,3 +607,144 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## The lexicon, and pre-built decks
+
+Two new things, and the distinction between them is the one worth protecting.
+
+**The lexicon is durable shared knowledge about a word**; the lookup cache above
+it is a disposable record of requests. They are not the same table and must not
+be merged:
+
+| | `ai_lookup_entries` (cache) | `lexemes` / `lexeme_senses` (lexicon) |
+|---|---|---|
+| Keyed by | prompt version + language + age + input | the lemma |
+| A prompt bump | retires it, by design | marks it stale, deletes nothing |
+| Per-sense id | none — an opaque blob | stable, and a deck card points at one |
+| Failure | best-effort, a miss | best-effort on read, durable once written |
+
+Both are impersonal: **no `user_id` reaches either**, and a learner's edits to
+their card go to `words` and never come back. What is new is permanence — a
+published deck references a sense, so senses outlive the prompt that wrote them.
+
+### Composition order is the whole design
+
+```
+AIStudioService
+  └─ CachingAIService      # request-shaped, keyed by prompt version
+      └─ LexiconAIService  # term-shaped, durable, survives a prompt bump
+          └─ GroundedAIService
+              └─ provider
+```
+
+The cache is **outside** so repeats cost one indexed read. The lexicon is
+**inside** so it answers what the cache cannot — which, the day `PROMPT_VERSION`
+is bumped, is every request. Swap the two and a prompt edit re-buys the entire
+corpus. `tests/api/test_lexicon.py::test_a_prompt_version_bump_costs_nothing_for_a_word_already_known`
+is the test that fails if anyone does.
+
+`app/infrastructure/ai/factory.py` builds this chain, and **both** the API and
+the deck-build worker call `lookup_chain()`. A builder with a private path to
+the provider would stop reusing what learners already paid for, and the reuse
+ratio reported on every job would become a lie.
+
+### Senses, and the translation split
+
+`lexeme_senses` holds the English half — definition, example, part of speech, and
+the `context` chip. `lexeme_sense_translations` holds the learner-facing headline,
+one row per language. That split is a cost decision: adding a second native
+language re-buys short headlines, not the corpus. `LexiconService.record` writes
+both halves and **tops up translations on senses it already holds**.
+
+- `sense_key` is `slug(part_of_speech):slug(context)`, derived rather than
+  random, because enrichment must answer "do we have this one?" without an AI
+  call. `UNIQUE (lexeme_id, sense_key, register)` makes a duplicate write a no-op.
+- **Positions are never renumbered.** A published deck may point at position 2.
+- Max 4 senses is a product cap enforced in `LexiconService`, not a constraint —
+  a constraint would fail an enrichment write nothing could recover from.
+- `lexemes.phonetic` keeps the `NULL` vs `""` distinction from `words.phonetic`,
+  for the same reason: without it the backfill re-asks permanent misses forever.
+
+### Deck templates live in git, not the database
+
+`content/decks/<slug>/{deck.yaml,words.yaml}`. A word list arrives as a **pull
+request**, so ordering, lesson boundaries and sense pins are read by a human
+before a token is spent. **The order is the product** for a course, so structure
+is *asserted* (`expected_units`, `expected_words`, `words_per_unit`) and the
+validator refuses a file that disagrees — a list that silently lost an entry is
+otherwise invisible until a learner notices Lesson 12 has eleven words.
+
+For copyrighted collections the pipeline stores **the headword list and lesson
+boundaries only**, plus a `source.rights` note. There is deliberately no field in
+which a source's definition or example could be pasted; a `hint` over 200
+characters is refused for exactly that reason.
+
+### Building
+
+```
+make deck-validate slug=…   # offline, free
+make deck-plan     slug=…   # writes deck + units + plan, spends nothing
+make deck-build    job=…    # spends (queue=1 hands it to Celery instead)
+```
+
+- **The plan is rows.** `deck_build_items`, written once, `UNIQUE (job_id,
+  position)`. Building is a *state transition*, never an insert, which is what
+  makes `task_acks_late` redelivery harmless and resume a matter of re-running.
+- **Claims commit before any provider call**, and results commit after. No
+  transaction is ever held open across the network — under a 500-word build that
+  is how the connection pool dies.
+- **`vocably.ai.build_deck` re-queues itself** rather than fanning out. Chords
+  need a result backend and `CELERY_RESULT_BACKEND` is empty by design; the item
+  table is a better coordinator anyway, and batch size × worker concurrency *is*
+  the rate limit.
+- **Failure is per item.** Three attempts with 2/4/8-minute backoff computed on
+  the row, then `failed`, and the job ends `PARTIAL` — 501 good cards and three
+  holes is worth reviewing, not restarting. `reset_failed` retries just those.
+- **A job carries its own `category` and `strategies`**, copied at plan time. The
+  template file is never re-read mid-build: the plan is already in the database
+  and must stay buildable if the file moves.
+- **`content_version` is pinned at plan time**, so a deploy that bumps a prompt at
+  word 300 of 504 cannot write the two halves under different prompts.
+
+### Sense selection, and why review is short
+
+Deterministic, ordered, first match wins, and **no AI call is made to rank
+senses**: `explicit` (a template pin) → `hint` (token overlap against a gloss) →
+`category` (a hand-written prior per deck category) → `first`. Every item records
+which strategy chose and how well it scored, and the admin review queue is
+exactly "failed, flagged, or chosen by a strategy that guesses". On a good build
+that is a few dozen rows out of five hundred, which is the difference between
+review happening and not.
+
+Enrichment fires when the deck **asked for a sense and did not get it** — not
+only when nothing was selectable, because with `first` in the chain something
+always is. It is capped at **one call per item, ever** (`deck_build_items.enriched`,
+set *before* the call), appends only, and returning nothing is a correct answer.
+
+### Publishing is still a separate, deliberate act
+
+Nothing in this pipeline sets `decks.is_public`. A build creates a private deck
+and leaves it private; `PATCH /admin/decks/{id}/publish` is the only thing that
+puts it in Explore. That is what makes a half-built deck invisible by
+construction rather than by vigilance.
+
+Official decks are owned by a system account (`CONTENT_OWNER_PHONE`), created on
+first plan. It is never a person and must never be pointed at account deletion.
+
+### Regeneration is always explicit
+
+A prompt bump costs nothing and changes nothing: the cache retires, the lexicon
+reports `stale` on `/admin/lexicon/stats`, and no job is enqueued. Cards already
+written hold their own copy of the text — deliberately, because a learner may
+edit theirs — so `words.lexeme_sense_id` is provenance for an opt-in refresh, not
+a live read path.
+
+### Single-flight is money, never correctness
+
+Concurrent generation of one word is deduplicated by a Redis `SET NX` lease.
+Correctness comes from the lexicon's unique constraints, so this can only waste a
+call. It is therefore **disabled for the whole process after its first failure**:
+a refused connection costs real latency on every word (measured at ~11s/word with
+Redis down), and a command cancelled by its timeout can leave a pooled connection
+that blocks the next caller indefinitely. `pg_advisory_xact_lock` was rejected —
+it would hold a database connection for the whole provider call.
