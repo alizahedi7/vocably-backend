@@ -24,6 +24,23 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
 
 ### Added
 
+- **`GET /users/search?q=`** — finds people to share a deck with. Prefix match
+  on the **handle only** (never the display name), two characters minimum,
+  eight results maximum, shortest first so an exact match leads its
+  near-misses, and the searcher is never in their own results. A prefix too
+  short or malformed answers `200` with an empty list rather than an error.
+  Capped per user through Redis at `USER_SEARCHES_PER_USER_PER_HOUR`
+  (default 60) — tighter than the availability check, since one call returns a
+  page of real handles rather than a yes/no about one guess.
+- **`GET /decks/{id}/shares`** — the sender's half of a share: offers of this
+  deck that nobody has answered yet, for whoever may invite. Accepted offers
+  are memberships and appear on the roster instead; declined ones are deleted,
+  and the sender is not told.
+- **`POST /decks/{id}/share` accepts `role`** — what accepting will make the
+  recipient, carried on the offer and applied when they answer. Optional and
+  defaulting to `viewer`, so an older client keeps the behaviour it had;
+  `owner` is downgraded to `viewer` rather than refused. Previously every
+  person-to-person share granted viewer whatever the sender chose.
 - **`words.definition`** — the dictionary definition on the AI Card Magic card
   back is now persisted. Optional on `POST /words` and `PATCH /words/{id}`
   (max 2000 chars) and returned on every word. Omitting it in a `PATCH` leaves

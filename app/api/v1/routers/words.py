@@ -19,7 +19,14 @@ async def list_words(
     current_user: CurrentUser,
     words: WordServiceDep,
     deck_id: Annotated[UUID | None, Query(description="Filter by deck")] = None,
-    limit: Annotated[int, Query(ge=1, le=500, description="Page size")] = 100,
+    # The ceiling has to clear the largest deck a learner can hold, because a
+    # client that asks for the maximum and does not paginate gets a silently
+    # truncated deck: no `total` comes back, so nothing downstream can tell a
+    # short page from a small deck. At 500 the 504-word "504 Essential Words"
+    # lost its four oldest cards — the whole of Lesson 1's opening — and the
+    # only symptom was a lesson showing 8 words. "1100 Words You Need to Know"
+    # would have lost six hundred.
+    limit: Annotated[int, Query(ge=1, le=2000, description="Page size")] = 100,
     offset: Annotated[int, Query(ge=0, description="Rows to skip")] = 0,
 ) -> list[WordOut]:
     items = await words.list_words(current_user.id, deck_id=deck_id, limit=limit, offset=offset)

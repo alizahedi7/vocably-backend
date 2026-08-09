@@ -437,6 +437,28 @@ Redis**: the in-process limiter multiplies its budget by the worker count, which
 is fine for SMS spend and wrong for an endpoint that answers "does this person
 exist" for any string. An unreachable Redis degrades to per-worker, never open.
 
+`GET /users/search?q=` finds people to share a deck with, and its shape is the
+consent decision it carries:
+
+- **Handles only, by prefix.** Never the display name. A handle is the one
+  string a learner picks *so that* other people can address them; a name is
+  not, and making it searchable would publish something nobody opted into.
+  Someone who wants to be unfindable holds a handle nobody would guess.
+- **Two characters minimum, eight results maximum**, both in
+  `usernames.search_prefix` / `UserService.SEARCH_LIMIT`. One letter matches a
+  large slice of the table and answers a question nobody has asked yet; the cap
+  reaches SQL, so a two-letter prefix costs the same as a whole handle.
+  Ordered by handle length then alphabetically — the length past the prefix is
+  how far a handle is from what was typed, so the exact match always leads and
+  ties never reorder between calls.
+- **A prefix too short, malformed, or unusable answers `200` with an empty
+  list**, not a 422. The caller is typing.
+- **Capped tighter than the availability check** (`user_searches_per_user_per_hour`,
+  60 vs 120) through the same Redis limiter: one call here returns a page of
+  real handles rather than a yes/no about one guess, so walking the namespace
+  with it is that many times cheaper. It is called on a debounce, so a teacher
+  sharing with a class never comes near the limit.
+
 ### The error envelope
 
 4xx bodies carry **both** `error.code`/`error.message` and a top-level `detail`,
@@ -463,14 +485,26 @@ That distinction is the whole design and is easy to invert by accident:
   accepting writes a `deck_members` row. Only someone who could already invite
   may share, so a viewer cannot hand a teacher's deck around. Declining deletes
   the offer and tells the sender nothing.
+- **The role rides on the offer**, not on a membership created ahead of it.
+  `ShareDeckIn.role` is what *accepting* will make them; it defaults to viewer
+  so a client that omits it cannot widen access, and `owner` is downgraded to
+  viewer rather than refused — the same fail-closed downgrade every other role
+  entry point in `DeckSharingService` makes. Nobody joins a deck because
+  somebody else decided it, so the sender must never call `POST
+  /decks/{id}/members` to "complete" a share; that endpoint is for an owner
+  placing someone directly.
+- `GET /decks/{id}/shares` is the sender's half: **pending offers only**, for
+  whoever may invite. Accepted ones are memberships and belong to the roster —
+  reporting the same fact in two vocabularies is how a client screen becomes
+  confusing — and declined ones no longer exist, which is deliberate: an offer
+  that can be made again is kinder than a permanent record of a refusal, and
+  the sender is not told either way.
 - A share id that is not yours **404s**, like everything else keyed by id.
 
 **Friends are a recency list, not a social graph.** One-directional and needing
 no consent, because they reveal nothing the sharer did not already know — they
-typed the handle. **Handle lookup is exact-match only**: no prefix search, no
-"find people" endpoint. Adding one is a product decision with a consent
-question attached, not a convenience. Sharing links the recipient
-automatically, which is why a handle is only ever typed once.
+typed the handle, or picked it out of `/users/search` above. Sharing links the
+recipient automatically, which is why a handle is only ever typed once.
 
 **XP is a ledger plus a counter**, the same hybrid as the review history.
 `xp_events` is append-only; `users.xp` is what every request reads and is

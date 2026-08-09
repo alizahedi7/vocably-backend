@@ -144,7 +144,8 @@ async def test_word_list_paginates(client: AsyncClient, auth_headers: dict[str, 
     assert len(rest_ids) == 1
     assert first_ids.isdisjoint(rest_ids)
 
-    too_big = await client.get("/api/v1/words", headers=auth_headers, params={"limit": 501})
+    # The ceiling clears the largest pre-built deck; see the note on the route.
+    too_big = await client.get("/api/v1/words", headers=auth_headers, params={"limit": 2001})
     assert too_big.status_code == 422
 
 
@@ -376,3 +377,29 @@ async def test_editing_the_term_drops_a_now_wrong_phonetic(
         json={"term": "running", "meaning": "دویدن"},
     )
     assert same.json()["phonetic"] == "/ˈrʌnɪŋ/"
+
+
+async def test_a_deck_larger_than_the_old_page_cap_can_be_fetched_whole(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    """A pre-built deck is bigger than any hand-made one, and must not truncate.
+
+    Found in production: the cap was 500 and "504 Essential Words" has 504, so a
+    client asking for the maximum silently lost the four oldest cards — all of
+    Lesson 1's opening words. Nothing could detect it, because the response is a
+    bare list with no total.
+    """
+    deck_id = await create_deck(client, auth_headers)
+    for i in range(520):
+        response = await client.post(
+            "/api/v1/words",
+            headers=auth_headers,
+            json={"deck_id": deck_id, "term": f"w{i:04d}", "meaning": f"m{i}"},
+        )
+        assert response.status_code == 201
+
+    response = await client.get(f"/api/v1/words?deck_id={deck_id}&limit=520", headers=auth_headers)
+
+    assert response.status_code == 200, response.text
+    assert len(response.json()) == 520
