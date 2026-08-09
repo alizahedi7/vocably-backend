@@ -721,6 +721,23 @@ only when nothing was selectable, because with `first` in the chain something
 always is. It is capped at **one call per item, ever** (`deck_build_items.enriched`,
 set *before* the call), appends only, and returning nothing is a correct answer.
 
+### Pronunciation on a built deck
+
+`DICTIONARY_ENABLED` used to gate two unrelated decisions: whether cards are
+*worded* from a dictionary (grounding — a product choice that changes what every
+learner reads) and whether the app may look up an IPA at all. **`PHONETICS_ENABLED`
+separates them.** Turning it on lets a deck carry pronunciation without
+re-wording a single card; `DICTIONARY_ENABLED` implies it, since the grounded
+path already fetches the entry an IPA comes from.
+
+The build fills `lexemes.phonetic` inline rather than leaving it to the nightly
+backfill — the lookup is free, ~27 ms, and Redis-cached across every learner, and
+the alternative is publishing a deck with no pronunciation and filling it in days
+later. Everything else is carried over from `words.phonetic` unchanged: a model
+is **never** asked for a transcription, `NULL` and `""` stay different, and a
+miss and an outage both leave `NULL` so one bad afternoon cannot permanently
+silence a set of cards.
+
 ### Publishing is still a separate, deliberate act
 
 Nothing in this pipeline sets `decks.is_public`. A build creates a private deck

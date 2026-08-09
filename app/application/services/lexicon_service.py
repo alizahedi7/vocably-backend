@@ -19,6 +19,8 @@ human's approval, and the writer here is always a machine.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from app.application.ports.ai_service import (
     LearnerContext,
     LookupResult,
@@ -95,6 +97,13 @@ class LexiconService:
             notice=None,
             phonetic=lexeme.phonetic or "",
         )
+
+    async def set_phonetic(self, lexeme_id: UUID, phonetic: str) -> None:
+        """Record a dictionary's pronunciation answer, including the empty one.
+
+        Only ever fills a NULL — see :meth:`LexiconRepository.set_phonetic`.
+        """
+        await self._lexicon.set_phonetic(lexeme_id, phonetic)
 
     # ── Writes ────────────────────────────────────────────────
 

@@ -112,6 +112,7 @@ from app.infrastructure.db.repositories.word_progress_repository import (
 )
 from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
 from app.infrastructure.db.repositories.xp_repository import SqlAlchemyXpRepository
+from app.infrastructure.dictionary.factory import dictionary_service
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -372,6 +373,7 @@ def get_deck_build_service(
         ai,
         content_version=effective_prompt_version(),
         enricher=cast("SenseEnricher", raw_ai_provider()),
+        dictionary=dictionary_service() if settings.dictionary_available else None,
         claim_timeout_seconds=settings.deck_build_claim_timeout_seconds,
     )
 

@@ -29,6 +29,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from app.application.ports.ai_service import AIService, LearnerContext, LookupStatus
+from app.application.ports.dictionary_service import DictionaryService
 from app.application.ports.lookup_cache import normalize_lookup_input
 from app.application.services.deck_access import DeckAccess
 from app.application.services.lexicon_service import LexiconService
@@ -104,6 +105,7 @@ class DeckBuildService:
         *,
         content_version: int,
         enricher: SenseEnricher | None = None,
+        dictionary: DictionaryService | None = None,
         claim_timeout_seconds: int = CLAIM_TIMEOUT_SECONDS,
     ) -> None:
         self._builds = builds
@@ -116,6 +118,11 @@ class DeckBuildService:
         self._ai = ai
         self._content_version = content_version
         self._enricher = enricher
+        #: Pronunciation only. A card's IPA is **carried, never generated** — no
+        #: model is ever asked for one, because a confidently wrong transcription
+        #: teaches a learner to mispronounce a word. ``None`` disables the lookup
+        #: entirely and every card is simply written without one.
+        self._dictionary = dictionary
         self._claim_timeout = claim_timeout_seconds
 
     # ── Planning ──────────────────────────────────────────────
@@ -279,6 +286,8 @@ class DeckBuildService:
         if lexeme is None:
             raise ValidationError(f"No usable senses could be produced for {item.source_term!r}")
 
+        await self._fill_phonetic(lexeme)
+
         senses = lexeme.servable_senses(job.register)
         choice = selector.select(senses, item.hint)
 
@@ -392,6 +401,40 @@ class DeckBuildService:
         )
         await self._builds.bump_counters(job.id, senses_enriched=1)
         return updated
+
+    async def _fill_phonetic(self, lexeme: Lexeme) -> None:
+        """Give the headword an IPA transcription if it has none yet.
+
+        Free and fast — a Wiktionary mirror at ~27 ms, Redis-cached across every
+        learner and every deck — so it is worth doing inline rather than leaving
+        to the nightly backfill, which would publish the deck without
+        pronunciation and fill it in days later.
+
+        Three rules carried over from ``words.phonetic`` unchanged, because the
+        distinction they encode is what stops this being re-asked forever:
+
+        * ``None`` means *not looked up yet*; ``""`` means *the dictionary
+          answered and this word has no IPA* — roughly a third of them. Both
+          render as nothing.
+        * A **miss and an outage look identical** through the port, so neither is
+          recorded as ``""``. Such words stay ``None`` and the nightly backfill
+          tries again; writing ``""`` here would let one bad afternoon silence a
+          set of cards permanently.
+        * Never load-bearing: any failure leaves the card without an IPA, which
+          is exactly what a hand-written card looks like.
+        """
+        if self._dictionary is None or lexeme.phonetic is not None:
+            return
+        try:
+            entry = await self._dictionary.look_up(lexeme.display_term or lexeme.lemma)
+        except Exception as exc:  # noqa: BLE001 — the port promises not to raise
+            logger.info("phonetic lookup raised: %s", type(exc).__name__)
+            return
+        if entry is None:
+            # A miss or an outage — indistinguishable here, so record neither.
+            return
+        await self._lexicon.set_phonetic(lexeme.id, entry.phonetic)
+        lexeme.phonetic = entry.phonetic
 
     async def _materialise(
         self,

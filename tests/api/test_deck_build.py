@@ -26,6 +26,7 @@ from app.application.ports.ai_service import (
     LookupResult,
     MeaningSuggestion,
 )
+from app.application.ports.dictionary_service import DictionaryEntry
 from app.application.services.deck_build_service import DeckBuildService
 from app.application.services.lexicon_service import LexiconService
 from app.domain.enums import DeckBuildItemState, DeckBuildState, SenseSelection
@@ -559,3 +560,116 @@ async def _elapse_backoff(session_factory: async_sessionmaker[AsyncSession]) -> 
             update(DeckBuildItemModel).values(next_attempt_at=datetime.now(UTC) - timedelta(days=1))
         )
         await session.commit()
+
+
+class StubDictionary:
+    """A dictionary whose answers — and silences — the test controls."""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+        self.entries: dict[str, DictionaryEntry | None] = {}
+
+    async def look_up(self, term: str) -> DictionaryEntry | None:
+        self.calls.append(term)
+        return self.entries.get(term)
+
+
+async def test_a_built_card_carries_the_dictionarys_pronunciation(
+    session_factory: async_sessionmaker[AsyncSession],
+    template_root: Path,
+    provider: ScriptedProvider,
+    make_user: UserFactory,
+) -> None:
+    """IPA is carried from the dictionary, never asked of a model."""
+    dictionary = StubDictionary()
+    dictionary.entries = {
+        "run": DictionaryEntry(term="run", phonetic="/rʌn/"),
+        "keen": DictionaryEntry(term="keen", phonetic="/kiːn/"),
+        # "tact" has an entry but no transcription — a real answer, not a miss.
+        "tact": DictionaryEntry(term="tact", phonetic=""),
+    }
+
+    def make(session: AsyncSession) -> DeckBuildService:
+        return _service_with(session, provider, dictionary)
+
+    owner = await make_user(phone="+989120009020")
+    job = await _plan(make, session_factory, template_root, owner.id)
+    await _run(make, session_factory, job.id)
+
+    async with session_factory() as session:
+        words = {w.term: w for w in (await session.execute(select(WordModel))).scalars().all()}
+        lexemes = {x.lemma: x for x in (await session.execute(select(LexemeModel))).scalars().all()}
+
+    assert words["run"].phonetic == "/rʌn/"
+    assert words["keen"].phonetic == "/kiːn/"
+    # '' is a real answer — "this word has no IPA" — and must not read as unknown.
+    assert words["tact"].phonetic == ""
+    assert lexemes["run"].phonetic == "/rʌn/"
+
+
+async def test_a_dictionary_miss_leaves_the_word_open_for_a_later_retry(
+    session_factory: async_sessionmaker[AsyncSession],
+    template_root: Path,
+    provider: ScriptedProvider,
+    make_user: UserFactory,
+) -> None:
+    """A miss and an outage are indistinguishable, so neither is recorded as ''.
+
+    Writing '' here would let one bad afternoon permanently silence a set of
+    cards — the nightly backfill would never look at them again.
+    """
+    dictionary = StubDictionary()  # every lookup returns None
+
+    def make(session: AsyncSession) -> DeckBuildService:
+        return _service_with(session, provider, dictionary)
+
+    owner = await make_user(phone="+989120009021")
+    job = await _plan(make, session_factory, template_root, owner.id)
+    outcome = await _run(make, session_factory, job.id)
+
+    assert outcome.done == 3, "a dictionary that answers nothing must not fail the build"
+    async with session_factory() as session:
+        lexemes = (await session.execute(select(LexemeModel))).scalars().all()
+    assert all(x.phonetic is None for x in lexemes)
+
+
+async def test_no_dictionary_configured_still_builds_the_deck(
+    session_factory: async_sessionmaker[AsyncSession],
+    template_root: Path,
+    provider: ScriptedProvider,
+    make_user: UserFactory,
+) -> None:
+    """Pronunciation is optional; a card without one is what hand-typing yields."""
+
+    def make(session: AsyncSession) -> DeckBuildService:
+        return _service_with(session, provider, None)
+
+    owner = await make_user(phone="+989120009022")
+    job = await _plan(make, session_factory, template_root, owner.id)
+    outcome = await _run(make, session_factory, job.id)
+
+    assert outcome.done == 3
+    async with session_factory() as session:
+        words = (await session.execute(select(WordModel))).scalars().all()
+    assert all(w.phonetic is None for w in words)
+
+
+def _service_with(
+    session: AsyncSession,
+    provider: ScriptedProvider,
+    dictionary: StubDictionary | None,
+) -> DeckBuildService:
+    lexicon = LexiconService(SqlAlchemyLexiconRepository(session), content_version=CONTENT_VERSION)
+    return DeckBuildService(
+        SqlAlchemyDeckBuildRepository(session),
+        SqlAlchemyDeckRepository(session),
+        SqlAlchemyDeckMemberRepository(session),
+        SqlAlchemyDeckUnitRepository(session),
+        SqlAlchemyWordRepository(session),
+        SqlAlchemyDeckDiscoveryRepository(session),
+        lexicon,
+        provider,
+        content_version=CONTENT_VERSION,
+        enricher=provider,
+        dictionary=dictionary,  # type: ignore[arg-type]
+    )

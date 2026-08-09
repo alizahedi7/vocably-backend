@@ -156,6 +156,16 @@ class Settings(BaseSettings):
     #: Misses expire far sooner than hits: a word Wiktionary lacks today (new
     #: slang) may appear next month, and a 30-day negative cache would hide it.
     dictionary_cache_miss_ttl_seconds: int = 24 * 3600
+    #: Whether the dictionary may be called for **pronunciation only**, without
+    #: turning on grounding. These are two different decisions and were one flag
+    #: for too long: grounding changes what every card *says* and is a product
+    #: choice, while an IPA transcription is a free, factual lookup that changes
+    #: nothing a learner reads except the line under the term. Coupling them
+    #: meant a deck could not have pronunciation without being re-worded.
+    #:
+    #: ``DICTIONARY_ENABLED`` implies this — grounding already fetches the entry
+    #: an IPA comes from, so an existing deployment's behaviour is unchanged.
+    phonetics_enabled: bool = False
     #: Whether the grounded path also rewrites each dictionary definition into
     #: learner-dictionary English, instead of showing the source wording.
     #:
@@ -250,6 +260,17 @@ class Settings(BaseSettings):
     #: than failing loudly.
     celery_task_time_limit_seconds: int = 600
     celery_task_soft_time_limit_seconds: int = 540
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def dictionary_available(self) -> bool:
+        """Whether anything may call the dictionary at all.
+
+        Grounding implies pronunciation: the grounded path already fetches the
+        entry an IPA comes from, so turning grounding on has never *not* meant
+        the dictionary is reachable.
+        """
+        return self.dictionary_enabled or self.phonetics_enabled
 
     @field_validator("backend_cors_origins", mode="before")
     @classmethod

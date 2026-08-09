@@ -40,13 +40,14 @@ logger = get_logger("vocably.tasks.phonetics")
 def backfill_phonetics() -> str:
     """Look up the IPA for cards saved without one.
 
-    Does nothing at all when ``DICTIONARY_ENABLED`` is off. That flag is what
-    decides whether this deployment talks to a dictionary; a background job
+    Does nothing at all unless a dictionary is enabled — by ``DICTIONARY_ENABLED``
+    (grounding) or ``PHONETICS_ENABLED`` (pronunciation only). Those flags decide
+    whether this deployment talks to a dictionary at all; a background job
     quietly making the calls the request path is configured not to make would
-    make the flag a lie.
+    make them a lie.
     """
-    if not settings.dictionary_enabled:
-        logger.info("phonetic backfill skipped: DICTIONARY_ENABLED is off")
+    if not settings.dictionary_available:
+        logger.info("phonetic backfill skipped: no dictionary is enabled")
         return "disabled"
     result = run_async(_run(settings.phonetic_backfill_batch_size))
     if result.exhausted:

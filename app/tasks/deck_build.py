@@ -47,6 +47,7 @@ from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRep
 from app.infrastructure.db.repositories.deck_unit_repository import SqlAlchemyDeckUnitRepository
 from app.infrastructure.db.repositories.lexicon_repository import SqlAlchemyLexiconRepository
 from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
+from app.infrastructure.dictionary.factory import dictionary_service
 from app.tasks.celery_app import celery_app
 from app.tasks.runtime import run_async
 
@@ -102,6 +103,9 @@ async def _run_batch(job_id: UUID, limit: int) -> BatchOutcome:
             # The raw adapter: the wrappers above it have nothing to add to a
             # call that is explicitly asking for what the lexicon does not hold.
             enricher=cast("SenseEnricher", raw_ai_provider()),
+            # Pronunciation only — independent of grounding. Off means cards are
+            # written without an IPA, exactly as a hand-typed card is.
+            dictionary=dictionary_service() if settings.dictionary_available else None,
             claim_timeout_seconds=settings.deck_build_claim_timeout_seconds,
         )
         outcome = await service.run_batch(job_id, limit=limit)
