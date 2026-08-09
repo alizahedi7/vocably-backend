@@ -1,0 +1,30 @@
+slug: business-english-core
+version: "0.1.0"
+name: Business English Core
+name_fa: انگلیسی تجاری پایه
+category: business
+description: >-
+  Words that mean something different at work. Built from the same pipeline as
+  every other deck — only the category prior and the sense pins change.
+description_fa: واژه‌هایی که در محیط کار معنای دیگری دارند.
+official: true
+hue: 190
+
+structure:
+  words_per_unit: 6
+  expected_units: 2
+  expected_words: 12
+
+generation:
+  native_language: Persian
+  register: adult
+  sense_selection: [explicit, hint, category, first]
+  # On, and it will actually fire here: several of these words are already in
+  # the lexicon from the 504 deck in their everyday sense, and this deck needs
+  # the business one — which is precisely the case enrichment exists for.
+  enrichment: allowed
+  max_senses: 4
+
+publication:
+  review_required: true
+  publish: manual

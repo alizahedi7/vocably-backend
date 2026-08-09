@@ -25,6 +25,7 @@ from app.application.ports.ai_service import (
     LookupStatus,
     MeaningSuggestion,
 )
+from app.core.config import settings
 from app.infrastructure.db.models.ai_lookup import AILookupAliasModel, AILookupEntryModel
 from app.main import app
 
@@ -68,7 +69,14 @@ def provider() -> CountingProvider:
 async def cached_client(
     client: AsyncClient,
     provider: CountingProvider,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncGenerator[AsyncClient, None]:
+    # The lexicon is switched off for this whole file. It sits directly beneath
+    # the cache and absorbs exactly the calls these tests exist to count, so
+    # leaving it on would make every provider-call assertion here a measurement
+    # of two layers at once. The lexicon's own behaviour is pinned in
+    # test_lexicon.py, including how the two compose.
+    monkeypatch.setattr(settings, "lexicon_enabled", False)
     app.dependency_overrides[get_ai_provider] = lambda: provider
     yield client
     app.dependency_overrides.pop(get_ai_provider, None)
@@ -346,8 +354,6 @@ async def test_disabling_the_cache_restores_a_provider_call_per_lookup(
     provider: CountingProvider,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.core.config import settings
-
     monkeypatch.setattr(settings, "ai_cache_enabled", False)
 
     for _ in range(2):

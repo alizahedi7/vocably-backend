@@ -10,7 +10,6 @@ from __future__ import annotations
 import pytest
 
 from app.api.deps import (
-    _avalai_ai_service,
     _google_id_token_verifier,
     get_ai_provider,
     get_google_verifier,
@@ -18,6 +17,7 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.infrastructure.ai.avalai_ai_service import AvalAIService
+from app.infrastructure.ai.factory import _avalai_ai_service
 from app.infrastructure.ai.stub_ai_service import StubAIService
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier

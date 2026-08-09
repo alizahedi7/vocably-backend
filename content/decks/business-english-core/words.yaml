@@ -1,0 +1,27 @@
+# A second deck over the same pipeline. Nothing in the code changes — only the
+# category prior (`business`) and the pins below.
+
+units:
+  - name: Module 1
+    words:
+      - term: run
+        sense: {pos: verb, context: Management}
+      - term: board
+        hint: "the group of people who control a company"
+      - term: charge
+        hint: "the amount of money you must pay for something"
+      - term: bond
+        hint: "an official document promising to repay borrowed money"
+      - negotiate
+      - invoice
+
+  - name: Module 2
+    words:
+      - term: margin
+        hint: "the difference between the cost of something and the price it sells for"
+      - term: liquidate
+        hint: "to sell everything a business owns in order to pay its debts"
+      - stakeholder
+      - procurement
+      - outsource
+      - leverage

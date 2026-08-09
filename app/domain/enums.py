@@ -160,3 +160,115 @@ _GRADE_ORDINALS: dict[ReviewGrade, int] = {
     ReviewGrade.EASY: 3,
 }
 _GRADES_BY_ORDINAL: dict[int, ReviewGrade] = {v: k for k, v in _GRADE_ORDINALS.items()}
+
+
+class SenseStatus(StrEnum):
+    """Where one lexicon sense sits in the review pipeline.
+
+    ``APPROVED`` is the only value that survives a prompt-version bump untouched
+    (see ``docs/prebuilt-deck-pipeline.md``): a human blessed that wording, so a
+    later prompt change marks it stale rather than superseding it.
+    """
+
+    #: Written by the pipeline, never looked at. The ordinary state.
+    AUTO = "auto"
+    #: Passed schema validation but tripped a soft rule — queued for a human.
+    NEEDS_REVIEW = "needs_review"
+    #: A human read it and kept it.
+    APPROVED = "approved"
+    #: A human read it and refused it. Never served, never selected.
+    REJECTED = "rejected"
+
+
+class SenseSource(StrEnum):
+    """What caused a sense to be written. Provenance only, never a rule."""
+
+    #: A learner's ``/ai/lookup`` wrote it on the way past.
+    LOOKUP = "lookup"
+    #: A deck build generated the whole lexeme.
+    DECK_BUILD = "deck_build"
+    #: A deck build needed a sense the lexeme lacked and asked for that one.
+    ENRICHMENT = "enrichment"
+    #: An admin typed it.
+    MANUAL = "manual"
+
+
+class DeckBuildState(StrEnum):
+    """The build job's lifecycle. Deliberately not the deck's visibility.
+
+    A deck is visible in Explore when ``decks.is_public`` is true, and nothing
+    here ever sets it — publishing stays the admin's deliberate act, so a job
+    in any state below still leaves a half-built deck invisible.
+    """
+
+    PLANNED = "planned"
+    GENERATING = "generating"
+    #: Every item resolved. Ready for a human to look at.
+    COMPLETED = "completed"
+    #: Finished with items left failed. Retryable without replanning.
+    PARTIAL = "partial"
+    CANCELLED = "cancelled"
+    #: The driver itself gave up (not an item failure) — see ``last_error``.
+    FAILED = "failed"
+    #: The deck this job built is in Explore. Mirrors the flip for audit.
+    PUBLISHED = "published"
+
+    @property
+    def is_terminal(self) -> bool:
+        return self in _TERMINAL_BUILD_STATES
+
+
+_TERMINAL_BUILD_STATES = frozenset(
+    {
+        DeckBuildState.COMPLETED,
+        DeckBuildState.PARTIAL,
+        DeckBuildState.CANCELLED,
+        DeckBuildState.FAILED,
+        DeckBuildState.PUBLISHED,
+    }
+)
+
+
+class DeckBuildItemState(StrEnum):
+    """One word's progress through a build.
+
+    ``RESOLVING`` is a claim, not a phase: a worker sets it in its own committed
+    transaction before making any provider call, so a second worker skips the
+    row. A row left in it by a dead worker is reclaimed on a timeout — see
+    ``DeckBuildRepository.claim_batch``.
+    """
+
+    PENDING = "pending"
+    RESOLVING = "resolving"
+    #: A card exists in the deck for this item. The only success state.
+    DONE = "done"
+    #: Out of attempts. The job continues; a human retries the item.
+    FAILED = "failed"
+    #: Resolved, but nothing was confidently selectable. Card written, flagged.
+    NEEDS_REVIEW = "needs_review"
+
+
+class SenseSelection(StrEnum):
+    """Which strategy chose a deck's sense. Recorded on every built item.
+
+    The review queue is "everything picked by the weak strategies", so this is
+    what makes human review a short list rather than the whole deck.
+    """
+
+    #: The template named the sense outright.
+    EXPLICIT = "explicit"
+    #: The template's free-text hint matched one sense well enough.
+    HINT = "hint"
+    #: The deck's category preferred this sense's context or part of speech.
+    CATEGORY = "category"
+    #: Nothing distinguished them; took the first, which is the commonest.
+    FIRST = "first"
+    #: A model ranked the senses. Opt-in per template, batched.
+    AI = "ai"
+    #: An admin picked it by hand, which outranks every strategy above.
+    MANUAL = "manual"
+
+    @property
+    def is_confident(self) -> bool:
+        """Whether this choice needs no human eye."""
+        return self in (SenseSelection.EXPLICIT, SenseSelection.MANUAL, SenseSelection.HINT)

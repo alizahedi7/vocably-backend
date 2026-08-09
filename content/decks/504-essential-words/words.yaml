@@ -1,0 +1,57 @@
+# The ordered headword list. Order is the product: this is the sequence the
+# course teaches, and nothing in the pipeline may reorder it.
+#
+# A bare string is a word with no sense preference — the ordinary case.
+# A mapping may add:
+#   sense: {pos: verb, context: Management}   # an exact pin; needs BOTH keys
+#   hint: "to give up completely"             # free text, scored against senses
+#
+# There is deliberately nowhere to put a definition or an example. Those are
+# generated; copying them from the source is the one thing this format forbids.
+
+units:
+  - name: Lesson 1
+    words:
+      - term: abandon
+        hint: "to give something up completely, or leave it behind for good"
+      - keen
+      - jealous
+      - tact
+      - oath
+      - vacant
+      - hardship
+      - gallant
+      - data
+      - unaccustomed
+      - bachelor
+      - qualify
+
+  - name: Lesson 2
+    words:
+      - corpse
+      - conceal
+      - dismal
+      - frigid
+      - inhabit
+      - numb
+      - peril
+      - recline
+      - shriek
+      - sinister
+      - tempt
+      - wager
+
+  - name: Lesson 3
+    words:
+      - typical
+      - minimum
+      - scarce
+      - annual
+      - persuade
+      - essential
+      - blend
+      - visible
+      - expensive
+      - talent
+      - devise
+      - wholesale

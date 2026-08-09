@@ -16,18 +16,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.admin_repository import AdminRepository
 from app.application.ports.ai_service import AIService
-from app.application.ports.dictionary_service import DictionaryService
 from app.application.ports.google_verifier import GoogleVerifier
 from app.application.ports.lookup_cache import LookupCacheRepository
 from app.application.ports.otp_sender import OTPSender
 from app.application.services.admin_service import AdminService
-from app.application.services.ai_studio_service import MAX_LOOKUP_SUGGESTIONS, AIStudioService
+from app.application.services.ai_studio_service import AIStudioService
 from app.application.services.auth_service import AuthService
+from app.application.services.content_admin_service import ContentAdminService
+from app.application.services.deck_build_service import DeckBuildService
 from app.application.services.deck_discovery_service import DeckDiscoveryService
 from app.application.services.deck_service import DeckService
 from app.application.services.deck_sharing_service import DeckSharingService
 from app.application.services.deck_unit_service import DeckUnitService
 from app.application.services.friend_service import FriendService
+from app.application.services.lexicon_service import LexiconService
 from app.application.services.study_service import StudyService
 from app.application.services.user_service import UserService
 from app.application.services.word_service import WordService
@@ -42,23 +44,28 @@ from app.core.rate_limit import RedisFixedWindowRateLimiter, SlidingWindowRateLi
 from app.core.security import TokenType, decode_token
 from app.domain.entities.user import User
 from app.domain.repositories.deck_activity_repository import DeckActivityRepository
+from app.domain.repositories.deck_build_repository import DeckBuildRepository
 from app.domain.repositories.deck_discovery_repository import DeckDiscoveryRepository
 from app.domain.repositories.deck_invite_repository import DeckInviteRepository
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_repository import DeckRepository
 from app.domain.repositories.deck_unit_repository import DeckUnitRepository
 from app.domain.repositories.friend_repository import FriendRepository
+from app.domain.repositories.lexicon_repository import LexiconRepository
 from app.domain.repositories.otp_repository import OTPChallengeRepository
 from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.domain.repositories.xp_repository import XpRepository
-from app.infrastructure.ai.caching_ai_service import CachingAIService
-from app.infrastructure.ai.grounded_ai_service import GroundedAIService, SenseTranslator
-from app.infrastructure.ai.prompts import PROMPT_VERSION
-from app.infrastructure.ai.stub_ai_service import StubAIService
-from app.infrastructure.ai.translate_prompts import TRANSLATE_PROMPT_VERSION
+from app.infrastructure.ai.factory import (
+    configured_model,
+    effective_prompt_version,
+    grounded_ai_provider,
+    lookup_chain,
+    raw_ai_provider,
+)
+from app.infrastructure.ai.lexicon_ai_service import SenseEnricher
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
 from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
@@ -67,6 +74,9 @@ from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
 from app.infrastructure.db.repositories.admin_repository import SqlAlchemyAdminRepository
 from app.infrastructure.db.repositories.deck_activity_repository import (
     SqlAlchemyDeckActivityRepository,
+)
+from app.infrastructure.db.repositories.deck_build_repository import (
+    SqlAlchemyDeckBuildRepository,
 )
 from app.infrastructure.db.repositories.deck_discovery_repository import (
     SqlAlchemyDeckDiscoveryRepository,
@@ -84,6 +94,9 @@ from app.infrastructure.db.repositories.deck_unit_repository import (
 from app.infrastructure.db.repositories.friend_repository import (
     SqlAlchemyFriendRepository,
 )
+from app.infrastructure.db.repositories.lexicon_repository import (
+    SqlAlchemyLexiconRepository,
+)
 from app.infrastructure.db.repositories.lookup_cache_repository import (
     SqlAlchemyLookupCacheRepository,
 )
@@ -99,7 +112,6 @@ from app.infrastructure.db.repositories.word_progress_repository import (
 )
 from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
 from app.infrastructure.db.repositories.xp_repository import SqlAlchemyXpRepository
-from app.infrastructure.dictionary.factory import dictionary_service
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -165,6 +177,14 @@ def get_review_event_repository(session: SessionDep) -> ReviewEventRepository:
     return SqlAlchemyReviewEventRepository(session)
 
 
+def get_lexicon_repository(session: SessionDep) -> LexiconRepository:
+    return SqlAlchemyLexiconRepository(session)
+
+
+def get_deck_build_repository(session: SessionDep) -> DeckBuildRepository:
+    return SqlAlchemyDeckBuildRepository(session)
+
+
 UserRepoDep = Annotated[UserRepository, Depends(get_user_repository)]
 DeckRepoDep = Annotated[DeckRepository, Depends(get_deck_repository)]
 WordRepoDep = Annotated[WordRepository, Depends(get_word_repository)]
@@ -180,103 +200,17 @@ OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
 AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
 LookupCacheRepoDep = Annotated[LookupCacheRepository, Depends(get_lookup_cache_repository)]
 ReviewEventRepoDep = Annotated[ReviewEventRepository, Depends(get_review_event_repository)]
+LexiconRepoDep = Annotated[LexiconRepository, Depends(get_lexicon_repository)]
+DeckBuildRepoDep = Annotated[DeckBuildRepository, Depends(get_deck_build_repository)]
 
 
 # ── Outbound adapters (selected by config) ───────────────────
+# Construction lives in ``app.infrastructure.ai.factory`` because the deck-build
+# worker needs the identical chain without importing FastAPI. These are thin
+# aliases so the dependency graph still reads from this one composition root.
 def get_ai_provider() -> AIService:
-    """The lookup pipeline below the cache: provider, grounded when enabled."""
-    provider = _raw_ai_provider()
-    if not settings.dictionary_enabled:
-        return provider
-    return GroundedAIService(
-        provider,
-        _dictionary_service(),
-        # The provider doubles as the translator: it satisfies SenseTranslator
-        # structurally, and reusing it keeps one HTTP client and one set of
-        # response guardrails for both paths.
-        translator=cast("SenseTranslator", provider),
-        max_cards=MAX_LOOKUP_SUGGESTIONS,
-        rewrite_definitions=settings.dictionary_rewrite_definitions,
-    )
-
-
-def _raw_ai_provider() -> AIService:
-    """The provider adapter itself, before grounding or caching."""
-    if settings.ai_provider == "anthropic":
-        if not settings.anthropic_api_key:
-            raise RuntimeError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
-        return _anthropic_ai_service()
-    if settings.ai_provider == "avalai":
-        if not settings.avalai_api_key or not settings.avalai_model:
-            raise RuntimeError("AI_PROVIDER=avalai requires AVALAI_API_KEY and AVALAI_MODEL.")
-        return _avalai_ai_service()
-    return StubAIService()
-
-
-def _dictionary_service() -> DictionaryService:
-    """The process-wide dictionary adapter.
-
-    The construction moved to ``app.infrastructure.dictionary.factory`` once the
-    phonetic-backfill worker needed the same adapter without importing FastAPI.
-    It is still memoized there, so this stays one instance per process.
-    """
-    return dictionary_service()
-
-
-def _effective_prompt_version() -> int:
-    """The cache-key version for the whole lookup pipeline, not one prompt.
-
-    Grounded and generated cards read differently, so they must never share a
-    key — otherwise flipping ``DICTIONARY_ENABLED`` would serve a mix of the two
-    and make a rollback invisible. Encoding both versions in one integer keeps
-    ``LookupCacheKey`` unchanged and lets either prompt be bumped independently.
-    """
-    if not settings.dictionary_enabled:
-        return PROMPT_VERSION
-    # The two grounded modes write visibly different card fronts — one shows the
-    # dictionary's wording, the other a rewrite — so they get distinct keys too.
-    mode = 2 if settings.dictionary_rewrite_definitions else 1
-    return (PROMPT_VERSION * 1000 + TRANSLATE_PROMPT_VERSION) * 10 + mode
-
-
-def _configured_model() -> str:
-    """The model name to record on cached entries, for provenance only."""
-    if settings.ai_provider == "anthropic":
-        return settings.anthropic_model
-    if settings.ai_provider == "avalai":
-        return settings.avalai_model
-    return ""
-
-
-@lru_cache
-def _anthropic_ai_service() -> AIService:
-    # Cached so one HTTP client (and its connection pool) is shared across
-    # requests instead of being rebuilt per lookup.
-    from app.infrastructure.ai.anthropic_ai_service import AnthropicAIService
-
-    return AnthropicAIService(
-        api_key=settings.anthropic_api_key,
-        model=settings.anthropic_model,
-        base_url=settings.anthropic_base_url,
-        timeout_seconds=settings.anthropic_timeout_seconds,
-        max_tokens=settings.anthropic_max_tokens,
-        extra_headers=settings.anthropic_header_map,
-    )
-
-
-@lru_cache
-def _avalai_ai_service() -> AIService:
-    # Cached so one HTTP client (and its connection pool) is shared across
-    # requests instead of being rebuilt per lookup.
-    from app.infrastructure.ai.avalai_ai_service import AvalAIService
-
-    return AvalAIService(
-        api_key=settings.avalai_api_key,
-        model=settings.avalai_model,
-        base_url=settings.avalai_base_url,
-        timeout_seconds=settings.avalai_timeout_seconds,
-        max_tokens=settings.avalai_max_tokens,
-    )
+    """The lookup pipeline below the lexicon: provider, grounded when enabled."""
+    return grounded_ai_provider()
 
 
 def get_otp_sender() -> OTPSender:
@@ -316,25 +250,32 @@ def get_google_verifier() -> GoogleVerifier:
 AIProviderDep = Annotated[AIService, Depends(get_ai_provider)]
 
 
-def get_ai_service(provider: AIProviderDep, cache: LookupCacheRepoDep) -> AIService:
-    """The AI service the use cases get: the provider, cached when enabled.
-
-    Composed per request because the cache repository is bound to the
-    request-scoped session, while the provider adapter itself stays
-    process-wide (see ``_anthropic_ai_service``) so its connection pool is
-    reused. The wrapper is a plain object — building one per request costs
-    nothing and opens no connections.
-    """
-    if not settings.ai_cache_enabled:
-        return provider
-    return CachingAIService(
-        provider,
-        cache,
-        unsupported_ttl_seconds=settings.ai_cache_unsupported_ttl_seconds,
+def get_lexicon_service(lexicon: LexiconRepoDep) -> LexiconService:
+    """Reads and writes to the durable lexicon, bound to this request's session."""
+    return LexiconService(
+        lexicon,
+        content_version=effective_prompt_version(),
         provider=settings.ai_provider,
-        model=_configured_model(),
-        prompt_version=_effective_prompt_version(),
+        model=configured_model(),
     )
+
+
+LexiconServiceDep = Annotated[LexiconService, Depends(get_lexicon_service)]
+
+
+def get_ai_service(
+    provider: AIProviderDep,
+    session: SessionDep,
+    lexicon: LexiconServiceDep,
+) -> AIService:
+    """The AI service the use cases get — see ``factory.lookup_chain`` for the order.
+
+    Composed per request because both the cache repository and the lexicon
+    repository are bound to the request-scoped session, while the provider
+    adapter stays process-wide so its connection pool is reused. The wrappers are
+    plain objects: building them per request costs nothing and opens nothing.
+    """
+    return lookup_chain(session, lexicon, provider=provider)
 
 
 AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
@@ -402,6 +343,39 @@ def get_deck_discovery_service(
     return DeckDiscoveryService(discovery, members, invites, users, friends)
 
 
+def get_deck_build_service(
+    builds: DeckBuildRepoDep,
+    decks: DeckRepoDep,
+    members: DeckMemberRepoDep,
+    units: DeckUnitRepoDep,
+    words: WordRepoDep,
+    discovery: DeckDiscoveryRepoDep,
+    lexicon: LexiconServiceDep,
+    ai: AIServiceDep,
+) -> DeckBuildService:
+    """The build pipeline, wired to the same AI chain a learner's lookup uses.
+
+    Deliberately not given a private path to the provider: reuse is structural
+    only if the builder goes through the cache and the lexicon like everyone
+    else. The enricher is the raw provider adapter, which satisfies
+    :class:`SenseEnricher` structurally — the wrappers above it have nothing to
+    add to a call that is already asking for what the lexicon does not hold.
+    """
+    return DeckBuildService(
+        builds,
+        decks,
+        members,
+        units,
+        words,
+        discovery,
+        lexicon,
+        ai,
+        content_version=effective_prompt_version(),
+        enricher=cast("SenseEnricher", raw_ai_provider()),
+        claim_timeout_seconds=settings.deck_build_claim_timeout_seconds,
+    )
+
+
 def get_friend_service(friends: FriendRepoDep, users: UserRepoDep) -> FriendService:
     return FriendService(friends, users)
 
@@ -427,6 +401,19 @@ def get_admin_service(admin_repo: AdminRepoDep) -> AdminService:
     return AdminService(admin_repo)
 
 
+def get_content_admin_service(
+    builds: DeckBuildRepoDep,
+    lexicon: LexiconRepoDep,
+    build_service: DeckBuildServiceDep,
+) -> ContentAdminService:
+    return ContentAdminService(
+        builds,
+        lexicon,
+        build_service,
+        current_content_version=effective_prompt_version(),
+    )
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 DeckServiceDep = Annotated[DeckService, Depends(get_deck_service)]
@@ -435,9 +422,11 @@ DeckUnitServiceDep = Annotated[DeckUnitService, Depends(get_deck_unit_service)]
 DeckSharingServiceDep = Annotated[DeckSharingService, Depends(get_deck_sharing_service)]
 DeckDiscoveryServiceDep = Annotated[DeckDiscoveryService, Depends(get_deck_discovery_service)]
 FriendServiceDep = Annotated[FriendService, Depends(get_friend_service)]
+DeckBuildServiceDep = Annotated[DeckBuildService, Depends(get_deck_build_service)]
 StudyServiceDep = Annotated[StudyService, Depends(get_study_service)]
 AIStudioServiceDep = Annotated[AIStudioService, Depends(get_ai_studio_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
+ContentAdminServiceDep = Annotated[ContentAdminService, Depends(get_content_admin_service)]
 
 
 # ── Abuse protection ─────────────────────────────────────────

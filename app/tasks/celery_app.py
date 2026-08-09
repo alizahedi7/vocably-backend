@@ -44,6 +44,7 @@ QUEUE_DEFAULT = "default"
 TASK_MODULES = [
     "app.tasks.maintenance",
     "app.tasks.phonetics",
+    "app.tasks.deck_build",
 ]
 
 celery_app = Celery("vocably", include=TASK_MODULES)

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.api.deps import _effective_prompt_version
 from app.core.config import settings
+from app.infrastructure.ai.factory import effective_prompt_version as _effective_prompt_version
 from app.infrastructure.ai.prompts import PROMPT_VERSION
 from app.infrastructure.ai.translate_prompts import TRANSLATE_PROMPT_VERSION
 

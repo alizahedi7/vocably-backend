@@ -46,5 +46,12 @@ class Word:
     # renders it as optional and shows nothing at all when it is absent.
     phonetic: str | None = None
 
+    #: The shared lexicon sense this card was built from, when it was built by
+    #: the deck pipeline rather than typed. Provenance only: the card carries its
+    #: own copy of the text, so an explicit refresh — never an implicit one — is
+    #: what pushes a corrected sense back into cards nobody has edited.
+    #: ``None`` for every hand-written card, which is most of them.
+    lexeme_sense_id: UUID | None = None
+
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))

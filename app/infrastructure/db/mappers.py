@@ -6,18 +6,39 @@ domain stay free of SQLAlchemy.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from app.domain.entities.deck import Deck
+from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob, SenseHint
 from app.domain.entities.deck_member import DeckMember
 from app.domain.entities.deck_unit import DeckUnit
+from app.domain.entities.lexeme import Lexeme, LexemeSense, SenseTranslation
 from app.domain.entities.otp_challenge import OtpChallenge
 from app.domain.entities.review_event import ReviewEvent
 from app.domain.entities.user import User
 from app.domain.entities.word import Word
 from app.domain.entities.word_progress import WordProgress
-from app.domain.enums import AgeRange, AuthMethod, DeckRole, LeitnerBox, ReviewGrade
+from app.domain.enums import (
+    AgeRange,
+    AuthMethod,
+    DeckBuildItemState,
+    DeckBuildState,
+    DeckRole,
+    LeitnerBox,
+    ReviewGrade,
+    SenseSelection,
+    SenseSource,
+    SenseStatus,
+)
 from app.infrastructure.db.models.deck import DeckModel
+from app.infrastructure.db.models.deck_build import DeckBuildItemModel, DeckBuildJobModel
 from app.infrastructure.db.models.deck_member import DeckMemberModel
 from app.infrastructure.db.models.deck_unit import DeckUnitModel
+from app.infrastructure.db.models.lexicon import (
+    LexemeModel,
+    LexemeSenseModel,
+    LexemeSenseTranslationModel,
+)
 from app.infrastructure.db.models.otp_challenge import OtpChallengeModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
@@ -112,6 +133,7 @@ def word_to_entity(m: WordModel) -> Word:
         example=m.example,
         sense_label=m.sense_label,
         phonetic=m.phonetic,
+        lexeme_sense_id=m.lexeme_sense_id,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -131,6 +153,11 @@ def apply_word(entity: Word, m: WordModel) -> None:
     m.example = entity.example
     m.sense_label = entity.sense_label
     m.phonetic = entity.phonetic
+    # Provenance, like created_by_user_id: set when the pipeline builds the card
+    # and never cleared by a later edit, so a learner rewording their copy does
+    # not erase the record of which shared sense it came from.
+    if entity.lexeme_sense_id is not None:
+        m.lexeme_sense_id = entity.lexeme_sense_id
 
 
 # ── Word progress ────────────────────────────────────────────
@@ -263,3 +290,126 @@ def apply_otp(entity: OtpChallenge, m: OtpChallengeModel) -> None:
     m.expires_at = entity.expires_at
     m.attempts = entity.attempts
     m.consumed = entity.consumed
+
+
+# ── Lexicon ──────────────────────────────────────────────────
+def lexeme_sense_translation_to_entity(m: LexemeSenseTranslationModel) -> SenseTranslation:
+    return SenseTranslation(
+        id=m.id,
+        sense_id=m.sense_id,
+        native_language=m.native_language,
+        native_meaning=m.native_meaning,
+        status=SenseStatus(m.status),
+        content_version=m.content_version,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+def lexeme_sense_to_entity(
+    m: LexemeSenseModel,
+    translations: list[LexemeSenseTranslationModel] | None = None,
+) -> LexemeSense:
+    return LexemeSense(
+        id=m.id,
+        lexeme_id=m.lexeme_id,
+        sense_key=m.sense_key,
+        register=m.register,
+        position=m.position,
+        part_of_speech=m.part_of_speech,
+        context=m.context,
+        definition=m.definition,
+        example=m.example,
+        status=SenseStatus(m.status),
+        content_version=m.content_version,
+        provider=m.provider,
+        model=m.model,
+        source=SenseSource(m.source),
+        translations=[lexeme_sense_translation_to_entity(t) for t in (translations or [])],
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+def lexeme_to_entity(m: LexemeModel, senses: list[LexemeSense] | None = None) -> Lexeme:
+    return Lexeme(
+        id=m.id,
+        lemma=m.lemma,
+        language=m.language,
+        display_term=m.display_term,
+        phonetic=m.phonetic,
+        senses=senses or [],
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+# ── Deck builds ──────────────────────────────────────────────
+def deck_build_job_to_entity(m: DeckBuildJobModel) -> DeckBuildJob:
+    return DeckBuildJob(
+        id=m.id,
+        template_slug=m.template_slug,
+        template_version=m.template_version,
+        template_hash=m.template_hash,
+        deck_id=m.deck_id,
+        state=DeckBuildState(m.state),
+        content_version=m.content_version,
+        native_language=m.native_language,
+        register=m.register,
+        category=m.category,
+        strategies=tuple(SenseSelection(name) for name in m.strategies.split(",") if name),
+        items_total=m.items_total,
+        items_done=m.items_done,
+        items_failed=m.items_failed,
+        lexemes_reused=m.lexemes_reused,
+        lexemes_generated=m.lexemes_generated,
+        senses_enriched=m.senses_enriched,
+        ai_calls=m.ai_calls,
+        created_by_user_id=m.created_by_user_id,
+        started_at=m.started_at,
+        finished_at=m.finished_at,
+        last_error=m.last_error,
+        created_at=m.created_at,
+        updated_at=m.updated_at,
+    )
+
+
+def deck_build_item_to_entity(m: DeckBuildItemModel) -> DeckBuildItem:
+    raw = m.hint or {}
+    return DeckBuildItem(
+        id=m.id,
+        job_id=m.job_id,
+        position=m.position,
+        unit_label=m.unit_label,
+        unit_position=m.unit_position,
+        source_term=m.source_term,
+        normalized=m.normalized,
+        hint=SenseHint(
+            part_of_speech=str(raw.get("part_of_speech") or ""),
+            context=str(raw.get("context") or ""),
+            gloss=str(raw.get("gloss") or ""),
+        ),
+        state=DeckBuildItemState(m.state),
+        lexeme_id=m.lexeme_id,
+        sense_id=m.sense_id,
+        word_id=m.word_id,
+        selection=SenseSelection(m.selection) if m.selection else None,
+        selection_score=m.selection_score,
+        attempts=m.attempts,
+        next_attempt_at=m.next_attempt_at,
+        last_error=m.last_error,
+        enriched=m.enriched,
+        claimed_at=m.claimed_at,
+        updated_at=m.updated_at or datetime.now(UTC),
+    )
+
+
+def hint_to_payload(hint: SenseHint) -> dict[str, str] | None:
+    """Store nothing rather than three empty strings for the common case."""
+    if hint.is_empty:
+        return None
+    return {
+        "part_of_speech": hint.part_of_speech,
+        "context": hint.context,
+        "gloss": hint.gloss,
+    }

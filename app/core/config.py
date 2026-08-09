@@ -177,6 +177,42 @@ class Settings(BaseSettings):
     #: reason to contend.
     phonetic_backfill_hour: int = Field(default=4, ge=0, le=23)
 
+    # ── Lexicon (durable shared vocabulary knowledge) ─────────
+    #: Whether lookups read from and write to the shared lexicon. On, this layer
+    #: sits *inside* the lookup cache: repeat requests are still answered by the
+    #: cache, and the lexicon answers the ones the cache cannot — which, the day
+    #: a prompt version is bumped, is every one of them. Off means a prompt edit
+    #: re-buys the entire corpus, so leave it on outside of debugging.
+    lexicon_enabled: bool = True
+    #: Where the single-flight lock lives. Defaults to a third logical database
+    #: on the same Redis: it holds nothing durable, and a flush of it costs at
+    #: most a few duplicated provider calls.
+    lexicon_redis_url: str = "redis://localhost:6379/2"
+    #: Deduplicate concurrent generation of the same word across workers and
+    #: requests. Pure cost saving — correctness comes from the lexicon's unique
+    #: constraints — so an unreachable Redis degrades to "both generate".
+    lexicon_single_flight: bool = True
+
+    # ── Deck build pipeline ───────────────────────────────────
+    #: Words one ``vocably.ai.build_deck`` run resolves before re-queuing itself.
+    #: This times worker concurrency *is* the rate limit on provider calls, which
+    #: is why there is no token bucket anywhere in the pipeline.
+    deck_build_batch_size: int = Field(default=25, ge=1, le=500)
+    #: Pause between batches, in seconds. Spreads a 500-word build out rather
+    #: than firing it at a provider as fast as the worker can loop.
+    deck_build_batch_delay_seconds: int = Field(default=5, ge=0, le=600)
+    #: How long a claimed item may sit untouched before another worker may take
+    #: it — i.e. how long after a worker dies its word stays parked.
+    deck_build_claim_timeout_seconds: int = Field(default=600, ge=60, le=3600)
+    #: Phone number of the account that owns official pre-built decks. A real
+    #: user row, because decks, memberships and cards all key off one; never a
+    #: person, and deliberately not deletable through the account-deletion flow.
+    content_owner_phone: str = "+000000000000"
+    #: Rough price of one lookup-shaped provider call, used only to estimate a
+    #: build's remaining spend on the admin screen. An estimate labelled as one,
+    #: never billing.
+    ai_cost_per_call_usd: float = 0.004
+
     # ── Review history ────────────────────────────────────────
     #: How many months of monthly partitions to keep ahead of today. The
     #: maintenance job (``make partitions``) keeps this window rolling; the

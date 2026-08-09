@@ -36,6 +36,37 @@ _TOPIC_PHRASES: dict[str, str] = {
 }
 
 
+#: One word, in the script each language actually uses, for the stub's generic
+#: headline. Not a translation and not pretending to be one — but the *script*
+#: has to be right, because the validator's strongest rule is "a Persian
+#: headline written in English is a rejected sense", and a stub that answers in
+#: English can never exercise the path it guards.
+_SCRIPT_SAMPLES: dict[str, str] = {
+    "persian": "واژه",
+    "farsi": "واژه",
+    "arabic": "كلمة",
+    "russian": "слово",
+    "ukrainian": "слово",
+    "greek": "λέξη",
+    "hebrew": "מילה",
+    "hindi": "शब्द",
+    "japanese": "ことば",
+    "korean": "낱말",
+    "chinese": "词",
+    "thai": "คำ",
+    "armenian": "բառ",
+    "georgian": "სიტყვა",
+}
+
+
+def _native_headline(term: str, learner: LearnerContext) -> str:
+    """A headline in the learner's own script, so stub output is *shaped* right."""
+    sample = _SCRIPT_SAMPLES.get(learner.native_language.strip().casefold())
+    if sample is None:
+        return f"“{term}” in {learner.native_language}"
+    return f"{sample} “{term}”"
+
+
 def _theme(learner: LearnerContext) -> str | None:
     for topic in learner.interests:
         phrase = _TOPIC_PHRASES.get(topic)
@@ -142,7 +173,7 @@ class StubAIService(AIService):
             term=term.strip(),
             suggestions=[
                 MeaningSuggestion(
-                    native_meaning=f"“{term}” in {learner.native_language}",
+                    native_meaning=_native_headline(term, learner),
                     context=(theme or "general").title(),
                     part_of_speech="noun",
                     definition=f"the most common everyday sense of “{term}”",
@@ -219,6 +250,45 @@ class StubAIService(AIService):
             if len(suggestions) >= max_cards:
                 break
         return suggestions
+
+    async def enrich_senses(
+        self,
+        term: str,
+        known: list[MeaningSuggestion],
+        wanted: str,
+        learner: LearnerContext,
+        max_new: int,
+    ) -> list[MeaningSuggestion]:
+        """Invent exactly the sense that was asked for, offline.
+
+        Deterministic on ``wanted`` and careful about one thing the real prompt
+        also insists on: it never returns a sense whose ``(part of speech,
+        context)`` pair is already among ``known``. A stub that duplicated would
+        make the enrichment tests pass while the constraint that actually
+        prevents duplicates went untested.
+
+        An empty ``wanted`` yields an empty list, mirroring the real answer when
+        a word simply has no further sense worth a card.
+        """
+        await self._delay()
+        requested = wanted.strip()
+        if not requested or max_new <= 0:
+            return []
+        taken = {(k.part_of_speech.casefold(), k.context.casefold()) for k in known}
+        context = "Requested"
+        suffix = 1
+        while ("verb", context.casefold()) in taken:
+            suffix += 1
+            context = f"Requested {suffix}"
+        return [
+            MeaningSuggestion(
+                native_meaning=f"{requested[:60]} in {learner.native_language}",
+                context=context,
+                part_of_speech="verb",
+                definition=requested[:200],
+                example=f"They {term} the team every week.",
+            )
+        ]
 
     async def generate_story(
         self,

@@ -26,6 +26,12 @@ from app.application.ports.ai_service import (
 )
 from app.core.exceptions import ExternalServiceError
 from app.core.logging import get_logger
+from app.infrastructure.ai.enrichment_prompts import (
+    ENRICH_JSON_SCHEMA,
+    enrich_system_prompt,
+    enrich_user_prompt,
+    render_stored,
+)
 from app.infrastructure.ai.payloads import (
     LookupPayload,
     StoryPayload,
@@ -179,6 +185,42 @@ class AvalAIService(AIService):
             model_type=LookupPayload,
         )
         return [s.to_dto() for s in payload.senses[:max_cards]]
+
+    async def enrich_senses(
+        self,
+        term: str,
+        known: list[MeaningSuggestion],
+        wanted: str,
+        learner: LearnerContext,
+        max_new: int,
+    ) -> list[MeaningSuggestion]:
+        """Ask for the senses of ``term`` we do not already hold.
+
+        Satisfies :class:`~app.infrastructure.ai.lexicon_ai_service.SenseEnricher`
+        structurally. Reuses ``_complete``, so it inherits the same schema
+        enforcement, Pydantic validation and single retry as every other call.
+
+        An empty list is a legitimate answer — the word may simply not have the
+        sense that was asked for — and the caller must treat it as one rather
+        than as a failure to retry.
+        """
+        payload = await self._complete(
+            system=enrich_system_prompt(
+                native_language=learner.native_language,
+                max_new=max_new,
+            ),
+            user=enrich_user_prompt(
+                term,
+                stored=render_stored(list(known)),
+                wanted=wanted,
+                native_language=learner.native_language,
+                max_new=max_new,
+            ),
+            schema=ENRICH_JSON_SCHEMA,
+            schema_name="lookup",
+            model_type=LookupPayload,
+        )
+        return [s.to_dto() for s in payload.senses[:max_new]]
 
     async def generate_story(
         self,

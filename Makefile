@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev run migrate makemigration downgrade test lint format typecheck up down logs seed grant-admin partitions worker beat
+.PHONY: help install dev run migrate makemigration downgrade test lint format typecheck up down logs seed grant-admin partitions worker beat deck-validate deck-plan deck-build
 
 # System tools (e.g. a sourced ROS environment) may export PYTHONPATH, which leaks their
 # packages into uv's isolated venv and breaks pytest plugin autoload. Blank it for every
@@ -33,6 +33,15 @@ grant-admin: ## Grant admin to a user (usage: make grant-admin who="+98912123456
 
 partitions: ## Roll the word_reviews partition window forward (add prune=1 to drop expired months)
 	uv run python -m app.scripts.partition_word_reviews $(if $(prune),--prune,)
+
+deck-validate: ## Check a deck template offline (usage: make deck-validate [slug=504-essential-words])
+	uv run python -m app.scripts.build_deck validate $(slug)
+
+deck-plan: ## Create the deck, units and item plan for a template (spends nothing)
+	uv run python -m app.scripts.build_deck plan "$(slug)" $(if $(owner),--owner "$(owner)",)
+
+deck-build: ## Resolve a planned build (usage: make deck-build job=<id> [queue=1])
+	uv run python -m app.scripts.build_deck build "$(job)" $(if $(queue),--queue,)
 
 worker: ## Run a Celery worker (background tasks)
 	uv run celery -A app.tasks worker --loglevel=info -Q default,maintenance,ai

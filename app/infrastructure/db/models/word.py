@@ -47,3 +47,15 @@ class WordModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: task fills it in. Bounded rather than ``Text`` because it is one short
     #: transcription of one card front, never prose.
     phonetic: Mapped[str | None] = mapped_column(String(200))
+
+    #: Which shared lexicon sense this card was built from, when it was built
+    #: rather than typed. Provenance, never a read path: the card holds its own
+    #: copy of the text, because a learner may edit it and one person's wording
+    #: must never flow back into content everybody sees.
+    #:
+    #: ``SET NULL`` for the same reason ``created_by_user_id`` is: attribution is
+    #: exactly what may be lost, and a card must outlive the row it came from.
+    #: NULL is the ordinary case — every hand-typed card has it.
+    lexeme_sense_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("lexeme_senses.id", ondelete="SET NULL"), index=True
+    )
