@@ -195,14 +195,16 @@ async def build_items(
     and what a guessing strategy chose. On a good build that is a few dozen rows
     out of five hundred, which is what makes review something that happens.
     """
-    items, total = await content.items(
+    rows, total = await content.items(
         job_id,
         state=state,
         needs_attention=needs_attention,
         limit=limit,
         offset=offset,
     )
-    return BuildItemPageOut(items=[BuildItemOut.from_entity(i) for i in items], total=total)
+    return BuildItemPageOut(
+        items=[BuildItemOut.from_entity(item, card) for item, card in rows], total=total
+    )
 
 
 @router.post("/builds/{job_id}/retry", response_model=RetryOut)

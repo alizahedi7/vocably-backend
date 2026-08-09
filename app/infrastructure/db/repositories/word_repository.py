@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, cast
 from uuid import UUID
 
@@ -38,6 +39,13 @@ class SqlAlchemyWordRepository(WordRepository):
             stmt = stmt.limit(limit)
         if offset:
             stmt = stmt.offset(offset)
+        models = (await self._session.execute(stmt)).scalars().all()
+        return [mappers.word_to_entity(m) for m in models]
+
+    async def list_by_ids(self, word_ids: Sequence[UUID]) -> list[Word]:
+        if not word_ids:
+            return []
+        stmt = select(WordModel).where(WordModel.id.in_(word_ids))
         models = (await self._session.execute(stmt)).scalars().all()
         return [mappers.word_to_entity(m) for m in models]
 

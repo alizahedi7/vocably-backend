@@ -8,6 +8,7 @@ job — including every read that needs both, which returns a ``StudiedWord``.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from uuid import UUID
 
 from app.domain.entities.word import Word
@@ -16,6 +17,15 @@ from app.domain.entities.word import Word
 class WordRepository(ABC):
     @abstractmethod
     async def get(self, word_id: UUID) -> Word | None: ...
+
+    @abstractmethod
+    async def list_by_ids(self, word_ids: Sequence[UUID]) -> list[Word]:
+        """The cards with these ids, in one query.
+
+        Exists for the admin review screen, which shows a page of build items
+        beside the card each one produced. Fetching those one at a time would be
+        the N+1 the deck roster already has a test guarding against.
+        """
 
     @abstractmethod
     async def list_in_deck(

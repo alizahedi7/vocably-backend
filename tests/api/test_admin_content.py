@@ -223,3 +223,78 @@ async def test_an_unknown_build_is_a_404(client: AsyncClient, make_user: UserFac
     headers = await _admin_headers(make_user)
     missing = "00000000-0000-0000-0000-000000000000"
     assert (await client.get(f"/api/v1/admin/builds/{missing}", headers=headers)).status_code == 404
+
+
+async def test_a_build_item_carries_the_card_a_reviewer_must_judge(
+    client: AsyncClient,
+    make_user: UserFactory,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A row saying "chosen by: first" is unreviewable without the card itself."""
+    from app.domain.entities.deck import Deck
+    from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob
+    from app.domain.entities.word import Word
+    from app.infrastructure.db.repositories.deck_build_repository import (
+        SqlAlchemyDeckBuildRepository,
+    )
+    from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
+    from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
+
+    headers = await _admin_headers(make_user)
+    owner = await make_user(phone="+989120000999")
+
+    async with session_factory() as session:
+        deck = await SqlAlchemyDeckRepository(session).add(Deck(user_id=owner.id, name="D"))
+        word = await SqlAlchemyWordRepository(session).add(
+            Word(
+                deck_id=deck.id,
+                term="run",
+                meaning="دویدن",
+                definition="to move using your legs, faster than walking",
+                example="I run every morning.",
+                sense_label="Movement",
+                phonetic="/rʌn/",
+            )
+        )
+        job = DeckBuildJob(deck_id=deck.id, template_slug="t")
+        item = DeckBuildItem(job_id=job.id, position=0, source_term="run")
+        builds = SqlAlchemyDeckBuildRepository(session)
+        await builds.create_job(job, [item])
+        # `create_job` writes the plan only — at plan time no card exists yet.
+        # The build attaches word_id when it materialises the card.
+        item.word_id = word.id
+        await builds.save_item(item)
+        await session.commit()
+
+    response = await client.get(f"/api/v1/admin/builds/{job.id}/items", headers=headers)
+
+    assert response.status_code == 200, response.text
+    card = response.json()["items"][0]["card"]
+    assert card["term"] == "run"
+    assert card["meaning"] == "دویدن"
+    assert card["senseLabel"] == "Movement"
+    assert card["phonetic"] == "/rʌn/"
+    assert card["example"] == "I run every morning."
+
+
+async def test_an_item_with_no_card_yet_reports_none_rather_than_a_blank(
+    client: AsyncClient,
+    make_user: UserFactory,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A pending or failed item has no card, and must not render as an empty one."""
+    from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob
+    from app.infrastructure.db.repositories.deck_build_repository import (
+        SqlAlchemyDeckBuildRepository,
+    )
+
+    headers = await _admin_headers(make_user)
+    async with session_factory() as session:
+        job = DeckBuildJob(template_slug="t")
+        await SqlAlchemyDeckBuildRepository(session).create_job(
+            job, [DeckBuildItem(job_id=job.id, position=0, source_term="keen")]
+        )
+        await session.commit()
+
+    response = await client.get(f"/api/v1/admin/builds/{job.id}/items", headers=headers)
+    assert response.json()["items"][0]["card"] is None

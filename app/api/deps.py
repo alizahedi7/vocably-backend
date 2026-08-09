@@ -406,11 +406,13 @@ def get_admin_service(admin_repo: AdminRepoDep) -> AdminService:
 def get_content_admin_service(
     builds: DeckBuildRepoDep,
     lexicon: LexiconRepoDep,
+    words: WordRepoDep,
     build_service: DeckBuildServiceDep,
 ) -> ContentAdminService:
     return ContentAdminService(
         builds,
         lexicon,
+        words,
         build_service,
         current_content_version=effective_prompt_version(),
     )

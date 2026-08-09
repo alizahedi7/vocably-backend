@@ -27,6 +27,7 @@ from app.application.dto import (
 from app.application.services.content_admin_service import BuildJobDetail
 from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob
 from app.domain.entities.lexeme import Lexeme, LexemeSense
+from app.domain.entities.word import Word
 from app.domain.enums import AuthMethod, SenseStatus
 from app.domain.repositories.lexicon_repository import LexiconStats
 
@@ -326,6 +327,36 @@ class BuildJobDetailOut(_CamelModel):
         )
 
 
+class BuildCardOut(_CamelModel):
+    """The card an item produced — what a reviewer is actually judging.
+
+    A row saying "chosen by: first" is unreviewable on its own; whether that was
+    the right sense is a question about the meaning, definition and example it
+    picked.
+    """
+
+    id: UUID
+    term: str
+    meaning: str
+    definition: str | None
+    example: str | None
+    sense_label: str | None = Field(serialization_alias="senseLabel")
+    #: ``null`` = never looked up; ``""`` = the dictionary has no IPA for it.
+    phonetic: str | None
+
+    @classmethod
+    def from_entity(cls, word: Word) -> BuildCardOut:
+        return cls(
+            id=word.id,
+            term=word.term,
+            meaning=word.meaning,
+            definition=word.definition,
+            example=word.example,
+            sense_label=word.sense_label,
+            phonetic=word.phonetic,
+        )
+
+
 class BuildItemOut(_CamelModel):
     id: UUID
     position: int
@@ -341,9 +372,10 @@ class BuildItemOut(_CamelModel):
     enriched: bool
     last_error: str | None = Field(serialization_alias="lastError")
     hint: str
+    card: BuildCardOut | None = None
 
     @classmethod
-    def from_entity(cls, item: DeckBuildItem) -> BuildItemOut:
+    def from_entity(cls, item: DeckBuildItem, card: Word | None = None) -> BuildItemOut:
         hint = item.hint
         rendered = f"{hint.part_of_speech} · {hint.context}" if hint.is_pinned else hint.gloss
         return cls(
@@ -361,6 +393,7 @@ class BuildItemOut(_CamelModel):
             enriched=item.enriched,
             last_error=item.last_error,
             hint=rendered,
+            card=BuildCardOut.from_entity(card) if card else None,
         )
 
 

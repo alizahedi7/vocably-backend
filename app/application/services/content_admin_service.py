@@ -20,9 +20,11 @@ from app.core.config import settings
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob
 from app.domain.entities.lexeme import Lexeme, LexemeSense
+from app.domain.entities.word import Word
 from app.domain.enums import DeckBuildItemState, SenseSelection, SenseStatus
 from app.domain.repositories.deck_build_repository import DeckBuildRepository
 from app.domain.repositories.lexicon_repository import LexiconRepository, LexiconStats
+from app.domain.repositories.word_repository import WordRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,12 +51,14 @@ class ContentAdminService:
         self,
         builds: DeckBuildRepository,
         lexicon: LexiconRepository,
+        words: WordRepository,
         build_service: DeckBuildService,
         *,
         current_content_version: int,
     ) -> None:
         self._builds = builds
         self._lexicon = lexicon
+        self._words = words
         self._build_service = build_service
         self._current_version = current_content_version
 
@@ -88,16 +92,27 @@ class ContentAdminService:
         needs_attention: bool = False,
         limit: int,
         offset: int,
-    ) -> tuple[list[DeckBuildItem], int]:
+    ) -> tuple[list[tuple[DeckBuildItem, Word | None]], int]:
+        """Items of a build, each beside the card it produced.
+
+        Reviewing a build means judging the *card*, not the row — a reviewer
+        cannot tell whether "first sense" was the right pick without reading the
+        meaning, definition and example it chose. The cards are fetched in one
+        query for the whole page rather than one per row.
+        """
         if await self._builds.get_job(job_id) is None:
             raise NotFoundError("Build job not found.")
-        return await self._builds.list_items(
+        items, total = await self._builds.list_items(
             job_id,
             states=(state,) if state else (),
             needs_attention=needs_attention,
             limit=limit,
             offset=offset,
         )
+        cards = {
+            w.id: w for w in await self._words.list_by_ids([i.word_id for i in items if i.word_id])
+        }
+        return [(item, cards.get(item.word_id) if item.word_id else None) for item in items], total
 
     async def retry(self, job_id: UUID) -> int:
         """Put a job's failed items back in the queue. Does not itself run them."""
