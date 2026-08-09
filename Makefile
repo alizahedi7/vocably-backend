@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev run migrate makemigration downgrade test lint format typecheck up down logs seed grant-admin partitions worker beat deck-validate deck-plan deck-build
+.PHONY: help install dev run migrate makemigration downgrade test lint format typecheck up down logs seed grant-admin partitions worker beat deck-validate deck-plan deck-build deck-sync-meta
 
 # System tools (e.g. a sourced ROS environment) may export PYTHONPATH, which leaks their
 # packages into uv's isolated venv and breaks pytest plugin autoload. Blank it for every
@@ -39,6 +39,9 @@ deck-validate: ## Check a deck template offline (usage: make deck-validate [slug
 
 deck-plan: ## Create the deck, units and item plan for a template (spends nothing)
 	uv run python -m app.scripts.build_deck plan "$(slug)" $(if $(owner),--owner "$(owner)",)
+
+deck-sync-meta: ## Re-apply a template's name/description/icon to its built deck (spends nothing)
+	uv run python -m app.scripts.build_deck sync-meta "$(slug)"
 
 deck-build: ## Resolve a planned build (usage: make deck-build job=<id> [queue=1])
 	uv run python -m app.scripts.build_deck build "$(job)" $(if $(queue),--queue,)

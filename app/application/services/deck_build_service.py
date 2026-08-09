@@ -104,6 +104,25 @@ class BatchOutcome:
         )
 
 
+#: The metadata that lives on the Explore listing rather than on the deck row
+#: itself, and is therefore unreadable for a deck that is not published.
+_LISTING_FIELDS = frozenset({"category", "description", "description_fa"})
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataSync:
+    """What ``sync_metadata`` changed on an already-built deck."""
+
+    deck_id: UUID
+    name: str
+    #: Field name → (before, after), for the fields that actually differed.
+    changed: dict[str, tuple[str, str]]
+
+    @property
+    def is_noop(self) -> bool:
+        return not self.changed
+
+
 class DeckBuildService:
     def __init__(
         self,
@@ -162,7 +181,9 @@ class DeckBuildService:
         if not template.units:
             raise ValidationError("The template has no units to build.")
 
-        deck = await self._decks.add(Deck(user_id=owner_id, name=template.name, hue=template.hue))
+        deck = await self._decks.add(
+            Deck(user_id=owner_id, name=template.name, hue=template.hue, icon=template.icon)
+        )
         await self._members.add(DeckAccess.owner(deck.id, owner_id))
         # Metadata only — is_public stays false and published_at stays null.
         await self._discovery.set_published(
@@ -207,6 +228,64 @@ class DeckBuildService:
         created = await self._builds.create_job(job, items)
         logger.info("planned build %s: %d words in %d units", created.id, len(items), len(unit_ids))
         return created
+
+    async def sync_metadata(self, template: DeckTemplate) -> MetadataSync:
+        """Re-apply a template's *presentation* to the deck it already built.
+
+        A template is read once, at plan time, so editing a description in git
+        changes nothing for a deck built last month — and rebuilding to fix a
+        sentence would re-buy five hundred cards. This closes that gap and
+        nothing more: name, hue, icon, category and the two descriptions.
+
+        What it deliberately does not touch: words, units, the build job, and
+        above all ``is_public``. Publishing stays the one deliberate act, so
+        this is safe to run against a live deck.
+        """
+        job = await self._builds.latest_job_for(template.slug)
+        if job is None or job.deck_id is None:
+            raise NotFoundError(f"No build of {template.slug!r} has been planned yet.")
+        deck = await self._decks.get(job.deck_id)
+        if deck is None:
+            raise NotFoundError(f"The deck built from {template.slug!r} no longer exists.")
+
+        listing = await self._discovery.get_public(deck.id)
+        before = {
+            "name": deck.name,
+            "hue": str(deck.hue),
+            "icon": deck.icon,
+            "category": listing.category if listing else "",
+            "description": listing.description if listing else "",
+            "description_fa": listing.description_fa if listing else "",
+        }
+        after = {
+            "name": template.name,
+            "hue": str(template.hue),
+            "icon": template.icon,
+            "category": template.category,
+            "description": template.description,
+            "description_fa": template.description_fa,
+        }
+        # A deck that is not published has no listing row to read, so its
+        # descriptions read as empty and are written unconditionally. Comparing
+        # only what we could actually see keeps the report honest.
+        changed = {
+            field: (before[field], after[field])
+            for field in after
+            if before[field] != after[field] and not (listing is None and field in _LISTING_FIELDS)
+        }
+
+        deck.name = template.name
+        deck.hue = template.hue
+        deck.icon = template.icon
+        await self._decks.update(deck)
+        await self._discovery.set_listing_metadata(
+            deck.id,
+            category=template.category,
+            description=template.description,
+            description_fa=template.description_fa,
+        )
+        logger.info("synced metadata for %s onto deck %s", template.slug, deck.id)
+        return MetadataSync(deck_id=deck.id, name=template.name, changed=changed)
 
     async def _create_units(self, deck_id: UUID, template: DeckTemplate) -> dict[int, UUID]:
         """One unit per lesson, in template order. Positions come from the file.

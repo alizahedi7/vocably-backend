@@ -26,6 +26,9 @@ class PublicDeckOut(BaseModel):
     id: UUID
     name: str
     hue: int
+    #: Slug of a bundled logo, empty for a learner's deck. Additive: a client
+    #: that predates it draws the initial, exactly as it does today.
+    icon: str = ""
     word_count: int
     author_name: str
     author_username: str
@@ -46,6 +49,7 @@ class PublicDeckOut(BaseModel):
             id=view.deck.id,
             name=view.deck.name,
             hue=view.deck.hue,
+            icon=view.deck.icon,
             word_count=view.word_count,
             author_name=view.author_name,
             author_username=view.author_username,
@@ -121,6 +125,7 @@ class SharedDeckOut(BaseModel):
     id: UUID
     name: str
     hue: int
+    icon: str = ""
     word_count: int
     from_name: str
     from_username: str
@@ -133,6 +138,7 @@ class SharedDeckOut(BaseModel):
             id=view.share_id,
             name=view.deck.name,
             hue=view.deck.hue,
+            icon=view.deck.icon,
             word_count=view.word_count,
             from_name=view.from_name,
             from_username=view.from_username,

@@ -1,16 +1,16 @@
 slug: 504-essential-words
-version: "1.0.1"
+version: "1.0.2"
 name: 504 Essential Words
 name_fa: ۵۰۴ واژه ضروری
 category: exam
-description: >-
-  The classic 504-word vocabulary course, one lesson at a time. Twelve words a
-  lesson, in the order the course teaches them.
-description_fa: >-
-  دوره کلاسیک ۵۰۴ واژه ضروری، درس به درس. هر درس دوازده واژه، به همان ترتیبی که
-  کتاب آموزش می‌دهد.
+# One line, and it must stay one line: the Explore card is a fixed height, so
+# a longer description is silently truncated rather than given more room.
+description: The classic vocabulary course, twelve words a lesson.
+description_fa: دوره کلاسیک واژگان، هر درس دوازده واژه.
 official: true
 hue: 262
+# Drawn in place of the deck's initial by clients that ship the asset.
+icon: "504"
 
 source:
   title: 504 Absolutely Essential Words

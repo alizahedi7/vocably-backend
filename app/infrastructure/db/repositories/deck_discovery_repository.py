@@ -190,6 +190,10 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
             user_id=user_id,
             name=source.name,
             hue=source.hue,
+            # Carried like the hue: how a deck looks is a property of the deck,
+            # not of whose list it sits in. A learner who saves 504 keeps
+            # recognising it among their own decks.
+            icon=source.icon,
             # The copy is the learner's own private deck. Publishing it again
             # is a separate, deliberate act — copies must not inherit a place
             # in Explore, or one popular deck would spawn a hundred listings.

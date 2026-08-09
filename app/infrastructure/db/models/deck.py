@@ -21,6 +21,9 @@ class DeckModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     hue: Mapped[int] = mapped_column(default=262, nullable=False)
+    #: Slug of a logo the client ships as an asset — set from a deck template,
+    #: empty for a deck a learner built. See ``Deck.icon``.
+    icon: Mapped[str] = mapped_column(String(40), default="", nullable=False)
 
     # ── Explore ──────────────────────────────────────────────
     #: Whether the deck is listed for anyone to browse and copy. Writable by

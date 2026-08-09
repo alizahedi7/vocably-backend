@@ -744,9 +744,10 @@ characters is refused for exactly that reason.
 ### Building
 
 ```
-make deck-validate slug=…   # offline, free
-make deck-plan     slug=…   # writes deck + units + plan, spends nothing
-make deck-build    job=…    # spends (queue=1 hands it to Celery instead)
+make deck-validate  slug=…   # offline, free
+make deck-plan      slug=…   # writes deck + units + plan, spends nothing
+make deck-build     job=…    # spends (queue=1 hands it to Celery instead)
+make deck-sync-meta slug=…   # re-applies presentation to a built deck, free
 ```
 
 - **The plan is rows.** `deck_build_items`, written once, `UNIQUE (job_id,
@@ -767,6 +768,42 @@ make deck-build    job=…    # spends (queue=1 hands it to Celery instead)
   and must stay buildable if the file moves.
 - **`content_version` is pinned at plan time**, so a deploy that bumps a prompt at
   word 300 of 504 cannot write the two halves under different prompts.
+- **A template is read once, at plan time** — so editing a description in git is
+  invisible to a deck built last month, and rebuilding to fix a sentence would
+  re-buy five hundred cards. `deck-sync-meta` closes exactly that gap and
+  nothing more: name, hue, icon, category and the two descriptions, found
+  through the template's latest build job. It touches no word, no unit and no
+  job, and above all **not `is_public`** — which is what makes it safe to run
+  against a live deck, and why it uses `set_listing_metadata` rather than
+  `set_published` (that one asserts publication state and would unpublish the
+  deck it was asked to reword).
+
+### The logo on a pre-built deck
+
+`decks.icon` names a logo the *client* ships, drawn in place of the deck's
+initial. Every deck in Explore drawing the same coloured letter is right for a
+deck a learner made and wrong for a course: "5" is what "504 Essential Words"
+reduces to, and a catalogue of anonymous squares reads as a list of strangers'
+folders.
+
+- **A slug, never a URL, and never an image.** The badge is a fixed square that
+  must be right on the first frame — a network image arrives late and resizes
+  the card under the reader's thumb. The client draws it (`deck_logo.dart`), so
+  it costs no dependency and is sharp at 44 in the list and 72 on the hero.
+- **An unknown slug is not an error.** A client with no logo for the slug draws
+  the initial, exactly as it does today, so a template may name one before the
+  release that can draw it. Empty for every deck a learner built.
+- **Carried by a copy**, like `hue`: how a deck looks is a property of the deck,
+  not of whose list it sits in.
+- Set from the template at plan time, or by `deck-sync-meta` for a deck already
+  built. Nothing was backfilled — the column is empty everywhere else, which is
+  what those decks already render.
+
+**A pre-built deck's description must fit one line.** The Explore card is a
+fixed box and reserves exactly two lines for it: a longer description is
+truncated, never given more room, so that a column of cards is a grid rather
+than a ragged stack and saving one deck does not shuffle the ones below it.
+Write the copy to that budget — the client will not.
 
 ### Sense selection, and why review is short
 

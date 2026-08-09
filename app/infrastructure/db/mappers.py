@@ -109,6 +109,7 @@ def deck_to_entity(m: DeckModel) -> Deck:
         user_id=m.user_id,
         name=m.name,
         hue=m.hue,
+        icon=m.icon,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -118,6 +119,7 @@ def apply_deck(entity: Deck, m: DeckModel) -> None:
     m.user_id = entity.user_id
     m.name = entity.name
     m.hue = entity.hue
+    m.icon = entity.icon
 
 
 # ── Word ─────────────────────────────────────────────────────

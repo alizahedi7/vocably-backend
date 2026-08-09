@@ -27,6 +27,10 @@ class DeckOut(BaseModel):
     id: UUID
     name: str
     hue: int
+    #: Slug of a bundled logo; empty for a deck a learner made, which draws
+    #: ``initial`` as it always has. Not writable — it comes from the deck
+    #: template a build was planned from.
+    icon: str = ""
     initial: str
     created_at: datetime
 
@@ -35,6 +39,7 @@ class DeckWithStatsOut(BaseModel):
     id: UUID
     name: str
     hue: int
+    icon: str = ""
     initial: str
     #: Every card in the deck. The same number for every member.
     word_count: int
@@ -60,6 +65,7 @@ class DeckWithStatsOut(BaseModel):
             id=d.id,
             name=d.name,
             hue=d.hue,
+            icon=d.icon,
             initial=d.initial,
             word_count=view.word_count,
             started_count=view.started_count,

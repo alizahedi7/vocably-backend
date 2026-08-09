@@ -56,6 +56,15 @@ class DeckBuildRepository(ABC):
         """
 
     @abstractmethod
+    async def latest_job_for(self, template_slug: str) -> DeckBuildJob | None:
+        """The most recent job for this template, whatever state it reached.
+
+        Unlike :meth:`active_job_for` this finds finished builds too, which is
+        the point: it answers "which deck did this template become?" for a deck
+        that was built months ago and has been published ever since.
+        """
+
+    @abstractmethod
     async def set_job_state(
         self,
         job_id: UUID,

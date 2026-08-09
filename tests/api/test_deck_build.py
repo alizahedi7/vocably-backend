@@ -32,7 +32,7 @@ from app.application.services.deck_build_service import (
     DeckBuildService,
 )
 from app.application.services.lexicon_service import LexiconService
-from app.core.exceptions import ExternalServiceError
+from app.core.exceptions import ExternalServiceError, NotFoundError
 from app.domain.enums import DeckBuildItemState, DeckBuildState, SenseSelection
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.deck_build import DeckBuildItemModel
@@ -62,6 +62,9 @@ DECK_YAML = """\
 slug: tiny
 name: Tiny Deck
 category: business
+description: A short deck.
+description_fa: یک دستهٔ کوچک.
+icon: tiny
 generation:
   native_language: Persian
   sense_selection: [explicit, hint, category, first]
@@ -744,3 +747,107 @@ async def test_ordinary_word_failures_do_not_halt_the_build(
 
     assert outcome.done == 2, "the other words must still be built"
     assert outcome.finished_state is not DeckBuildState.PARTIAL
+
+
+# ── presentation: the logo, and re-reading a template ────────
+
+
+async def test_a_templates_icon_lands_on_the_deck_it_builds(
+    build_service,
+    session_factory: async_sessionmaker[AsyncSession],
+    template_root: Path,
+    make_user: UserFactory,
+) -> None:
+    """The icon slug reaches the deck row, where the client reads it.
+
+    Without this the badge falls back to the deck's initial, which for a course
+    is a letter that means nothing — "5" for 504.
+    """
+    owner = await make_user(phone="+989120009040")
+    job = await _plan(build_service, session_factory, template_root, owner.id)
+
+    async with session_factory() as session:
+        deck = await session.get(DeckModel, job.deck_id)
+        assert deck is not None
+        assert deck.icon == "tiny"
+
+
+async def test_a_deck_a_learner_built_has_no_icon(
+    session_factory: async_sessionmaker[AsyncSession],
+    make_user: UserFactory,
+) -> None:
+    """Empty, not a placeholder: an ordinary deck draws its initial as always."""
+    owner = await make_user(phone="+989120009041")
+    async with session_factory() as session:
+        deck = DeckModel(user_id=owner.id, name="My words", hue=25)
+        session.add(deck)
+        await session.commit()
+        assert deck.icon == ""
+
+
+async def test_sync_metadata_rewords_a_published_deck_without_unpublishing_it(
+    build_service,
+    session_factory: async_sessionmaker[AsyncSession],
+    template_root: Path,
+    make_user: UserFactory,
+) -> None:
+    """Editing a template's copy in git must reach a deck built months ago.
+
+    Templates are read once, at plan time, so without this the only way to fix
+    a description would be to rebuild — re-buying every card in the deck. The
+    property that makes it safe to run against a live deck is the second half:
+    ``is_public`` is not among the things it touches.
+    """
+    owner = await make_user(phone="+989120009042")
+    job = await _plan(build_service, session_factory, template_root, owner.id)
+    await _run(build_service, session_factory, job.id)
+
+    # The deck goes live, as an admin would publish it.
+    async with session_factory() as session:
+        await session.execute(
+            update(DeckModel)
+            .where(DeckModel.id == job.deck_id)
+            .values(is_public=True, published_at=datetime.now(UTC))
+        )
+        await session.commit()
+
+    # The word list is untouched; only the wording and the logo change.
+    (template_root / "tiny" / "deck.yaml").write_text(
+        DECK_YAML.replace("A short deck.", "Shorter still.").replace("icon: tiny", "icon: tinier")
+    )
+    template = load_template("tiny", root=template_root)
+
+    async with session_factory() as session:
+        result = await build_service(session).sync_metadata(template)
+        await session.commit()
+
+    assert result.deck_id == job.deck_id
+    assert result.changed["description"] == ("A short deck.", "Shorter still.")
+    assert result.changed["icon"] == ("tiny", "tinier")
+    assert "name" not in result.changed, "unchanged fields are not reported as changes"
+
+    async with session_factory() as session:
+        deck = await session.get(DeckModel, job.deck_id)
+        assert deck is not None
+        assert deck.description == "Shorter still."
+        assert deck.icon == "tinier"
+        assert deck.is_public is True, "re-wording a deck must never unpublish it"
+        words = (
+            (await session.execute(select(WordModel).where(WordModel.deck_id == job.deck_id)))
+            .scalars()
+            .all()
+        )
+        assert len(words) == 3, "the cards are what a rebuild would cost — none may be touched"
+        assert {w.term for w in words} == {"run", "keen", "tact"}
+
+
+async def test_sync_metadata_refuses_a_template_that_was_never_built(
+    build_service,
+    session_factory: async_sessionmaker[AsyncSession],
+    template_root: Path,
+) -> None:
+    """There is no deck to sync onto, and inventing one would be a surprise."""
+    template = load_template("tiny", root=template_root)
+    async with session_factory() as session:
+        with pytest.raises(NotFoundError):
+            await build_service(session).sync_metadata(template)

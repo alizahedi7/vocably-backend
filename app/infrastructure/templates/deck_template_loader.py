@@ -79,6 +79,7 @@ def load_template(slug: str, *, root: Path | None = None) -> DeckTemplate:
         description=str(deck_doc.get("description") or ""),
         description_fa=str(deck_doc.get("description_fa") or ""),
         hue=int(deck_doc.get("hue") or 262),
+        icon=str(deck_doc.get("icon") or ""),
         official=bool(deck_doc.get("official", True)),
         source=_parse_source(deck_doc.get("source")),
         generation=_parse_generation(deck_doc.get("generation")),

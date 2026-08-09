@@ -106,6 +106,10 @@ class DeckTemplate:
     description: str = ""
     description_fa: str = ""
     hue: int = 262
+    #: Slug of a logo the client ships as an asset, drawn in place of the
+    #: deck's initial. Empty means the initial, which is the honest default:
+    #: a slug no released client has an asset for renders as the initial too.
+    icon: str = ""
     official: bool = True
     source: TemplateSource = field(default_factory=TemplateSource)
     generation: GenerationConfig = field(default_factory=GenerationConfig)

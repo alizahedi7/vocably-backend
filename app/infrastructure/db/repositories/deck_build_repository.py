@@ -108,6 +108,15 @@ class SqlAlchemyDeckBuildRepository(DeckBuildRepository):
         model = (await self._session.execute(stmt)).scalars().first()
         return mappers.deck_build_job_to_entity(model) if model else None
 
+    async def latest_job_for(self, template_slug: str) -> DeckBuildJob | None:
+        stmt = (
+            select(DeckBuildJobModel)
+            .where(DeckBuildJobModel.template_slug == template_slug)
+            .order_by(DeckBuildJobModel.created_at.desc(), DeckBuildJobModel.id.desc())
+        )
+        model = (await self._session.execute(stmt)).scalars().first()
+        return mappers.deck_build_job_to_entity(model) if model else None
+
     async def set_job_state(
         self,
         job_id: UUID,

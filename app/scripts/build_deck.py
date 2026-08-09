@@ -9,9 +9,13 @@ Celery task so the two cannot drift.
 
 Three verbs, in the order they cost money::
 
-    make deck-validate slug=504-essential-words   # offline, free
-    make deck-plan     slug=504-essential-words   # writes rows, spends nothing
-    make deck-build    job=<id>                   # spends
+    make deck-validate  slug=504-essential-words   # offline, free
+    make deck-plan      slug=504-essential-words   # writes rows, spends nothing
+    make deck-build     job=<id>                   # spends
+
+And, for a deck that is already built, a fourth that spends nothing either::
+
+    make deck-sync-meta slug=504-essential-words   # name/description/icon only
 
 ``deck-build`` runs batches in-process by default, so a build works on a machine
 with no Celery worker at all. ``queue=1`` hands it to the worker instead, which
@@ -150,6 +154,42 @@ async def _resolve_owner(session: AsyncSession, owner: str | None) -> UUID:
     return user.id
 
 
+# ── sync-meta ────────────────────────────────────────────────
+
+
+async def sync_meta(slug: str) -> int:
+    """Push a template's presentation onto the deck it already built.
+
+    Templates are read once, at plan time. Without this, editing a description
+    in git is invisible to every learner until someone rebuilds the deck — and
+    rebuilding to fix a sentence would re-buy five hundred cards.
+    """
+    configure_logging()
+    try:
+        template = load_template(slug)
+    except TemplateError as exc:
+        print(f"✗ {slug}: {exc}", file=sys.stderr)
+        return 1
+
+    async with async_session_factory() as session:
+        service = _service(session)
+        try:
+            result = await service.sync_metadata(template)
+        except Exception as exc:  # noqa: BLE001 — a CLI reports, it does not traceback
+            await session.rollback()
+            print(f"✗ {exc}", file=sys.stderr)
+            return 1
+        await session.commit()
+
+    print(f"✓ deck {result.deck_id}  {result.name!r}")
+    if result.is_noop:
+        print("  already matches the template — nothing changed")
+    for field, (before, after) in sorted(result.changed.items()):
+        print(f"  {field:<15} {before or '(empty)'!r} → {after or '(empty)'!r}")
+    print("  0 words touched · is_public unchanged")
+    return 0
+
+
 # ── build ────────────────────────────────────────────────────
 
 
@@ -222,6 +262,9 @@ def main() -> int:
     p_plan.add_argument("slug")
     p_plan.add_argument("--owner", default=None, help="phone of the account to own the deck")
 
+    p_sync = sub.add_parser("sync-meta", help="re-apply a template's presentation to its deck")
+    p_sync.add_argument("slug")
+
     p_build = sub.add_parser("build", help="resolve items for a planned job")
     p_build.add_argument("job_id")
     p_build.add_argument("--queue", action="store_true", help="hand to a Celery worker instead")
@@ -237,6 +280,8 @@ def main() -> int:
         return validate(args.slug)
     if args.command == "plan":
         return asyncio.run(plan(args.slug, args.owner))
+    if args.command == "sync-meta":
+        return asyncio.run(sync_meta(args.slug))
     return asyncio.run(build(UUID(args.job_id), queue=args.queue, max_batches=args.max_batches))
 
 
