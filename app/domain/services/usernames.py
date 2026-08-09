@@ -19,6 +19,19 @@ USERNAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{2,19}$")
 USERNAME_MIN_LENGTH = 3
 USERNAME_MAX_LENGTH = 20
 
+#: How much of a handle has to be typed before anyone is looked up.
+#:
+#: Two, not one: a single letter matches a sizeable fraction of the table and
+#: answers a question nobody asked — the searcher has typed one character, they
+#: are not yet looking for anybody in particular. It is below
+#: :data:`USERNAME_MIN_LENGTH` on purpose, because this is a *prefix* of a
+#: handle rather than a handle.
+USERNAME_SEARCH_MIN_LENGTH = 2
+
+#: Characters a handle is made of, so a prefix can be checked without knowing
+#: whether it is a whole one yet.
+_PREFIX_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
 #: Names that must never belong to a person. `/join/<code>` and `/users/me` are
 #: real paths, and a handle colliding with one is a support ticket waiting to
 #: happen; the rest are impersonation risks.
@@ -55,6 +68,20 @@ def is_valid_username(username: str) -> bool:
 def normalize(username: str) -> str:
     """Fold to the stored form. Handles are stored already-lowercased."""
     return username.strip().lower()
+
+
+def search_prefix(raw: str) -> str:
+    """The searchable prefix in ``raw``, or ``""`` when there isn't one.
+
+    Tolerant of how a handle is written down — a leading ``@`` is how people
+    quote one to each other — and strict about everything else: anything that
+    could not begin a handle cannot begin a match either, so it is answered with
+    no results rather than a query.
+    """
+    candidate = normalize(raw).lstrip("@")
+    if len(candidate) < USERNAME_SEARCH_MIN_LENGTH or len(candidate) > USERNAME_MAX_LENGTH:
+        return ""
+    return candidate if _PREFIX_PATTERN.match(candidate) else ""
 
 
 def slugify(raw: str) -> str:

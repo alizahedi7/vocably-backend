@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     #: as the learner types, so this is generous — it exists to stop the
     #: endpoint being walked as a handle-enumeration oracle, not to stop typing.
     username_checks_per_user_per_hour: int = 120
+    #: People-searches per user per hour. Tighter than the availability check
+    #: because one call here returns up to eight handles rather than a yes/no,
+    #: so walking the namespace with it is that many times cheaper — and it is
+    #: called on a debounce rather than per keystroke, so a person sharing a
+    #: deck with a class never comes near this.
+    user_searches_per_user_per_hour: int = 60
     #: Join attempts per user and per IP per hour. This is the one endpoint
     #: where guessing wins access to someone else's data.
     joins_per_user_per_hour: int = 20

@@ -48,6 +48,24 @@ class SharedDeckView:
     accepted: bool
 
 
+@dataclass(frozen=True, slots=True)
+class OutgoingShareView:
+    """An offer of one deck, from the *sender's* side.
+
+    The mirror image of :class:`SharedDeckView`, and deliberately a separate
+    shape: the sender already knows the deck, so what is worth returning is the
+    person and where the offer stands. It exists so a share sheet can say
+    "pending" beside someone instead of leaving the sender wondering whether the
+    share landed at all.
+    """
+
+    to_username: str
+    to_name: str
+    #: What accepting would make them.
+    role: str
+    shared_at: datetime
+
+
 class DeckDiscoveryRepository(ABC):
     @abstractmethod
     async def list_public(
@@ -90,6 +108,17 @@ class DeckDiscoveryRepository(ABC):
 
     @abstractmethod
     async def get_share(self, share_id: UUID) -> SharedDeckView | None: ...
+
+    @abstractmethod
+    async def list_pending_shares_of(self, deck_id: UUID) -> list[OutgoingShareView]:
+        """Offers of this deck nobody has answered yet, oldest first.
+
+        Pending only. An accepted offer is a membership — the roster is where
+        that is reported, and saying it twice in two vocabularies is how a
+        screen becomes confusing. A declined one is deleted outright, because
+        the sender is not told and an offer that can be re-made is better than
+        a permanent record of a refusal.
+        """
 
     @abstractmethod
     async def offer(

@@ -12,7 +12,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.domain.repositories.deck_discovery_repository import PublicDeckView, SharedDeckView
+from app.domain.enums import DeckRole
+from app.domain.repositories.deck_discovery_repository import (
+    OutgoingShareView,
+    PublicDeckView,
+    SharedDeckView,
+)
 from app.domain.repositories.friend_repository import FriendView
 
 
@@ -83,12 +88,39 @@ class SharedDecksOut(BaseModel):
 
 class ShareDeckIn(BaseModel):
     to_username: str = Field(max_length=20)
+    #: What accepting will make them. Optional and defaulting to viewer, so a
+    #: client that predates the field keeps the behaviour it already had — and
+    #: because handing someone edit rights is the bigger of the two decisions,
+    #: it should never be what happens by omission.
+    role: DeckRole = DeckRole.VIEWER
 
 
 class ShareDeckOut(BaseModel):
     """The deck's invite code, so the sharer has something to paste anywhere."""
 
     code: str
+
+
+class PendingShareOut(BaseModel):
+    """An offer of this deck that has not been answered yet."""
+
+    username: str
+    name: str
+    role: DeckRole
+    shared_at: datetime
+
+    @classmethod
+    def from_view(cls, view: OutgoingShareView) -> PendingShareOut:
+        return cls(
+            username=view.to_username,
+            name=view.to_name,
+            role=DeckRole.parse(view.role),
+            shared_at=view.shared_at,
+        )
+
+
+class PendingSharesOut(BaseModel):
+    shares: list[PendingShareOut]
 
 
 class FriendOut(BaseModel):

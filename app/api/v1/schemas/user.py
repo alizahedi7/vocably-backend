@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.entities.user import User
 from app.domain.enums import AgeRange, AuthMethod, InterestTopic
 from app.domain.services.usernames import USERNAME_MAX_LENGTH
 
@@ -72,3 +73,23 @@ class UpdateProfileIn(BaseModel):
 
 class UsernameAvailableOut(BaseModel):
     available: bool
+
+
+class PersonOut(BaseModel):
+    """Someone another learner may address: a handle, and what to call them.
+
+    Everything else about a user stays private. A search result is the least
+    that lets a sharer recognise the person they meant — the handle they typed
+    part of, and the name that tells two similar handles apart.
+    """
+
+    username: str
+    name: str = ""
+
+    @classmethod
+    def from_user(cls, user: User) -> PersonOut:
+        return cls(username=user.username or "", name=user.name)
+
+
+class PeopleOut(BaseModel):
+    people: list[PersonOut]

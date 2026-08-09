@@ -29,10 +29,25 @@ class UserRepository(ABC):
 
     @abstractmethod
     async def get_by_username(self, username: str) -> User | None:
-        """Exact match only, on the already-lowercased handle.
+        """Exact match only, on the already-lowercased handle."""
 
-        Deliberately not a prefix or fuzzy search: a "find people" endpoint is a
-        product decision with a consent question attached, not a convenience.
+    @abstractmethod
+    async def search_by_username(
+        self, prefix: str, *, exclude_user_id: UUID, limit: int
+    ) -> list[User]:
+        """Handles beginning with ``prefix``, best match first.
+
+        A **prefix** and nothing else — not a substring, not the display name.
+        Searching names would make a person findable by something they never
+        chose to be addressed by; a handle is the one string in this product a
+        learner picks *so that* other people can type it, and typing the first
+        few characters of one you were told is the whole use case. Anyone
+        wanting to be unfindable can hold a handle nobody would guess at.
+
+        Ordered shortest-first so an exact match leads and the near-misses
+        follow it, then alphabetically so the list never jitters between calls.
+        ``limit`` is applied in SQL: the caller shows a handful, and a prefix
+        like ``a`` must not drag the table through Python to find them.
         """
 
     @abstractmethod

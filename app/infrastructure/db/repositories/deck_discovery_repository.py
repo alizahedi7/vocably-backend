@@ -14,6 +14,7 @@ from sqlalchemy.orm import aliased
 from app.domain.entities.deck import Deck
 from app.domain.repositories.deck_discovery_repository import (
     DeckDiscoveryRepository,
+    OutgoingShareView,
     PublicDeckView,
     SharedDeckView,
 )
@@ -273,6 +274,33 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
         )
         rows = (await self._session.execute(stmt)).all()
         return [self._to_share(*row) for row in rows]
+
+    async def list_pending_shares_of(self, deck_id: UUID) -> list[OutgoingShareView]:
+        recipient = aliased(UserModel)
+        stmt = (
+            select(
+                recipient.username,
+                recipient.name,
+                DeckShareModel.role,
+                DeckShareModel.shared_at,
+            )
+            .join(recipient, recipient.id == DeckShareModel.to_user_id)
+            .where(
+                DeckShareModel.deck_id == deck_id,
+                DeckShareModel.accepted.is_(False),
+            )
+            .order_by(DeckShareModel.shared_at)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [
+            OutgoingShareView(
+                to_username=username or "",
+                to_name=name or "",
+                role=role,
+                shared_at=shared_at,
+            )
+            for username, name, role, shared_at in rows
+        ]
 
     async def get_share(self, share_id: UUID) -> SharedDeckView | None:
         stmt = self._share_select().where(DeckShareModel.id == share_id)

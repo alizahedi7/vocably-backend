@@ -476,3 +476,108 @@ async def test_an_official_deck_credits_nobody(
     # An official deck is Vocably's, so the staffer's handle is not published.
     assert listed["author_username"] == ""
     assert listed["author_name"] == ""
+
+
+async def test_a_share_carries_the_role_it_was_sent_at(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    deck_id = await create_deck(client, auth_headers, "Class set")
+    friend_id = await named(client, make_user, "+989121112010", "parisa")
+
+    sent = await client.post(
+        f"/api/v1/decks/{deck_id}/share",
+        headers=auth_headers,
+        json={"to_username": "parisa", "role": "editor"},
+    )
+    assert sent.status_code == 200, sent.text
+
+    offer = (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()["decks"][0]
+    await client.post(f"/api/v1/decks/shared/{offer['id']}/accept", headers=bearer(friend_id))
+
+    # Accepting is what applies it — the role rode on the offer, not on a
+    # membership created before they had answered.
+    membership = await client.get(f"/api/v1/decks/{deck_id}/membership", headers=bearer(friend_id))
+    assert membership.json()["my_role"] == "editor"
+
+
+async def test_a_share_cannot_hand_over_ownership(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    deck_id = await create_deck(client, auth_headers)
+    friend_id = await named(client, make_user, "+989121112011", "parisa")
+    await client.post(
+        f"/api/v1/decks/{deck_id}/share",
+        headers=auth_headers,
+        json={"to_username": "parisa", "role": "owner"},
+    )
+    offer = (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()["decks"][0]
+    await client.post(f"/api/v1/decks/shared/{offer['id']}/accept", headers=bearer(friend_id))
+
+    membership = await client.get(f"/api/v1/decks/{deck_id}/membership", headers=bearer(friend_id))
+    assert membership.json()["my_role"] == "viewer"
+
+
+async def test_a_share_defaults_to_viewer_for_a_client_that_sends_no_role(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    deck_id = await create_deck(client, auth_headers)
+    await named(client, make_user, "+989121112012", "parisa")
+    await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
+    )
+    pending = await client.get(f"/api/v1/decks/{deck_id}/shares", headers=auth_headers)
+    assert pending.json()["shares"][0]["role"] == "viewer"
+
+
+async def test_pending_shares_list_who_has_been_asked_and_not_yet_answered(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    deck_id = await create_deck(client, auth_headers)
+    parisa_id = await named(client, make_user, "+989121112013", "parisa")
+    await named(client, make_user, "+989121112014", "reza")
+
+    for handle in ("parisa", "reza"):
+        await client.post(
+            f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": handle}
+        )
+
+    pending = await client.get(f"/api/v1/decks/{deck_id}/shares", headers=auth_headers)
+    assert pending.status_code == 200, pending.text
+    shares = pending.json()["shares"]
+    assert [s["username"] for s in shares] == ["parisa", "reza"]
+    assert shares[0]["name"] == "Parisa"
+
+    # Accepting moves someone from "asked" to "in the deck": the roster is
+    # where a member is reported, and saying it in both places is what makes a
+    # share sheet confusing.
+    offer = (await client.get("/api/v1/decks/shared", headers=bearer(parisa_id))).json()["decks"][0]
+    await client.post(f"/api/v1/decks/shared/{offer['id']}/accept", headers=bearer(parisa_id))
+
+    after = await client.get(f"/api/v1/decks/{deck_id}/shares", headers=auth_headers)
+    assert [s["username"] for s in after.json()["shares"]] == ["reza"]
+    roster = await client.get(f"/api/v1/decks/{deck_id}/roster", headers=auth_headers)
+    assert "parisa" in [m["username"] for m in roster.json()["members"]]
+
+
+async def test_a_declined_share_stops_being_pending_so_it_can_be_offered_again(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    deck_id = await create_deck(client, auth_headers)
+    friend_id = await named(client, make_user, "+989121112015", "parisa")
+    await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
+    )
+    offer = (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()["decks"][0]
+    await client.delete(f"/api/v1/decks/shared/{offer['id']}", headers=bearer(friend_id))
+
+    pending = await client.get(f"/api/v1/decks/{deck_id}/shares", headers=auth_headers)
+    assert pending.json()["shares"] == []
+
+
+async def test_only_someone_who_may_invite_can_see_who_was_invited(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    deck_id = await create_deck(client, auth_headers)
+    outsider = await make_user(phone="+989121112016", name="Outsider")
+    denied = await client.get(f"/api/v1/decks/{deck_id}/shares", headers=bearer(outsider.id))
+    assert denied.status_code in (403, 404)

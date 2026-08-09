@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,6 +48,25 @@ class SqlAlchemyUserRepository(UserRepository):
         stmt = select(UserModel).where(UserModel.username == username)
         model = (await self._session.execute(stmt)).scalar_one_or_none()
         return mappers.user_to_entity(model) if model else None
+
+    async def search_by_username(
+        self, prefix: str, *, exclude_user_id: UUID, limit: int
+    ) -> list[User]:
+        # ``startswith`` with autoescape, so a handle containing ``_`` — which
+        # is legal, and a LIKE wildcard — matches itself rather than any
+        # character. The unique index on ``username`` serves the prefix range.
+        stmt = (
+            select(UserModel)
+            .where(
+                UserModel.username.is_not(None),
+                UserModel.username.startswith(prefix, autoescape=True),
+                UserModel.id != exclude_user_id,
+            )
+            .order_by(func.length(UserModel.username), UserModel.username)
+            .limit(limit)
+        )
+        models = (await self._session.execute(stmt)).scalars().all()
+        return [mappers.user_to_entity(m) for m in models]
 
     async def username_taken(self, username: str) -> bool:
         stmt = select(UserModel.id).where(UserModel.username == username).limit(1)

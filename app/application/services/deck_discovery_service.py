@@ -19,6 +19,7 @@ from app.domain.entities.deck_member import DeckMember
 from app.domain.enums import DeckRole
 from app.domain.repositories.deck_discovery_repository import (
     DeckDiscoveryRepository,
+    OutgoingShareView,
     PublicDeckView,
     SharedDeckView,
 )
@@ -124,12 +125,35 @@ class DeckDiscoveryService:
     async def list_shared_with(self, user_id: UUID) -> list[SharedDeckView]:
         return await self._discovery.list_shares_for(user_id)
 
-    async def share(self, deck_id: UUID, user_id: UUID, *, to_username: str) -> str:
+    async def list_pending_shares(self, deck_id: UUID, user_id: UUID) -> list[OutgoingShareView]:
+        """Who has been offered this deck and not answered.
+
+        Whoever may invite may see it: the list is of decisions they made, and
+        it is what stops a second invite being sent to someone who is already
+        holding the first.
+        """
+        await self._access.require_manage(deck_id, user_id)
+        return await self._discovery.list_pending_shares_of(deck_id)
+
+    async def share(
+        self,
+        deck_id: UUID,
+        user_id: UUID,
+        *,
+        to_username: str,
+        role: DeckRole = DeckRole.VIEWER,
+    ) -> str:
         """Offer one of your decks to a handle, returning the deck's invite code.
 
         The code is returned so the sharer has something to paste anywhere —
         the same link a class would use. Only someone who may already invite to
         the deck can share it, so a viewer cannot hand a teacher's deck around.
+
+        ``role`` is what *accepting* will make them, and it is carried on the
+        offer rather than applied now: the recipient is not a member until they
+        say so. There is exactly one owner, so asking for that one is answered
+        with a viewer instead of an error — the same downgrade every other role
+        entry point in this service makes.
         """
         await self._access.require_manage(deck_id, user_id)
 
@@ -149,7 +173,7 @@ class DeckDiscoveryService:
             deck_id,
             from_user_id=user_id,
             to_user_id=recipient.id,
-            role=DeckRole.VIEWER.value,
+            role=(DeckRole.VIEWER if role is DeckRole.OWNER else role).value,
             shared_at=now,
         )
         # Sharing is what puts someone in the friends list — the client calls

@@ -6,9 +6,16 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import CurrentUser, UserServiceDep, enforce_username_check_limit
+from app.api.deps import (
+    CurrentUser,
+    UserServiceDep,
+    enforce_user_search_limit,
+    enforce_username_check_limit,
+)
 from app.api.v1.schemas.user import (
     CompleteOnboardingIn,
+    PeopleOut,
+    PersonOut,
     UpdateProfileIn,
     UsernameAvailableOut,
     UserOut,
@@ -38,6 +45,34 @@ async def username_available(
     deliberate, but must not be reachable by typing.
     """
     return UsernameAvailableOut(available=await users.is_username_available(username))
+
+
+@router.get(
+    "/search",
+    response_model=PeopleOut,
+    dependencies=[Depends(enforce_user_search_limit)],
+)
+async def search_people(
+    current_user: CurrentUser,
+    users: UserServiceDep,
+    q: Annotated[
+        str,
+        Query(max_length=USERNAME_MAX_LENGTH + 1, description="Start of a handle"),
+    ],
+) -> PeopleOut:
+    """Find someone by the start of their handle, so a sharer can pick a name
+    instead of spelling one exactly.
+
+    Handles only — never the display name. A handle is the one string a learner
+    picks *so that* other people can address them; a name is not, and making it
+    searchable would publish something nobody opted into.
+
+    A prefix shorter than two characters, or one that could not begin a handle,
+    answers an empty list rather than an error: the caller is typing, and half a
+    keystroke has no answer worth an exception.
+    """
+    found = await users.search_by_handle(q, searcher_id=current_user.id)
+    return PeopleOut(people=[PersonOut.from_user(u) for u in found])
 
 
 @router.get("/me", response_model=UserOut)

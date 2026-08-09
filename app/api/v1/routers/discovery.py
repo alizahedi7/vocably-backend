@@ -18,6 +18,8 @@ from app.api.v1.schemas.discovery import (
     AddFriendIn,
     FriendOut,
     FriendsOut,
+    PendingShareOut,
+    PendingSharesOut,
     PublicDeckOut,
     PublicDecksOut,
     SharedDeckOut,
@@ -84,6 +86,22 @@ async def decline_shared_deck(
     await discovery.decline(share_id, current_user.id)
 
 
+@decks_router.get("/{deck_id}/shares", response_model=PendingSharesOut)
+async def list_pending_shares(
+    deck_id: UUID,
+    current_user: CurrentUser,
+    discovery: DeckDiscoveryServiceDep,
+) -> PendingSharesOut:
+    """Offers of this deck nobody has answered yet.
+
+    The sender's half of the share: the roster says who is *in* the deck, and
+    this says who has been asked. Accepting moves someone from one list to the
+    other; declining removes them from both, and the sender is not told.
+    """
+    views = await discovery.list_pending_shares(deck_id, current_user.id)
+    return PendingSharesOut(shares=[PendingShareOut.from_view(v) for v in views])
+
+
 @decks_router.post(
     "/{deck_id}/share",
     response_model=ShareDeckOut,
@@ -95,7 +113,12 @@ async def share_deck(
     current_user: CurrentUser,
     discovery: DeckDiscoveryServiceDep,
 ) -> ShareDeckOut:
-    code = await discovery.share(deck_id, current_user.id, to_username=payload.to_username)
+    code = await discovery.share(
+        deck_id,
+        current_user.id,
+        to_username=payload.to_username,
+        role=payload.role,
+    )
     return ShareDeckOut(code=code)
 
 

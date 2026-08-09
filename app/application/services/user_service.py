@@ -50,6 +50,31 @@ class UserService:
             return False
         return not await self._users.username_taken(candidate)
 
+    #: How many people one search answers with.
+    #:
+    #: Eight, because the caller is a list under a text field on a phone and a
+    #: longer one is scrolled rather than read. It is also the whole cost
+    #: control: the limit reaches SQL, so a two-letter prefix costs the same as
+    #: a full handle.
+    SEARCH_LIMIT = 8
+
+    async def search_by_handle(self, query: str, *, searcher_id: UUID) -> list[User]:
+        """People whose handle starts with ``query``, best match first.
+
+        Answers ``[]`` rather than raising for a prefix too short or malformed
+        to search on — the caller is typing, and "nothing yet" is the honest
+        answer to half a keystroke, not an error to render.
+
+        The searcher is never in their own results: offering to share a deck
+        with yourself is the one recipient the server would refuse anyway.
+        """
+        prefix = usernames.search_prefix(query)
+        if not prefix:
+            return []
+        return await self._users.search_by_username(
+            prefix, exclude_user_id=searcher_id, limit=self.SEARCH_LIMIT
+        )
+
     async def _claim_username(self, user: User, raw: str) -> None:
         """Validate and assign a handle, or raise the copy the user will read."""
         candidate = usernames.normalize(raw)

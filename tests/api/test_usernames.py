@@ -148,3 +148,88 @@ async def test_profile_fields_default_to_null_for_an_account_that_never_set_them
     for key in ("username", "target_language", "proficiency", "study_time", "timezone"):
         assert key in body
         assert body[key] is None
+
+
+# ── finding people by handle ─────────────────────────────────
+async def _handle(client: AsyncClient, make_user: UserFactory, phone: str, handle: str) -> str:
+    user = await make_user(phone=phone, name=handle.title())
+    await client.patch("/api/v1/users/me", headers=bearer(user.id), json={"username": handle})
+    return str(user.id)
+
+
+async def test_search_puts_the_exact_handle_first_and_the_near_misses_under_it(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    for i, handle in enumerate(("par", "parisa", "parham", "paria_k", "sara")):
+        await _handle(client, make_user, f"+98912555{i:04d}", handle)
+
+    found = await client.get("/api/v1/users/search", headers=auth_headers, params={"q": "par"})
+    assert found.status_code == 200, found.text
+    handles = [p["username"] for p in found.json()["people"]]
+
+    # Shortest first — the length past the prefix is how far a handle is from
+    # what was typed, so an exact match always leads and the closest near-misses
+    # follow. Ties are alphabetical, so the list never reorders between calls.
+    assert handles == ["par", "parham", "parisa", "paria_k"]
+    assert found.json()["people"][0]["name"] == "Par"
+
+
+async def test_search_matches_a_prefix_only_and_never_the_display_name(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    user = await make_user(phone="+989125550101", name="Parisa Ahmadi")
+    await client.patch("/api/v1/users/me", headers=bearer(user.id), json={"username": "p_ahmadi"})
+
+    # The middle of the handle is not a match: this is a prefix search.
+    inside = await client.get("/api/v1/users/search", headers=auth_headers, params={"q": "ahmadi"})
+    assert [p["username"] for p in inside.json()["people"]] == []
+
+    # Nor is the name, which nobody chose to be addressed by.
+    by_name = await client.get("/api/v1/users/search", headers=auth_headers, params={"q": "parisa"})
+    assert [p["username"] for p in by_name.json()["people"]] == []
+
+    prefix = await client.get("/api/v1/users/search", headers=auth_headers, params={"q": "p_ah"})
+    assert [p["username"] for p in prefix.json()["people"]] == ["p_ahmadi"]
+
+
+async def test_search_tolerates_an_at_sign_and_case(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    await _handle(client, make_user, "+989125550201", "parisa")
+    found = await client.get("/api/v1/users/search", headers=auth_headers, params={"q": "@PaRi"})
+    assert [p["username"] for p in found.json()["people"]] == ["parisa"]
+
+
+async def test_search_answers_nothing_for_half_a_keystroke(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    await _handle(client, make_user, "+989125550301", "parisa")
+    # One character is not yet a search — and a 200 with no results is the
+    # honest answer while someone is typing, not a 422.
+    for query in ("p", "", "  ", "1abc", "par isa"):
+        response = await client.get(
+            "/api/v1/users/search", headers=auth_headers, params={"q": query}
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["people"] == [], query
+
+
+async def test_search_never_returns_the_searcher(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    await client.patch("/api/v1/users/me", headers=auth_headers, json={"username": "parisa"})
+    found = await client.get("/api/v1/users/search", headers=auth_headers, params={"q": "par"})
+    assert found.json()["people"] == []
+
+
+async def test_search_caps_what_one_call_hands_back(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    for i in range(12):
+        await _handle(client, make_user, f"+98912666{i:04d}", f"parisa_{i:02d}")
+    found = await client.get("/api/v1/users/search", headers=auth_headers, params={"q": "par"})
+    assert len(found.json()["people"]) == 8
+
+
+async def test_search_requires_authentication(client: AsyncClient) -> None:
+    assert (await client.get("/api/v1/users/search", params={"q": "par"})).status_code == 401

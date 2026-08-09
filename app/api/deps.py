@@ -502,6 +502,21 @@ async def enforce_username_check_limit(current_user: CurrentUser) -> None:
         raise RateLimitedError("Too many handle checks. Please try again shortly.")
 
 
+async def enforce_user_search_limit(current_user: CurrentUser) -> None:
+    """Cap people-searches per user.
+
+    The same enumeration oracle as the availability check, and a fatter one:
+    each call hands back a page of real handles instead of a yes/no about one
+    guess. Keyed per user for the same reason — it needs a token, and a shared
+    IP is a classroom.
+    """
+    limit = settings.user_searches_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"user-search:{current_user.id}", limit):
+        raise RateLimitedError("Too many searches just now. Please try again shortly.")
+
+
 async def enforce_otp_request_ip_limit(request: Request) -> None:
     """Cap OTP requests per client IP so one caller can't drain the SMS budget.
 
