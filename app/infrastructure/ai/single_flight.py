@@ -134,6 +134,25 @@ class SingleFlight:
                 return found
         return None
 
+    async def aclose(self) -> None:
+        """Close the Redis pool.
+
+        A Celery task runs on a fresh event loop each time while this object is
+        memoized per process; a pool that outlives its loop fails on the next
+        task. Here that only costs a duplicated provider call — the lock is
+        never load-bearing — but the same client is shared with paths where it
+        costs more, so it is released with everything else.
+        """
+        if self._redis is None:
+            return
+        closer = getattr(self._redis, "aclose", None) or getattr(self._redis, "close", None)
+        if closer is None:  # pragma: no cover
+            return
+        try:
+            await closer()
+        except Exception as exc:  # noqa: BLE001 — teardown must not fail a task
+            logger.info("single-flight close failed: %s", type(exc).__name__)
+
     def _key(self, key: str) -> str:
         return f"{self._namespace}:{key}"
 

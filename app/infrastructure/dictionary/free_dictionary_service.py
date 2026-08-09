@@ -62,6 +62,23 @@ class FreeDictionaryService(DictionaryService):
         # call.
         self._timeout = timeout_seconds
 
+    async def aclose(self) -> None:
+        """Release the HTTP and Redis connections this adapter holds.
+
+        Needed because a Celery task runs on a *fresh event loop* every time
+        (see ``app.tasks.runtime``) while this adapter is memoized per process.
+        Both pools bind to the loop that opened them, so one that outlives its
+        loop hands the next task a dead connection — which surfaces as a
+        ``RuntimeError`` and, because every call here is best-effort, silently
+        degrades to "no cache" and "no dictionary" rather than to an error.
+        """
+        try:
+            await self._client.aclose()
+        except Exception as exc:  # noqa: BLE001 — teardown must not fail a task
+            logger.info("dictionary client close failed: %s", type(exc).__name__)
+        if self._cache is not None:
+            await self._cache.aclose()
+
     async def look_up(self, term: str) -> DictionaryEntry | None:
         normalized = term.strip().lower()
         if not normalized:
@@ -193,6 +210,16 @@ class DictionaryCache:
 
     def _key(self, term: str) -> str:
         return f"{self._namespace}:{term}"
+
+    async def aclose(self) -> None:
+        """Close the Redis pool. See :meth:`FreeDictionaryService.aclose`."""
+        closer = getattr(self._redis, "aclose", None) or getattr(self._redis, "close", None)
+        if closer is None:  # pragma: no cover — every client has one of the two
+            return
+        try:
+            await closer()
+        except Exception as exc:  # noqa: BLE001 — teardown must not fail a task
+            logger.info("dictionary cache close failed: %s", type(exc).__name__)
 
     async def get(self, term: str) -> _CachedEntry | None:
         try:

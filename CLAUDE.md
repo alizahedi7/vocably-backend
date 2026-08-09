@@ -564,6 +564,14 @@ translate the outcome. Domain and application code stays unaware Celery exists.
   queue is how a backlog of AI work silently stops partition maintenance.
   Routing is by task-name prefix (`vocably.ai.*` → `ai`), so **name AI tasks
   `vocably.ai.<something>`** or they land on the default queue.
+- **Every process-wide async client must be registered in `app/tasks/runtime.py`**
+  (`_POOLED_FACTORIES`). `asyncio.run` gives each task a fresh event loop, and
+  Redis/HTTP pools bind to the loop that opened them exactly as asyncpg does.
+  The database fails loudly when that breaks; the others do not — every call
+  through them is best-effort, so a dead-loop `RuntimeError` is caught, logged at
+  INFO, and degrades to "no cache" or, for the dictionary, "no dictionary at
+  all". That silently drops a deck build off the grounded path onto full
+  generation. It was found in production, not in review.
 - **`run_async` is mandatory for async work in a task**
   ([runtime.py](app/tasks/runtime.py)). Celery workers are synchronous; this
   codebase is not. `asyncio.run` builds a new event loop per call while the
