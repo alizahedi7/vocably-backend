@@ -1,5 +1,5 @@
 slug: 504-essential-words
-version: "0.3.0"
+version: "1.0.0"
 name: Essential 504 — Vocabulary Course
 name_fa: ۵۰۴ واژه ضروری
 category: exam
@@ -28,12 +28,9 @@ structure:
   # Asserted, not derived: a word list that silently loses an entry is otherwise
   # invisible until a learner notices a lesson has eleven words.
   #
-  # NOTE: only the first three lessons are transcribed so far. Raise these two
-  # numbers in the same commit that appends the remaining lessons, and
-  # `make deck-validate` will refuse the file if the two ever disagree.
   words_per_unit: 12
-  expected_units: 3
-  expected_words: 36
+  expected_units: 42
+  expected_words: 504
 
 generation:
   native_language: Persian

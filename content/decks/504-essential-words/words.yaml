@@ -1,7 +1,14 @@
 # The ordered headword list. Order is the product: this is the sequence the
 # course teaches, and nothing in the pipeline may reorder it.
 #
-# A bare string is a word with no sense preference — the ordinary case.
+# Extracted from the source book's own index (word -> lesson) for the grouping,
+# and from its numbered "Words to Learn This Week" entries for the order within
+# each lesson. 479 of 504 headwords were placed by their printed position; the
+# remaining 25 are ones whose headword the OCR destroyed, and they sit in the
+# free slots of their own lesson. Lessons 1-3 and 32 were verified by hand
+# against the book and match exactly.
+#
+# A bare string is a word with no sense preference - the ordinary case.
 # A mapping may add:
 #   sense: {pos: verb, context: Management}   # an exact pin; needs BOTH keys
 #   hint: "to give up completely"             # free text, scored against senses
@@ -55,3 +62,588 @@ units:
       - talent
       - devise
       - wholesale
+
+  - name: Lesson 4
+    words:
+      - vapor
+      - eliminate
+      - villain
+      - dense
+      - utilize
+      - humid
+      - theory
+      - descend
+      - circulate
+      - enormous
+      - predict
+      - vanish
+
+  - name: Lesson 5
+    words:
+      - tradition
+      - rural
+      - burden
+      - campus
+      - majority
+      - assemble
+      - explore
+      - topic
+      - debate
+      - evade
+      - probe
+      - reform
+
+  - name: Lesson 6
+    words:
+      - approach
+      - detect
+      - defect
+      - employee
+      - neglect
+      - deceive
+      - undoubtedly
+      - popular
+      - thorough
+      - client
+      - comprehensive
+      - defraud
+
+  - name: Lesson 7
+    words:
+      - postpone
+      - consent
+      - massive
+      - capsule
+      - preserve
+      - denounce
+      - unique
+      - torrent
+      - resent
+      - molest
+      - gloomy
+      - unforeseen
+
+  - name: Lesson 8
+    words:
+      - exaggerate
+      - amateur
+      - mediocre
+      - variety
+      - valid
+      - survive
+      - weird
+      - prominent
+      - security
+      - bulky
+      - reluctant
+      - obvious
+
+  - name: Lesson 9
+    words:
+      - vicinity
+      - century
+      - rage
+      - document
+      - conclude
+      - undeniable
+      - resist
+      - lack
+      - ignore
+      - challenge
+      - miniature
+      - source
+
+  - name: Lesson 10
+    words:
+      - excel
+      - feminine
+      - mount
+      - compete
+      - dread
+      - masculine
+      - menace
+      - tendency
+      - underestimate
+      - victorious
+      - numerous
+      - flexible
+
+  - name: Lesson 11
+    words:
+      - evidence
+      - solitary
+      - vision
+      - frequent
+      - glimpse
+      - recent
+      - decade
+      - hesitate
+      - absurd
+      - conflict
+      - minority
+      - fiction
+
+  - name: Lesson 12
+    words:
+      - ignite
+      - abolish
+      - urban
+      - population
+      - frank
+      - pollute
+      - reveal
+      - prohibit
+      - urgent
+      - adequate
+      - decrease
+      - audible
+
+  - name: Lesson 13
+    words:
+      - journalist
+      - famine
+      - revive
+      - commence
+      - observant
+      - identify
+      - migrate
+      - vessel
+      - persist
+      - hazy
+      - gleam
+      - editor
+
+  - name: Lesson 14
+    words:
+      - unruly
+      - rival
+      - violent
+      - brutal
+      - opponent
+      - brawl
+      - duplicate
+      - vicious
+      - whirling
+      - underdog
+      - thrust
+      - bewildered
+
+  - name: Lesson 15
+    words:
+      - expand
+      - alter
+      - mature
+      - sacred
+      - revise
+      - pledge
+      - casual
+      - pursue
+      - unanimous
+      - fortunate
+      - pioneer
+      - innovative
+
+  - name: Lesson 16
+    words:
+      - slender
+      - surpass
+      - vast
+      - doubt
+      - capacity
+      - penetrate
+      - pierce
+      - accurate
+      - microscope
+      - grateful
+      - cautious
+      - confident
+
+  - name: Lesson 17
+    words:
+      - appeal
+      - addict
+      - wary
+      - aware
+      - misfortune
+      - avoid
+      - wretched
+      - keg
+      - nourish
+      - harsh
+      - quantity
+      - opt
+
+  - name: Lesson 18
+    words:
+      - tragedy
+      - pedestrian
+      - glance
+      - budget
+      - nimble
+      - manipulate
+      - reckless
+      - horrid
+      - rave
+      - economical
+      - lubricate
+      - ingenious
+
+  - name: Lesson 19
+    words:
+      - harvest
+      - abundant
+      - uneasy
+      - calculate
+      - absorb
+      - estimate
+      - morsel
+      - quota
+      - threat
+      - ban
+      - panic
+      - appropriate
+
+  - name: Lesson 20
+    words:
+      - emerge
+      - jagged
+      - linger
+      - ambush
+      - crafty
+      - defiant
+      - vigor
+      - perish
+      - fragile
+      - captive
+      - prosper
+      - devour
+
+  - name: Lesson 21
+    words:
+      - plea
+      - weary
+      - collide
+      - confirm
+      - verify
+      - anticipate
+      - dilemma
+      - detour
+      - merit
+      - transmit
+      - relieve
+      - baffle
+
+  - name: Lesson 22
+    words:
+      - warden
+      - acknowledge
+      - justice
+      - delinquent
+      - reject
+      - deprive
+      - spouse
+      - vocation
+      - unstable
+      - homicide
+      - penalize
+      - beneficiary
+
+  - name: Lesson 23
+    words:
+      - reptile
+      - rarely
+      - forbid
+      - logical
+      - exhibit
+      - proceed
+      - precaution
+      - extract
+      - prior
+      - embrace
+      - valiant
+      - partial
+
+  - name: Lesson 24
+    words:
+      - fierce
+      - detest
+      - sneer
+      - scowl
+      - encourage
+      - consider
+      - vermin
+      - wail
+      - symbol
+      - authority
+      - neutral
+      - trifle
+
+  - name: Lesson 25
+    words:
+      - architect
+      - matrimony
+      - baggage
+      - squander
+      - abroad
+      - fugitive
+      - calamity
+      - pauper
+      - envy
+      - collapse
+      - prosecute
+      - bigamy
+
+  - name: Lesson 26
+    words:
+      - possible
+      - compel
+      - awkward
+      - venture
+      - awesome
+      - guide
+      - quench
+      - betray
+      - utter
+      - pacify
+      - respond
+      - beckon
+
+  - name: Lesson 27
+    words:
+      - despite
+      - disrupt
+      - rash
+      - rapid
+      - exhaust
+      - severity
+      - feeble
+      - unite
+      - cease
+      - thrifty
+      - miserly
+      - monarch
+
+  - name: Lesson 28
+    words:
+      - outlaw
+      - promote
+      - undernourished
+      - illustrate
+      - disclose
+      - excessive
+      - disaster
+      - censor
+      - culprit
+      - juvenile
+      - bait
+      - insist
+
+  - name: Lesson 29
+    words:
+      - toil
+      - blunder
+      - daze
+      - mourn
+      - subside
+      - maim
+      - comprehend
+      - commend
+      - final
+      - exempt
+      - vain
+      - repetition
+
+  - name: Lesson 30
+    words:
+      - depict
+      - mortal
+      - novel
+      - occupant
+      - appoint
+      - quarter
+      - site
+      - quote
+      - verse
+      - morality
+      - roam
+      - attract
+
+  - name: Lesson 31
+    words:
+      - commuter
+      - confine
+      - idle
+      - idol
+      - jest
+      - patriotic
+      - dispute
+      - valor
+      - lunatic
+      - vein
+      - uneventful
+      - fertile
+
+  - name: Lesson 32
+    words:
+      - refer
+      - distress
+      - diminish
+      - maximum
+      - flee
+      - vulnerable
+      - signify
+      - mythology
+      - colleague
+      - torment
+      - provide
+      - loyalty
+
+  - name: Lesson 33
+    words:
+      - volunteer
+      - prejudice
+      - shrill
+      - jolly
+      - witty
+      - hinder
+      - lecture
+      - abuse
+      - mumble
+      - mute
+      - wad
+      - retain
+
+  - name: Lesson 34
+    words:
+      - candidate
+      - precede
+      - adolescent
+      - coeducational
+      - radical
+      - spontaneous
+      - skim
+      - vaccinate
+      - untidy
+      - utensil
+      - sensitive
+      - temperate
+
+  - name: Lesson 35
+    words:
+      - vague
+      - elevate
+      - lottery
+      - finance
+      - obtain
+      - cinema
+      - event
+      - discard
+      - soar
+      - subsequent
+      - relate
+      - stationary
+
+  - name: Lesson 36
+    words:
+      - prompt
+      - hasty
+      - scorch
+      - tempest
+      - soothe
+      - sympathetic
+      - redeem
+      - resume
+      - harmony
+      - refrain
+      - illegal
+      - narcotic
+
+  - name: Lesson 37
+    words:
+      - heir
+      - majestic
+      - dwindle
+      - surplus
+      - traitor
+      - deliberate
+      - vandal
+      - drought
+      - abide
+      - unify
+      - summit
+      - heed
+
+  - name: Lesson 38
+    words:
+      - biography
+      - drench
+      - swarm
+      - wobble
+      - tumult
+      - kneel
+      - dejected
+      - obedient
+      - recede
+      - tyrant
+      - charity
+      - verdict
+
+  - name: Lesson 39
+    words:
+      - unearth
+      - depart
+      - coincide
+      - cancel
+      - debtor
+      - legible
+      - placard
+      - contagious
+      - clergy
+      - customary
+      - transparent
+      - scald
+
+  - name: Lesson 40
+    words:
+      - epidemic
+      - obesity
+      - magnify
+      - chiropractor
+      - obstacle
+      - ventilate
+      - jeopardize
+      - negative
+      - pension
+      - vital
+      - municipal
+      - oral
+
+  - name: Lesson 41
+    words:
+      - complacent
+      - wasp
+      - rehabilitate
+      - parole
+      - vertical
+      - multitude
+      - nominate
+      - potential
+      - morgue
+      - preoccupied
+      - upholstery
+      - indifference
+
+  - name: Lesson 42
+    words:
+      - maintain
+      - snub
+      - endure
+      - wrath
+      - expose
+      - legend
+      - ponder
+      - resign
+      - drastic
+      - wharf
+      - amend
+      - ballot
