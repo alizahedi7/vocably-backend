@@ -24,7 +24,11 @@ from app.application.dto import (
     AuthMethodCount,
     DailyCount,
 )
-from app.domain.enums import AuthMethod
+from app.application.services.content_admin_service import BuildJobDetail
+from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob
+from app.domain.entities.lexeme import Lexeme, LexemeSense
+from app.domain.enums import AuthMethod, SenseStatus
+from app.domain.repositories.lexicon_repository import LexiconStats
 
 
 class _CamelModel(BaseModel):
@@ -243,3 +247,258 @@ class AdminPublishDeckIn(BaseModel):
     category: str | None = Field(default=None, max_length=32)
     description: str | None = None
     description_fa: str | None = None
+
+
+# ── Content pipeline: builds and the lexicon ─────────────────
+
+
+class BuildJobOut(_CamelModel):
+    """One deck build, as the builds list renders it."""
+
+    id: UUID
+    template_slug: str = Field(serialization_alias="templateSlug")
+    template_version: str = Field(serialization_alias="templateVersion")
+    deck_id: UUID | None = Field(serialization_alias="deckId")
+    state: str
+    content_version: int = Field(serialization_alias="contentVersion")
+    native_language: str = Field(serialization_alias="nativeLanguage")
+    items_total: int = Field(serialization_alias="itemsTotal")
+    items_done: int = Field(serialization_alias="itemsDone")
+    items_failed: int = Field(serialization_alias="itemsFailed")
+    lexemes_reused: int = Field(serialization_alias="lexemesReused")
+    lexemes_generated: int = Field(serialization_alias="lexemesGenerated")
+    senses_enriched: int = Field(serialization_alias="sensesEnriched")
+    ai_calls: int = Field(serialization_alias="aiCalls")
+    progress_pct: int = Field(serialization_alias="progressPct")
+    #: Share of resolved words that cost no generation — the number that says
+    #: whether the lexicon is doing its job.
+    reuse_pct: int = Field(serialization_alias="reusePct")
+    last_error: str | None = Field(serialization_alias="lastError")
+    started_at: datetime | None = Field(serialization_alias="startedAt")
+    finished_at: datetime | None = Field(serialization_alias="finishedAt")
+    created_at: datetime = Field(serialization_alias="createdAt")
+
+    @classmethod
+    def from_entity(cls, job: DeckBuildJob) -> BuildJobOut:
+        return cls(
+            id=job.id,
+            template_slug=job.template_slug,
+            template_version=job.template_version,
+            deck_id=job.deck_id,
+            state=job.state.value,
+            content_version=job.content_version,
+            native_language=job.native_language,
+            items_total=job.items_total,
+            items_done=job.items_done,
+            items_failed=job.items_failed,
+            lexemes_reused=job.lexemes_reused,
+            lexemes_generated=job.lexemes_generated,
+            senses_enriched=job.senses_enriched,
+            ai_calls=job.ai_calls,
+            progress_pct=job.progress_pct,
+            reuse_pct=job.reuse_pct,
+            last_error=job.last_error,
+            started_at=job.started_at,
+            finished_at=job.finished_at,
+            created_at=job.created_at,
+        )
+
+
+class BuildJobPageOut(_CamelModel):
+    items: list[BuildJobOut]
+    total: int
+
+
+class BuildJobDetailOut(_CamelModel):
+    job: BuildJobOut
+    #: Item counts keyed by state name, for the progress bar's segments.
+    states: dict[str, int]
+    needs_attention: int = Field(serialization_alias="needsAttention")
+    estimated_remaining_usd: float = Field(serialization_alias="estimatedRemainingUsd")
+
+    @classmethod
+    def from_dto(cls, dto: BuildJobDetail) -> BuildJobDetailOut:
+        return cls(
+            job=BuildJobOut.from_entity(dto.job),
+            states={state.value: count for state, count in dto.states.items()},
+            needs_attention=dto.needs_attention,
+            estimated_remaining_usd=dto.estimated_remaining_usd,
+        )
+
+
+class BuildItemOut(_CamelModel):
+    id: UUID
+    position: int
+    unit_label: str = Field(serialization_alias="unitLabel")
+    source_term: str = Field(serialization_alias="sourceTerm")
+    state: str
+    lexeme_id: UUID | None = Field(serialization_alias="lexemeId")
+    sense_id: UUID | None = Field(serialization_alias="senseId")
+    word_id: UUID | None = Field(serialization_alias="wordId")
+    selection: str | None
+    selection_score: float | None = Field(serialization_alias="selectionScore")
+    attempts: int
+    enriched: bool
+    last_error: str | None = Field(serialization_alias="lastError")
+    hint: str
+
+    @classmethod
+    def from_entity(cls, item: DeckBuildItem) -> BuildItemOut:
+        hint = item.hint
+        rendered = f"{hint.part_of_speech} · {hint.context}" if hint.is_pinned else hint.gloss
+        return cls(
+            id=item.id,
+            position=item.position,
+            unit_label=item.unit_label,
+            source_term=item.source_term,
+            state=item.state.value,
+            lexeme_id=item.lexeme_id,
+            sense_id=item.sense_id,
+            word_id=item.word_id,
+            selection=item.selection.value if item.selection else None,
+            selection_score=item.selection_score,
+            attempts=item.attempts,
+            enriched=item.enriched,
+            last_error=item.last_error,
+            hint=rendered,
+        )
+
+
+class BuildItemPageOut(_CamelModel):
+    items: list[BuildItemOut]
+    total: int
+
+
+class LexiconStatsOut(_CamelModel):
+    lexemes: int
+    senses: int
+    translations: int
+    needs_review: int = Field(serialization_alias="needsReview")
+    approved: int
+    rejected: int
+    #: Senses an older pipeline wrote. Reported, never acted on automatically —
+    #: regeneration is always an explicit, bounded command.
+    stale: int
+    current_content_version: int = Field(serialization_alias="currentContentVersion")
+
+    @classmethod
+    def from_dto(cls, dto: LexiconStats, *, current_version: int) -> LexiconStatsOut:
+        return cls(
+            lexemes=dto.lexemes,
+            senses=dto.senses,
+            translations=dto.translations,
+            needs_review=dto.needs_review,
+            approved=dto.approved,
+            rejected=dto.rejected,
+            stale=dto.stale,
+            current_content_version=current_version,
+        )
+
+
+class SenseOut(_CamelModel):
+    id: UUID
+    lexeme_id: UUID = Field(serialization_alias="lexemeId")
+    sense_key: str = Field(serialization_alias="senseKey")
+    # Named `audience` on this model only: `register` collides with the
+    # `ABCMeta.register` that Pydantic's metaclass inherits, and Pydantic warns
+    # about the shadowing. The wire name stays `register`.
+    audience: str = Field(serialization_alias="register")
+    position: int
+    part_of_speech: str = Field(serialization_alias="partOfSpeech")
+    context: str
+    definition: str
+    example: str
+    status: str
+    content_version: int = Field(serialization_alias="contentVersion")
+    provider: str
+    model: str
+    source: str
+    #: ``{"Persian": "اداره کردن"}`` — one entry per language this sense has a
+    #: headline in. A sense with none is a miss, not an empty card.
+    translations: dict[str, str]
+    created_at: datetime = Field(serialization_alias="createdAt")
+
+    @classmethod
+    def from_entity(cls, sense: LexemeSense) -> SenseOut:
+        return cls(
+            id=sense.id,
+            lexeme_id=sense.lexeme_id,
+            sense_key=sense.sense_key,
+            audience=sense.register,
+            position=sense.position,
+            part_of_speech=sense.part_of_speech,
+            context=sense.context,
+            definition=sense.definition,
+            example=sense.example,
+            status=sense.status.value,
+            content_version=sense.content_version,
+            provider=sense.provider,
+            model=sense.model,
+            source=sense.source.value,
+            translations={t.native_language: t.native_meaning for t in sense.translations},
+            created_at=sense.created_at,
+        )
+
+
+class LexemeOut(_CamelModel):
+    id: UUID
+    lemma: str
+    language: str
+    display_term: str = Field(serialization_alias="displayTerm")
+    #: ``null`` means never looked up; ``""`` means the dictionary has no IPA for
+    #: this word. The client renders both as nothing and never has to tell them
+    #: apart — but the admin screen does, so the distinction survives the wire.
+    phonetic: str | None
+    senses: list[SenseOut]
+    created_at: datetime = Field(serialization_alias="createdAt")
+
+    @classmethod
+    def from_entity(cls, lexeme: Lexeme) -> LexemeOut:
+        return cls(
+            id=lexeme.id,
+            lemma=lexeme.lemma,
+            language=lexeme.language,
+            display_term=lexeme.display_term,
+            phonetic=lexeme.phonetic,
+            senses=[SenseOut.from_entity(s) for s in lexeme.senses],
+            created_at=lexeme.created_at,
+        )
+
+
+class LexemePageOut(_CamelModel):
+    items: list[LexemeOut]
+    total: int
+
+
+class ReviewQueueRowOut(_CamelModel):
+    """One flagged sense with enough of its headword to judge it by."""
+
+    lexeme_id: UUID = Field(serialization_alias="lexemeId")
+    term: str
+    sense: SenseOut
+
+
+class ReviewQueuePageOut(_CamelModel):
+    items: list[ReviewQueueRowOut]
+    total: int
+
+
+class SenseUpdateIn(BaseModel):
+    """An admin's edit. Every field optional; omitted means "leave it alone"."""
+
+    status: SenseStatus | None = None
+    definition: str | None = Field(default=None, max_length=400)
+    example: str | None = Field(default=None, max_length=300)
+    context: str | None = Field(default=None, max_length=40)
+    native_language: str | None = Field(default=None, max_length=64)
+    native_meaning: str | None = Field(default=None, max_length=200)
+
+
+class BuildItemSenseIn(BaseModel):
+    """Point a built card at a different sense of the same word."""
+
+    sense_id: UUID
+
+
+class RetryOut(_CamelModel):
+    requeued: int
