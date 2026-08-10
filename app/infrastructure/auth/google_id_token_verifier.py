@@ -37,9 +37,7 @@ class GoogleIdTokenVerifier(GoogleVerifier):
             async with httpx.AsyncClient(
                 timeout=self._timeout, transport=self._transport
             ) as client:
-                response = await client.get(
-                    _GOOGLE_TOKENINFO_URL, params={"id_token": id_token}
-                )
+                response = await client.get(_GOOGLE_TOKENINFO_URL, params={"id_token": id_token})
         except httpx.HTTPError as exc:
             logger.error("Google tokeninfo request failed: %s", type(exc).__name__)
             raise AuthenticationError("Invalid Google token.") from None
