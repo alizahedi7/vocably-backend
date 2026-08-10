@@ -236,8 +236,10 @@ def get_otp_sender() -> OTPSender:
 
 @lru_cache
 def _google_id_token_verifier() -> GoogleIdTokenVerifier:
-    # Memoized so the JWKS key cache survives across requests.
-    return GoogleIdTokenVerifier(client_id=settings.google_client_id)
+    return GoogleIdTokenVerifier(
+        client_id=settings.google_client_id,
+        timeout_seconds=settings.google_tokeninfo_timeout_seconds,
+    )
 
 
 def get_google_verifier() -> GoogleVerifier:

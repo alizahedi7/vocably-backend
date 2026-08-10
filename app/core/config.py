@@ -94,6 +94,9 @@ class Settings(BaseSettings):
     sms_ir_template_id: int = 0
     google_verifier: Literal["stub", "google"] = "stub"
     google_client_id: str = ""
+    #: Hard ceiling on the Google tokeninfo call. Sits in the login path, so a
+    #: slow response should fail fast rather than hang the request.
+    google_tokeninfo_timeout_seconds: float = 5.0
 
     # ── AI services ───────────────────────────────────────────
     ai_provider: Literal["stub", "anthropic", "openai", "avalai"] = "stub"

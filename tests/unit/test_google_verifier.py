@@ -1,27 +1,20 @@
-"""Google id_token verifier, exercised with locally-signed RS256 tokens."""
+"""Google id_token verifier, exercised against a mocked tokeninfo endpoint."""
 
 from __future__ import annotations
 
 import time
 from typing import Any
 
-import jwt
+import httpx
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.core.exceptions import AuthenticationError
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
 
 CLIENT_ID = "vocably-client-id.apps.googleusercontent.com"
 
-_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-
-class _SigningKey:
-    key = _PRIVATE_KEY.public_key()
-
-
-def make_token(**overrides: Any) -> str:
+def make_claims(**overrides: Any) -> dict[str, Any]:
     now = int(time.time())
     claims: dict[str, Any] = {
         "iss": "https://accounts.google.com",
@@ -33,33 +26,45 @@ def make_token(**overrides: Any) -> str:
         "exp": now + 300,
     }
     claims.update(overrides)
-    claims = {k: v for k, v in claims.items() if v is not None}
-    return jwt.encode(claims, _PRIVATE_KEY, algorithm="RS256")
+    return {k: v for k, v in claims.items() if v is not None}
 
 
-@pytest.fixture
-def verifier(monkeypatch: pytest.MonkeyPatch) -> GoogleIdTokenVerifier:
-    instance = GoogleIdTokenVerifier(client_id=CLIENT_ID)
-    monkeypatch.setattr(
-        instance._jwk_client, "get_signing_key_from_jwt", lambda token: _SigningKey()
-    )
-    return instance
+def make_verifier(handler: Any) -> GoogleIdTokenVerifier:
+    transport = httpx.MockTransport(handler)
+    return GoogleIdTokenVerifier(client_id=CLIENT_ID, transport=transport)
 
 
-async def test_valid_token_yields_identity(verifier: GoogleIdTokenVerifier) -> None:
-    identity = await verifier.verify(make_token())
+def tokeninfo_handler(claims: dict[str, Any] | None) -> Any:
+    """A tokeninfo stand-in: 200+claims for a "valid" token, 400 otherwise."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if claims is None:
+            return httpx.Response(400, json={"error_description": "Invalid Value"})
+        return httpx.Response(200, json=claims)
+
+    return handler
+
+
+async def test_valid_token_yields_identity() -> None:
+    verifier = make_verifier(tokeninfo_handler(make_claims()))
+    identity = await verifier.verify("token")
     assert identity.sub == "1234567890"
     assert identity.email == "ali@example.com"
     assert identity.name == "Ali"
 
 
-async def test_token_without_optional_claims_still_verifies(
-    verifier: GoogleIdTokenVerifier,
-) -> None:
-    identity = await verifier.verify(make_token(email=None, name=None))
+async def test_token_without_optional_claims_still_verifies() -> None:
+    verifier = make_verifier(tokeninfo_handler(make_claims(email=None, name=None)))
+    identity = await verifier.verify("token")
     assert identity.sub == "1234567890"
     assert identity.email is None
     assert identity.name is None
+
+
+async def test_google_rejected_token_is_rejected() -> None:
+    verifier = make_verifier(tokeninfo_handler(None))
+    with pytest.raises(AuthenticationError):
+        await verifier.verify("token")
 
 
 @pytest.mark.parametrize(
@@ -67,30 +72,28 @@ async def test_token_without_optional_claims_still_verifies(
     [
         {"aud": "some-other-client"},
         {"iss": "https://evil.example.com"},
-        {"exp": int(time.time()) - 10},
         {"sub": None},
     ],
 )
-async def test_bad_tokens_are_rejected(
-    verifier: GoogleIdTokenVerifier, overrides: dict[str, Any]
-) -> None:
+async def test_bad_claims_are_rejected(overrides: dict[str, Any]) -> None:
+    verifier = make_verifier(tokeninfo_handler(make_claims(**overrides)))
     with pytest.raises(AuthenticationError):
-        await verifier.verify(make_token(**overrides))
+        await verifier.verify("token")
 
 
-async def test_tampered_token_is_rejected(verifier: GoogleIdTokenVerifier) -> None:
-    other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    now = int(time.time())
-    forged = jwt.encode(
-        {
-            "iss": "https://accounts.google.com",
-            "aud": CLIENT_ID,
-            "sub": "x",
-            "iat": now,
-            "exp": now + 300,
-        },
-        other_key,
-        algorithm="RS256",
-    )
+async def test_network_failure_is_rejected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("boom", request=request)
+
+    verifier = make_verifier(handler)
     with pytest.raises(AuthenticationError):
-        await verifier.verify(forged)
+        await verifier.verify("token")
+
+
+async def test_malformed_response_is_rejected() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"not json")
+
+    verifier = make_verifier(handler)
+    with pytest.raises(AuthenticationError):
+        await verifier.verify("token")
