@@ -34,13 +34,20 @@ class DeckBoxTally:
 
 class WordProgressRepository(ABC):
     """
-    ``day_start`` on the reads is the UTC instant the learner's current day
-    began (``calendar.day_start_for``). It decides when a card nobody has
-    answered becomes due: the day *after* it was added, never the same day —
-    writing a word down is the first exposure, and testing it thirty seconds
-    later measures nothing. Timezones belong to the service layer, so passing
-    ``None`` accepts a UTC boundary and is only honest for reads that do not
-    turn on due dates at all.
+    ``day_start`` and ``day_end`` on the reads are the UTC instants the
+    learner's current day began and ends (``calendar.day_start_for`` /
+    ``day_end_for``) — the half-open ``[start, end)`` covering their today.
+
+    ``day_start`` decides when a card nobody has answered becomes due: the day
+    *after* it was added, never the same day — writing a word down is the first
+    exposure, and testing it thirty seconds later measures nothing.
+    ``day_end`` decides when an already-scheduled card becomes due, and it is a
+    *day* boundary rather than the current instant on purpose: a card graded at
+    19:02 is due for the whole of its day, not from 19:02 onwards, or the
+    home-screen count climbs through the afternoon.
+
+    Timezones belong to the service layer, so passing ``None`` accepts a UTC
+    boundary and is only honest for reads that do not turn on due dates at all.
     """
 
     @abstractmethod
@@ -68,6 +75,7 @@ class WordProgressRepository(ABC):
         deck_id: UUID | None = None,
         limit: int | None = None,
         day_start: datetime | None = None,
+        day_end: datetime | None = None,
     ) -> list[StudiedWord]: ...
 
     @abstractmethod
@@ -96,6 +104,7 @@ class WordProgressRepository(ABC):
         now: datetime,
         *,
         day_start: datetime | None = None,
+        day_end: datetime | None = None,
     ) -> list[DeckBoxTally]:
         """Every home-screen and deck-list number, in one query.
 

@@ -19,7 +19,7 @@ from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.xp_repository import XpRepository
 from app.domain.services import leitner
-from app.domain.services.calendar import day_start_for, today_for
+from app.domain.services.calendar import day_end_for, day_start_for, today_for
 
 #: Where a graded answer came from. A review session and a practice drill
 #: are worth different amounts, and the client says which.
@@ -56,10 +56,17 @@ class StudyService:
         """
         now = datetime.now(UTC)
         user = await self._users.get(user_id)
-        # Where *this* learner's day starts. It decides which never-answered
-        # words have come due — a word added today is tomorrow's work.
-        day_start = day_start_for(user.timezone if user else None, now)
-        tallies = await self._progress.tally_by_deck_and_box(user_id, now, day_start=day_start)
+        # Where *this* learner's day starts and ends. The pair is what makes
+        # every number below a fact about the day rather than about the moment
+        # it was asked for: a word added today is tomorrow's work, and a card
+        # already scheduled for today is due from midnight, not from whatever
+        # o'clock it happened to be graded at.
+        timezone = user.timezone if user else None
+        day_start = day_start_for(timezone, now)
+        day_end = day_end_for(timezone, now)
+        tallies = await self._progress.tally_by_deck_and_box(
+            user_id, now, day_start=day_start, day_end=day_end
+        )
 
         per_box: dict[LeitnerBox, int] = defaultdict(int)
         total = due_count = learned = 0
@@ -116,9 +123,15 @@ class StudyService:
         """
         now = datetime.now(UTC)
         user = await self._users.get(user_id)
-        day_start = day_start_for(user.timezone if user else None, now)
+        timezone = user.timezone if user else None
+        day_start = day_start_for(timezone, now)
         due = await self._progress.list_due(
-            user_id, now, deck_id=deck_id, limit=limit, day_start=day_start
+            user_id,
+            now,
+            deck_id=deck_id,
+            limit=limit,
+            day_start=day_start,
+            day_end=day_end_for(timezone, now),
         )
         if due:
             return due

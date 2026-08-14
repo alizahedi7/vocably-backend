@@ -12,8 +12,8 @@ does; the schema is created and dropped around every test.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
-from datetime import timedelta
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator, Sequence
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -225,4 +225,28 @@ async def sleep_on_it(
             word.created_at = word.created_at - shift
         for progress in (await session.execute(select(WordProgressModel))).scalars().all():
             progress.due_at = progress.due_at - shift
+        await session.commit()
+
+
+async def spread_due_times_over_today(
+    session_factory: async_sessionmaker[AsyncSession],
+    hours: Sequence[int],
+) -> None:
+    """Scatter the progress rows across today at the given hours (UTC).
+
+    The companion to :func:`sleep_on_it`, and the thing it cannot do. Because
+    ``sleep_on_it`` shifts rows backwards by whole days it preserves each one's
+    time of day exactly, so every card in a test comes due at the same o'clock
+    — which is precisely the case where scheduling from the clock instead of
+    from the day looks correct.
+
+    Cards due at 00:30, 12:00 and 23:30 all belong to *today*, whatever the
+    hour the suite happens to run at. Anything comparing ``due_at`` to ``now``
+    will disagree, and disagree differently in the morning than at night.
+    """
+    async with session_factory() as session:
+        rows = (await session.execute(select(WordProgressModel))).scalars().all()
+        midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        for index, progress in enumerate(rows):
+            progress.due_at = midnight + timedelta(hours=hours[index % len(hours)])
         await session.commit()

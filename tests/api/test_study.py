@@ -8,7 +8,12 @@ from uuid import uuid4
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tests.api.conftest import UserFactory, bearer, sleep_on_it
+from tests.api.conftest import (
+    UserFactory,
+    bearer,
+    sleep_on_it,
+    spread_due_times_over_today,
+)
 
 
 async def seed_deck_with_words(
@@ -58,6 +63,78 @@ async def test_overview_reflects_box_distribution(
     assert by_box[1]["count"] == 3
     assert by_box[1]["label"] == "New"
     assert by_box[5]["count"] == 0
+
+
+async def test_due_count_is_the_same_whatever_the_hour(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The day's queue is a fact about the day, not about the moment asked.
+
+    The reported bug: 10 words in the morning, 13 by the afternoon, 15 by the
+    evening, no midnight crossed. Cards were scheduled at the clock time they
+    were graded, and read back with ``due_at <= now``, so each one rejoined the
+    queue as its own hour came round.
+
+    Here three cards are due at 00:30, 12:00 and 23:30 *today*. All three
+    belong to today, so the count is three — at 09:00, at 14:00, at any hour
+    the suite runs. Under the old predicate this test reports 1, 2 or 3
+    depending on the wall clock, which is the whole complaint.
+    """
+    _, word_ids = await seed_deck_with_words(client, auth_headers, ["alpha", "beta", "gamma"])
+    for word_id in word_ids:
+        graded = await client.post(
+            f"/api/v1/study/words/{word_id}/grade", headers=auth_headers, json={"grade": "good"}
+        )
+        assert graded.status_code == 200, graded.text
+
+    await spread_due_times_over_today(session_factory, hours=[0, 12, 23])
+
+    overview = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    assert overview["due_count"] == 3
+
+    # And the queue agrees with the number above it — a session that dealt only
+    # the cards whose hour had passed was the same bug seen from the other end.
+    session = await client.get("/api/v1/study/session", headers=auth_headers)
+    assert session.json()["count"] == 3
+
+    # The deck badge is drawn from a different query and must not disagree.
+    decks = (await client.get("/api/v1/decks", headers=auth_headers)).json()
+    assert decks[0]["due_count"] == 3
+
+
+async def test_a_card_scheduled_for_tomorrow_stays_there(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The other edge: the day boundary is exclusive.
+
+    Grading a card must not let it back into today's queue, and 00:00 tomorrow
+    belongs to tomorrow. Without the strict comparison, every card graded
+    ``again`` would reappear in the session it was just answered in.
+    """
+    _, word_ids = await seed_deck_with_words(client, auth_headers, ["alpha", "beta"])
+    for word_id in word_ids:
+        await client.post(
+            f"/api/v1/study/words/{word_id}/grade", headers=auth_headers, json={"grade": "again"}
+        )
+
+    overview = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    assert overview["due_count"] == 0
+
+    # Exactly on the boundary — the first instant of tomorrow — is tomorrow.
+    await spread_due_times_over_today(session_factory, hours=[24])
+    assert (await client.get("/api/v1/study/overview", headers=auth_headers)).json()[
+        "due_count"
+    ] == 0
+
+    # One minute earlier is today.
+    await spread_due_times_over_today(session_factory, hours=[23])
+    assert (await client.get("/api/v1/study/overview", headers=auth_headers)).json()[
+        "due_count"
+    ] == 2
 
 
 async def test_session_returns_due_words_and_respects_deck_filter(
