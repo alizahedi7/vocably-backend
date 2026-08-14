@@ -106,5 +106,5 @@ class StudiedWord:
     def last_grade(self) -> ReviewGrade | None:
         return self.progress.last_grade
 
-    def is_due(self, now: datetime) -> bool:
-        return self.progress.is_due(now)
+    def is_due(self, day_end: datetime) -> bool:
+        return self.progress.is_due(day_end)

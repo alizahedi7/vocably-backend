@@ -42,8 +42,11 @@ def test_unstudied_reads_as_a_new_card_due_tomorrow() -> None:
 
     assert progress.box is LeitnerBox.NEW
     assert progress.due_at == day_start + timedelta(days=1)
-    assert not progress.is_due(NOW)
-    assert progress.is_due(day_start + timedelta(days=1))
+    # ``is_due`` asks about a whole day, so it takes the day's *end* — the
+    # first instant of the next one. Not due before tonight's midnight;
+    # due once tomorrow's has been reached, at any hour of tomorrow.
+    assert not progress.is_due(day_start + timedelta(days=1))
+    assert progress.is_due(day_start + timedelta(days=2))
     assert progress.review_count == 0
     assert progress.lapse_count == 0
     assert progress.consecutive_correct == 0
@@ -65,7 +68,7 @@ def test_a_word_added_on_an_earlier_day_is_due_now() -> None:
     )
 
     assert progress.due_at == day_start
-    assert progress.is_due(NOW)
+    assert progress.is_due(day_start + timedelta(days=1))
 
 
 # ── WordProgress.apply_review ────────────────────────────────

@@ -61,7 +61,26 @@ class ReviewOutcome:
     due_at: datetime
 
 
-def review(current: LeitnerBox, grade: ReviewGrade, now: datetime) -> ReviewOutcome:
-    """Compute the full outcome of grading a card at ``now``."""
+def review(
+    current: LeitnerBox, grade: ReviewGrade, now: datetime, day_start: datetime
+) -> ReviewOutcome:
+    """Compute the full outcome of grading a card at ``now``.
+
+    The interval is measured from the start of the learner's day, not from
+    ``now``, so a card comes due at their midnight rather than at whatever
+    o'clock it was last answered. This is the same rule
+    :meth:`WordProgress.first_due_at` applies to a brand-new card — a card's
+    next appearance is a *day*, and it should not matter whether the learner
+    studies before breakfast or after dinner.
+
+    Scheduling from ``now`` instead is what made the home screen's due count
+    climb through the day: cards graded at 09:14, 13:40 and 19:02 came due
+    again at 09:14, 13:40 and 19:02, so the queue grew hour by hour without a
+    midnight ever being crossed.
+
+    ``now`` is still taken because it is the moment being graded, and the two
+    are not interchangeable — a review just after midnight belongs to the new
+    day, which is exactly what ``day_start`` encodes.
+    """
     box = next_box(current, grade)
-    return ReviewOutcome(box=box, due_at=now + interval_for(box))
+    return ReviewOutcome(box=box, due_at=day_start + interval_for(box))

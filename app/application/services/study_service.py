@@ -93,7 +93,7 @@ class StudyService:
                 BoxCount(box=box, label=box.label, count=per_box.get(box, 0)) for box in LeitnerBox
             ],
         )
-        today = today_for(user.timezone if user else None, now)
+        today = today_for(timezone, now)
         return StudyOverview(
             due_count=due_count,
             total_count=total,
@@ -168,7 +168,12 @@ class StudyService:
             raise NotFoundError("Word not found.")
 
         now = datetime.now(UTC)
-        outcome = leitner.review(studied.box, grade, now)
+        # Fetched before the review rather than after it: the next due date is
+        # anchored to the start of *this learner's* day, so their timezone is an
+        # input to the scheduling and not just to the streak below.
+        user = await self._users.get(user_id)
+        timezone = user.timezone if user else None
+        outcome = leitner.review(studied.box, grade, now, day_start_for(timezone, now))
 
         # Built before apply_review, which overwrites the pre-review box, due
         # date and last-reviewed time the event needs.
@@ -196,10 +201,9 @@ class StudyService:
         # fail the request and let the client retry.
         await self._reviews.add(event)
 
-        user = await self._users.get(user_id)
         # The learner's own day, not UTC: a review at 01:00 in Tehran belongs to
         # that day, and the streak and the roster's week must agree about which.
-        today = today_for(user.timezone if user else None, now)
+        today = today_for(timezone, now)
         # Rides along on the same transaction. This is what keeps the roster off
         # word_reviews, which CLAUDE.md forbids aggregating for a user-facing
         # request — a roster of thirty students would otherwise scan it thirty
