@@ -19,7 +19,7 @@ from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.xp_repository import XpRepository
 from app.domain.services import leitner
-from app.domain.services.calendar import day_start_for, today_for
+from app.domain.services.calendar import day_end_for, day_start_for, today_for
 
 #: Where a graded answer came from. A review session and a practice drill
 #: are worth different amounts, and the client says which.
@@ -56,10 +56,17 @@ class StudyService:
         """
         now = datetime.now(UTC)
         user = await self._users.get(user_id)
-        # Where *this* learner's day starts. It decides which never-answered
-        # words have come due — a word added today is tomorrow's work.
-        day_start = day_start_for(user.timezone if user else None, now)
-        tallies = await self._progress.tally_by_deck_and_box(user_id, now, day_start=day_start)
+        # Where *this* learner's day starts and ends. The pair is what makes
+        # every number below a fact about the day rather than about the moment
+        # it was asked for: a word added today is tomorrow's work, and a card
+        # already scheduled for today is due from midnight, not from whatever
+        # o'clock it happened to be graded at.
+        timezone = user.timezone if user else None
+        day_start = day_start_for(timezone, now)
+        day_end = day_end_for(timezone, now)
+        tallies = await self._progress.tally_by_deck_and_box(
+            user_id, now, day_start=day_start, day_end=day_end
+        )
 
         per_box: dict[LeitnerBox, int] = defaultdict(int)
         total = due_count = learned = 0
@@ -86,7 +93,7 @@ class StudyService:
                 BoxCount(box=box, label=box.label, count=per_box.get(box, 0)) for box in LeitnerBox
             ],
         )
-        today = today_for(user.timezone if user else None, now)
+        today = today_for(timezone, now)
         return StudyOverview(
             due_count=due_count,
             total_count=total,
@@ -116,9 +123,15 @@ class StudyService:
         """
         now = datetime.now(UTC)
         user = await self._users.get(user_id)
-        day_start = day_start_for(user.timezone if user else None, now)
+        timezone = user.timezone if user else None
+        day_start = day_start_for(timezone, now)
         due = await self._progress.list_due(
-            user_id, now, deck_id=deck_id, limit=limit, day_start=day_start
+            user_id,
+            now,
+            deck_id=deck_id,
+            limit=limit,
+            day_start=day_start,
+            day_end=day_end_for(timezone, now),
         )
         if due:
             return due
@@ -155,7 +168,12 @@ class StudyService:
             raise NotFoundError("Word not found.")
 
         now = datetime.now(UTC)
-        outcome = leitner.review(studied.box, grade, now)
+        # Fetched before the review rather than after it: the next due date is
+        # anchored to the start of *this learner's* day, so their timezone is an
+        # input to the scheduling and not just to the streak below.
+        user = await self._users.get(user_id)
+        timezone = user.timezone if user else None
+        outcome = leitner.review(studied.box, grade, now, day_start_for(timezone, now))
 
         # Built before apply_review, which overwrites the pre-review box, due
         # date and last-reviewed time the event needs.
@@ -183,10 +201,9 @@ class StudyService:
         # fail the request and let the client retry.
         await self._reviews.add(event)
 
-        user = await self._users.get(user_id)
         # The learner's own day, not UTC: a review at 01:00 in Tehran belongs to
         # that day, and the streak and the roster's week must agree about which.
-        today = today_for(user.timezone if user else None, now)
+        today = today_for(timezone, now)
         # Rides along on the same transaction. This is what keeps the roster off
         # word_reviews, which CLAUDE.md forbids aggregating for a user-facing
         # request — a roster of thirty students would otherwise scan it thirty

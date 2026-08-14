@@ -80,6 +80,22 @@ def day_start_for(timezone: str | None, now: datetime | None = None) -> datetime
     return start
 
 
+def day_end_for(timezone: str | None, now: datetime | None = None) -> datetime:
+    """The UTC instant the learner's current day ends — i.e. tomorrow's start.
+
+    The half-open partner of :func:`day_start_for`, and the boundary *dueness*
+    is measured against. A card is due today when it is due at any point before
+    this instant, which is what makes a day's queue the same size at breakfast
+    and at midnight. Comparing against ``now`` instead lets a card scheduled
+    days ago at 19:02 appear at 19:02 today, so the count climbs all evening.
+
+    Exclusive: a card falling exactly on this instant belongs to tomorrow.
+    """
+    moment = now or datetime.now(UTC)
+    _, end = day_bounds(today_for(timezone, moment), timezone)
+    return end
+
+
 def week_bounds(day: date, timezone: str | None) -> tuple[datetime, datetime]:
     """The UTC interval covering the Monday-to-Sunday week containing ``day``."""
     monday = day - timedelta(days=day.weekday())

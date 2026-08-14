@@ -116,8 +116,15 @@ class WordProgress:
         due_at = cls.first_due_at(day_start) if created_at >= day_start else day_start
         return cls(user_id=user_id, word_id=word_id, deck_id=deck_id, due_at=due_at)
 
-    def is_due(self, now: datetime) -> bool:
-        return self.due_at <= now
+    def is_due(self, day_end: datetime) -> bool:
+        """Whether this card belongs to the day ending at ``day_end``.
+
+        A day, not an instant — ``day_end`` is the first moment of the
+        learner's tomorrow (``calendar.day_end_for``), so the answer is the
+        same all day. Passing ``now`` here is the bug this replaced: a card
+        scheduled for 19:02 would read as not-due until 19:02.
+        """
+        return self.due_at < day_end
 
     def apply_review(
         self,

@@ -15,7 +15,7 @@ from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_repository import DeckRepository
 from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
-from app.domain.services.calendar import day_start_for
+from app.domain.services.calendar import day_end_for, day_start_for
 
 _MAX_BOX = int(LeitnerBox.MASTERED)
 
@@ -48,11 +48,14 @@ class DeckService:
         now = datetime.now(UTC)
         user = await self._users.get(user_id)
         # The deck cards' due numbers are the home screen's, so they answer to
-        # the same day boundary the overview does.
+        # the same day bounds the overview does — otherwise a deck badge and
+        # the number above it could disagree within the same minute.
+        timezone = user.timezone if user else None
         tallies = await self._progress.tally_by_deck_and_box(
             user_id,
             now,
-            day_start=day_start_for(user.timezone if user else None, now),
+            day_start=day_start_for(timezone, now),
+            day_end=day_end_for(timezone, now),
         )
 
         # words, started, box sum over started, due. Only the first counts a

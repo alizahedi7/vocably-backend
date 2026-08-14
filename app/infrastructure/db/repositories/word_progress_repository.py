@@ -10,7 +10,7 @@ word the learner has not studied, which is most of them.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, Select, and_, case, delete, func, literal, or_, select
@@ -55,19 +55,28 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         )
 
     @staticmethod
-    def _is_due(now: datetime, day_start: datetime) -> ColumnElement[bool]:
-        """Whether a joined row is waiting for the learner right now.
+    def _is_due(day_start: datetime, day_end: datetime) -> ColumnElement[bool]:
+        """Whether a joined row is waiting for the learner *today*.
 
-        With a progress row it is the stored ``due_at``. Without one the card
-        has never been answered, and it becomes due the day *after* it was
-        added — so the question is only whether its day has arrived, which is
-        one comparison against the start of the learner's today. A word added
-        this afternoon is tomorrow's work, exactly like a word graded
-        ``again`` is.
+        Dueness is a question about the day, not the clock — both branches
+        compare against a boundary of the learner's own day, and neither
+        against the current instant.
+
+        Without a progress row the card has never been answered and becomes due
+        the day *after* it was added, so the question is whether its day has
+        arrived. With one, it is due once its scheduled moment falls before the
+        end of today; ``day_end`` is tomorrow's first instant, so the
+        comparison is strict and a card scheduled for tomorrow stays there.
+
+        Comparing the stored ``due_at`` against *now* is what used to make the
+        home screen climb through the day: a card graded at 19:02 came due
+        again at 19:02, so the queue grew hour by hour without a midnight ever
+        being crossed. A word added this afternoon is tomorrow's work, exactly
+        like a word graded ``again`` is.
         """
         return or_(
             and_(WordProgressModel.word_id.is_(None), WordModel.created_at < day_start),
-            WordProgressModel.due_at <= now,
+            WordProgressModel.due_at < day_end,
         )
 
     @staticmethod
@@ -82,6 +91,20 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         if day_start is not None:
             return day_start
         return now.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    @classmethod
+    def _day_bounds(
+        cls, now: datetime, day_start: datetime | None, day_end: datetime | None
+    ) -> tuple[datetime, datetime]:
+        """The learner's ``[start, end)`` day, falling back to a UTC one.
+
+        The end defaults to a day after the start rather than being derived
+        again, so the pair cannot disagree about which day it describes. Same
+        caveat as :meth:`_day_start`: a caller that turns on due dates must
+        pass the learner's own bounds — see ``calendar.day_end_for``.
+        """
+        start = cls._day_start(now, day_start)
+        return start, day_end if day_end is not None else start + timedelta(days=1)
 
     def _visible(self, user_id: UUID) -> Select[tuple[WordModel, WordProgressModel, bool]]:
         """Cards in the decks this user belongs to, with their own progress.
@@ -161,13 +184,14 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         deck_id: UUID | None = None,
         limit: int | None = None,
         day_start: datetime | None = None,
+        day_end: datetime | None = None,
     ) -> list[StudiedWord]:
         # Started first, then due. A never-started card in a self-paced deck
         # has no due date to speak of — it is not in the queue at all.
-        boundary = self._day_start(now, day_start)
+        boundary, end = self._day_bounds(now, day_start, day_end)
         stmt = self._visible(user_id).where(
             self._is_started(),
-            self._is_due(now, boundary),
+            self._is_due(boundary, end),
         )
         if deck_id is not None:
             stmt = stmt.where(WordModel.deck_id == deck_id)
@@ -216,6 +240,7 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         now: datetime,
         *,
         day_start: datetime | None = None,
+        day_end: datetime | None = None,
     ) -> list[DeckBoxTally]:
         # A missing progress row reads as box 1 and counts as due. Both are
         # computed in SQL so the box lands in the GROUP BY rather than being
@@ -224,7 +249,7 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         box = func.coalesce(WordProgressModel.box, int(LeitnerBox.NEW))
         started = self._is_started()
         due = case(
-            (and_(started, self._is_due(now, self._day_start(now, day_start))), 1),
+            (and_(started, self._is_due(*self._day_bounds(now, day_start, day_end))), 1),
             else_=0,
         )
         # `started` joins the grouping rather than filtering the query: the deck
