@@ -402,6 +402,23 @@ re-opening a closed link returns the same code; one already handed to a class
 must keep working. A bad code, a closed one and an expired one all answer the
 same 404. `POST /decks/join` is rate-limited per user *and* per IP.
 
+**Only the owner opens a link, and only through `POST /decks/{id}/invite`.**
+Nothing else may set `is_open`. `share()` used to end by switching it on and
+returning the code so that the sharer had something to paste — so naming one
+student by handle left a live, deck-wide join credential on the deck that
+nobody had asked for and nothing on screen reported, and the next share
+re-opened a link the owner had deliberately closed. It now returns the code of
+an already-open link and `""` otherwise: there is nothing to paste when there
+is no link, and returning a code `join` would refuse is worse than returning
+nothing. `ShareDeckOut.code` stays a required string so older clients keep
+parsing the response; they simply get an empty box where the code was.
+
+**Not backfilled.** Decks whose link this opened before the fix are still open,
+because a code already handed to a class must keep working and closing it
+silently would break exactly the case invite links exist for. Owners can close
+theirs from the share sheet's switch, which now tells the truth about what is
+open.
+
 **Known client gap:** nothing yet parses `https://app.vocably.ir/join/<code>`
 into a `joinByCode` call, so the flow is copy-and-paste until the PWA gets a
 `/join/:code` route and Android gets an App Link.

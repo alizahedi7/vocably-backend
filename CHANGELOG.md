@@ -12,6 +12,15 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
 
 ### Security
 
+- **Sharing a deck with one person no longer opens its public invite link.**
+  `POST /decks/{id}/share` ended by setting `is_open = True` and returning the
+  code, so naming a single student by handle minted a deck-wide bearer
+  credential the owner never asked for, was not told about, and could not see
+  without opening the share sheet — and the next share silently re-opened a
+  link they had deliberately closed. Sharing now returns the code of an
+  already-open link and an empty string otherwise; only `POST
+  /decks/{id}/invite` opens one. Links opened this way before the fix are left
+  open, because a code already given to a class must keep working.
 - **OTP brute-force lockout now engages.** Failed verification attempts were
   rolled back with the failed request, so the five-attempt cap never applied
   and codes could be guessed without limit. Attempts are now counted with an

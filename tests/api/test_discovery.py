@@ -359,7 +359,9 @@ async def test_sharing_with_a_person_shares_the_deck_itself(
         f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
     )
     assert shared.status_code == 200, shared.text
-    assert len(shared.json()["code"]) == 13  # the deck's invite code, to paste
+    # Nothing to paste: this deck has no open link, and naming one person is
+    # not a request for a public one. See the invite-link test below.
+    assert shared.json()["code"] == ""
 
     offers = await client.get("/api/v1/decks/shared", headers=bearer(friend_id))
     assert offers.status_code == 200
@@ -428,6 +430,66 @@ async def test_a_share_addressed_to_someone_else_is_invisible(
     assert (
         await client.delete(f"/api/v1/decks/shared/{offer['id']}", headers=bearer(stranger.id))
     ).status_code == 404
+
+
+async def test_sharing_with_a_handle_never_opens_the_invite_link(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """An invite code is a bearer credential over the whole deck.
+
+    Sharing used to mint one and switch it on so the sharer had something to
+    paste, which meant naming a single student by handle left a live public
+    join link on the deck that nobody had asked for — and re-opened, at the
+    next share, a link the owner had deliberately closed. Both directions are
+    checked here: silent while there is no link, honest once there is one.
+    """
+    deck_id = await create_deck(client, auth_headers, "Book 3")
+    await client.patch("/api/v1/users/me", headers=auth_headers, json={"username": "sender_y"})
+    await named(client, make_user, "+989121112010", "parisa")
+    await named(client, make_user, "+989121112011", "nima")
+
+    shared = await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
+    )
+    assert shared.status_code == 200, shared.text
+    assert shared.json()["code"] == ""
+
+    # The deck is not reachable by a link, and does not claim to be: this is
+    # what the client's header chip reads to decide there is no study group.
+    membership = await client.get(f"/api/v1/decks/{deck_id}/membership", headers=auth_headers)
+    assert membership.status_code == 200, membership.text
+    assert membership.json()["invite_open"] is False
+    assert membership.json()["invite_code"] == ""
+
+    # Opening the link is the owner's own decision, made with its own control.
+    opened = await client.post(
+        f"/api/v1/decks/{deck_id}/invite", headers=auth_headers, json={"role": "viewer"}
+    )
+    assert opened.status_code == 200, opened.text
+    code = opened.json()["invite_code"]
+    assert len(code) == 13
+
+    # And now that there *is* something to paste, sharing hands it back —
+    # the same code, not a new one, so a link already given to a class keeps
+    # working.
+    again = await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "nima"}
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["code"] == code
+
+    # Closing it is respected: the next share must not turn it back on.
+    closed = await client.delete(f"/api/v1/decks/{deck_id}/invite", headers=auth_headers)
+    assert closed.status_code == 200, closed.text
+    await named(client, make_user, "+989121112012", "sara")
+    after = await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "sara"}
+    )
+    assert after.status_code == 200, after.text
+    assert after.json()["code"] == ""
+    assert (
+        await client.get(f"/api/v1/decks/{deck_id}/membership", headers=auth_headers)
+    ).json()["invite_open"] is False
 
 
 async def test_sharing_is_refused_with_readable_copy(

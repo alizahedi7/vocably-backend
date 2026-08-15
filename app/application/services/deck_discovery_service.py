@@ -14,7 +14,6 @@ from uuid import UUID
 from app.application.services.deck_access import DeckAccess
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.domain.entities.deck import Deck
-from app.domain.entities.deck_invite import DeckInvite
 from app.domain.entities.deck_member import DeckMember
 from app.domain.entities.word import Word
 from app.domain.enums import DeckRole
@@ -193,17 +192,34 @@ class DeckDiscoveryService:
         to_username: str,
         role: DeckRole = DeckRole.VIEWER,
     ) -> str:
-        """Offer one of your decks to a handle, returning the deck's invite code.
+        """Offer one of your decks to a handle.
 
-        The code is returned so the sharer has something to paste anywhere —
-        the same link a class would use. Only someone who may already invite to
-        the deck can share it, so a viewer cannot hand a teacher's deck around.
+        Only someone who may already invite to the deck can share it, so a
+        viewer cannot hand a teacher's deck around.
 
         ``role`` is what *accepting* will make them, and it is carried on the
         offer rather than applied now: the recipient is not a member until they
         say so. There is exactly one owner, so asking for that one is answered
         with a viewer instead of an error — the same downgrade every other role
         entry point in this service makes.
+
+        **Sharing does not open the deck's invite link, and must not.** This
+        used to end by setting ``is_open = True`` and returning the code, so
+        that the sharer had something to paste anywhere. Two things were wrong
+        with it. An invite code is a *bearer credential over the whole deck* —
+        holding it is what grants access, to anyone, at ``invite.role`` — and
+        minting one as a silent side effect of naming one person meant a
+        teacher who invited a single student by handle had a live public join
+        link on their deck without ever asking for one, and no indication that
+        they did. And it is the owner's decision to make: the link is its own
+        control in the share sheet, with its own switch, and this quietly
+        overrode it — turning back on, at the next share, a link the owner had
+        deliberately closed.
+
+        It returns the code of a link that is **already** open, and an empty
+        string otherwise: there is nothing to paste when there is no link, and
+        answering with a code that ``join`` would refuse (it requires
+        ``accepts()``) would be worse than answering with nothing.
         """
         await self._access.require_manage(deck_id, user_id)
 
@@ -231,10 +247,7 @@ class DeckDiscoveryService:
         await self._friends.link(user_id, recipient.id, shared_at=now)
 
         invite = await self._invites.get_for_deck(deck_id)
-        if invite is None:
-            invite = DeckInvite(deck_id=deck_id, created_by_user_id=user_id)
-        invite.is_open = True
-        return (await self._invites.upsert(invite)).code
+        return invite.code if invite and invite.accepts(now) else ""
 
     async def accept(self, share_id: UUID, user_id: UUID) -> Deck:
         """Take a deck someone offered. The same deck, not a copy."""

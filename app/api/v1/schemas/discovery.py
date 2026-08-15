@@ -161,7 +161,14 @@ class ShareDeckIn(BaseModel):
 
 
 class ShareDeckOut(BaseModel):
-    """The deck's invite code, so the sharer has something to paste anywhere."""
+    """The deck's invite code, when there is one to give.
+
+    Empty whenever the deck has no open invite link — which is the ordinary
+    case, because sharing with a handle deliberately does not open one. The
+    field stays required and stays a string so that an older client, which
+    reads it unconditionally, keeps parsing this response; it simply has
+    nothing to paste. See ``DeckDiscoveryService.share``.
+    """
 
     code: str
 
