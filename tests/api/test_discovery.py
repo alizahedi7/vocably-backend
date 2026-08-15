@@ -487,9 +487,8 @@ async def test_sharing_with_a_handle_never_opens_the_invite_link(
     )
     assert after.status_code == 200, after.text
     assert after.json()["code"] == ""
-    assert (
-        await client.get(f"/api/v1/decks/{deck_id}/membership", headers=auth_headers)
-    ).json()["invite_open"] is False
+    reread = await client.get(f"/api/v1/decks/{deck_id}/membership", headers=auth_headers)
+    assert reread.json()["invite_open"] is False
 
 
 async def test_sharing_is_refused_with_readable_copy(
