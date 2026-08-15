@@ -221,7 +221,9 @@ def downgrade() -> None:
     op.add_column(
         "words", sa.Column("consecutive_correct", sa.Integer(), nullable=False, server_default="0")
     )
-    op.add_column("words", sa.Column("first_reviewed_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "words", sa.Column("first_reviewed_at", sa.DateTime(timezone=True), nullable=True)
+    )
     op.add_column("words", sa.Column("mastered_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("words", sa.Column("last_grade", sa.SmallInteger(), nullable=True))
 

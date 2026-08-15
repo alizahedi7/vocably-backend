@@ -62,9 +62,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("entry_hash", name="uq_ai_lookup_entries_entry_hash"),
     )
-    op.create_index(
-        "ix_ai_lookup_entries_prompt_version", "ai_lookup_entries", ["prompt_version"]
-    )
+    op.create_index("ix_ai_lookup_entries_prompt_version", "ai_lookup_entries", ["prompt_version"])
 
     op.create_table(
         "ai_lookup_aliases",
@@ -98,9 +96,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("alias_hash", name="uq_ai_lookup_aliases_alias_hash"),
     )
     op.create_index("ix_ai_lookup_aliases_entry_id", "ai_lookup_aliases", ["entry_id"])
-    op.create_index(
-        "ix_ai_lookup_aliases_prompt_version", "ai_lookup_aliases", ["prompt_version"]
-    )
+    op.create_index("ix_ai_lookup_aliases_prompt_version", "ai_lookup_aliases", ["prompt_version"])
     op.create_index("ix_ai_lookup_aliases_expires_at", "ai_lookup_aliases", ["expires_at"])
 
 

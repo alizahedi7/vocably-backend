@@ -17,6 +17,8 @@ from app.api.v1.schemas.deck import DeckOut
 from app.api.v1.schemas.discovery import (
     AddFriendIn,
     FriendOut,
+    FriendRequestOut,
+    FriendRequestsOut,
     FriendsOut,
     PendingShareOut,
     PendingSharesOut,
@@ -173,14 +175,59 @@ async def list_friends(current_user: CurrentUser, friends: FriendServiceDep) -> 
     return FriendsOut(friends=[FriendOut.from_view(v) for v in views])
 
 
-@friends_router.post("", response_model=FriendOut, dependencies=[Depends(enforce_share_limit)])
+@friends_router.post(
+    "", response_model=FriendRequestOut, dependencies=[Depends(enforce_share_limit)]
+)
 async def add_friend(
     payload: AddFriendIn,
     current_user: CurrentUser,
     friends: FriendServiceDep,
+) -> FriendRequestOut:
+    """**Ask** to add someone by handle. Nothing joins their list until they agree.
+
+    This used to write the friendship outright, which was defensible while the
+    list was a by-product of deck shares — the sharer had typed the handle, so
+    nothing was revealed — and stopped being so when handles became findable.
+    The person on the other end was never told, could not refuse, and could not
+    see it had happened.
+
+    The response is the *request*, not a friend: it says what was sent, and
+    deliberately says nothing about whether the recipient has seen it.
+    """
+    return FriendRequestOut.from_view(await friends.add(current_user.id, username=payload.username))
+
+
+@friends_router.get("/requests", response_model=FriendRequestsOut)
+async def list_friend_requests(
+    current_user: CurrentUser, friends: FriendServiceDep
+) -> FriendRequestsOut:
+    """Who has asked to add you and is waiting.
+
+    Declared before ``/{username}`` so the literal path wins the match, exactly
+    as ``/decks/public`` and ``/decks/shared`` do on the deck router.
+    """
+    views = await friends.list_requests(current_user.id)
+    return FriendRequestsOut(requests=[FriendRequestOut.from_view(v) for v in views])
+
+
+@friends_router.post("/requests/{username}/accept", response_model=FriendOut)
+async def accept_friend_request(
+    username: str,
+    current_user: CurrentUser,
+    friends: FriendServiceDep,
 ) -> FriendOut:
-    """Add someone by handle. Exact match only — there is no people search."""
-    return FriendOut.from_view(await friends.add(current_user.id, username=payload.username))
+    """Agree. Both people hold the friendship from here."""
+    return FriendOut.from_view(await friends.accept(current_user.id, username=username))
+
+
+@friends_router.delete("/requests/{username}", status_code=status.HTTP_204_NO_CONTENT)
+async def decline_friend_request(
+    username: str,
+    current_user: CurrentUser,
+    friends: FriendServiceDep,
+) -> None:
+    """Refuse. The sender is not told, and may ask again."""
+    await friends.decline(current_user.id, username=username)
 
 
 @friends_router.delete("/{username}", status_code=status.HTTP_204_NO_CONTENT)
@@ -189,4 +236,5 @@ async def remove_friend(
     current_user: CurrentUser,
     friends: FriendServiceDep,
 ) -> None:
+    """Remove someone, from both lists — and the way to take back a request."""
     await friends.remove(current_user.id, username=username)

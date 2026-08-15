@@ -19,7 +19,7 @@ from app.domain.repositories.deck_discovery_repository import (
     PublicUnitView,
     SharedDeckView,
 )
-from app.domain.repositories.friend_repository import FriendView
+from app.domain.repositories.friend_repository import FriendRequestView, FriendView
 
 
 class PublicDeckOut(BaseModel):
@@ -207,6 +207,27 @@ class FriendOut(BaseModel):
 
 class FriendsOut(BaseModel):
     friends: list[FriendOut]
+
+
+class FriendRequestOut(BaseModel):
+    """Somebody waiting on this learner to answer.
+
+    Deliberately the same two identity fields a friend carries and nothing
+    else. How long they have waited is on the row; how many times they have
+    asked is not reported, and neither is whether the recipient has looked.
+    """
+
+    username: str
+    name: str
+    requested_at: datetime | None
+
+    @classmethod
+    def from_view(cls, view: FriendRequestView) -> FriendRequestOut:
+        return cls(username=view.username, name=view.name, requested_at=view.requested_at)
+
+
+class FriendRequestsOut(BaseModel):
+    requests: list[FriendRequestOut]
 
 
 class AddFriendIn(BaseModel):

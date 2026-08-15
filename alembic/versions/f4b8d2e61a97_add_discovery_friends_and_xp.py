@@ -63,9 +63,7 @@ def upgrade() -> None:
         "decks",
         sa.Column("category", sa.String(length=32), nullable=False, server_default="general"),
     )
-    op.add_column(
-        "decks", sa.Column("description", sa.Text(), nullable=False, server_default="")
-    )
+    op.add_column("decks", sa.Column("description", sa.Text(), nullable=False, server_default=""))
     op.add_column(
         "decks", sa.Column("description_fa", sa.Text(), nullable=False, server_default="")
     )

@@ -125,7 +125,9 @@ def upgrade() -> None:
     # NULL on cards that predate this migration: their first review really is
     # unknown, and inventing created_at would poison every time-to-mastery
     # figure computed from it.
-    op.add_column("words", sa.Column("first_reviewed_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "words", sa.Column("first_reviewed_at", sa.DateTime(timezone=True), nullable=True)
+    )
     op.add_column("words", sa.Column("mastered_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("words", sa.Column("last_grade", sa.SmallInteger(), nullable=True))
     op.alter_column("words", "lapse_count", server_default=None)
@@ -166,7 +168,9 @@ def upgrade() -> None:
 
     if is_postgres:
         op.execute(_ENSURE_PARTITION_FN)
-        op.execute("CREATE TABLE IF NOT EXISTS word_reviews_default PARTITION OF word_reviews DEFAULT")
+        op.execute(
+            "CREATE TABLE IF NOT EXISTS word_reviews_default PARTITION OF word_reviews DEFAULT"
+        )
         for month in _months_from(date.today().replace(day=1), INITIAL_MONTHS_AHEAD):
             op.execute(sa.text("SELECT ensure_word_reviews_partition(:m)").bindparams(m=month))
 

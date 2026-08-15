@@ -661,27 +661,131 @@ async def test_sharing_adds_the_recipient_to_friends(
     assert friends.json()["friends"][0]["last_shared_at"] is not None
 
 
-async def test_friends_can_be_added_and_removed_by_hand(
+async def test_adding_a_friend_asks_them_rather_than_helping_yourself(
     client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
 ) -> None:
-    await named(client, make_user, "+989121112011", "parisa")
+    """The whole point of the request: nothing happens until they agree.
 
-    added = await client.post(
+    Adding used to write the friendship outright, so the person on the other end
+    was never told, could not refuse, and could not see it had happened.
+    """
+    friend_id = await named(client, make_user, "+989121112021", "parisa")
+    await client.patch("/api/v1/users/me", headers=auth_headers, json={"username": "sender_x"})
+
+    asked = await client.post(
         "/api/v1/users/me/friends", headers=auth_headers, json={"username": "Parisa"}
     )
-    assert added.status_code == 200, added.text
-    assert added.json()["username"] == "parisa"  # normalised
-    assert added.json()["last_shared_at"] is None
+    assert asked.status_code == 200, asked.text
+    assert asked.json()["username"] == "parisa"  # normalised
 
-    # Idempotent: adding twice is not an error.
+    # Nobody is anybody's friend yet — in either direction.
+    assert (await client.get("/api/v1/users/me/friends", headers=auth_headers)).json()[
+        "friends"
+    ] == []
+    assert (await client.get("/api/v1/users/me/friends", headers=bearer(friend_id))).json()[
+        "friends"
+    ] == []
+
+    # It is waiting for them, and it says who is asking.
+    waiting = await client.get("/api/v1/users/me/friends/requests", headers=bearer(friend_id))
+    assert waiting.status_code == 200, waiting.text
+    assert [r["username"] for r in waiting.json()["requests"]] == ["sender_x"]
+    # Not the other way round: the sender is not shown their own request back.
+    assert (await client.get("/api/v1/users/me/friends/requests", headers=auth_headers)).json()[
+        "requests"
+    ] == []
+
+    # Asking again is not an error and does not stack a second request.
     assert (
         await client.post(
             "/api/v1/users/me/friends", headers=auth_headers, json={"username": "parisa"}
         )
     ).status_code == 200
     assert (
-        len((await client.get("/api/v1/users/me/friends", headers=auth_headers)).json()["friends"])
+        len(
+            (
+                await client.get("/api/v1/users/me/friends/requests", headers=bearer(friend_id))
+            ).json()["requests"]
+        )
         == 1
+    )
+
+
+async def test_accepting_makes_the_friendship_mutual(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    friend_id = await named(client, make_user, "+989121112022", "parisa")
+    await client.patch("/api/v1/users/me", headers=auth_headers, json={"username": "sender_x"})
+    await client.post("/api/v1/users/me/friends", headers=auth_headers, json={"username": "parisa"})
+
+    accepted = await client.post(
+        "/api/v1/users/me/friends/requests/sender_x/accept", headers=bearer(friend_id)
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["username"] == "sender_x"
+
+    # Both hold it. One-directional was the old shape, and it left the accepter
+    # with an empty list after agreeing to something.
+    assert [
+        f["username"]
+        for f in (await client.get("/api/v1/users/me/friends", headers=auth_headers)).json()[
+            "friends"
+        ]
+    ] == ["parisa"]
+    assert [
+        f["username"]
+        for f in (await client.get("/api/v1/users/me/friends", headers=bearer(friend_id))).json()[
+            "friends"
+        ]
+    ] == ["sender_x"]
+    # And the question is gone from the inbox that answered it.
+    assert (
+        await client.get("/api/v1/users/me/friends/requests", headers=bearer(friend_id))
+    ).json()["requests"] == []
+
+
+async def test_declining_is_silent_and_leaves_them_askable(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """A list of who turned you down is a different product."""
+    friend_id = await named(client, make_user, "+989121112023", "parisa")
+    await client.patch("/api/v1/users/me", headers=auth_headers, json={"username": "sender_x"})
+    await client.post("/api/v1/users/me/friends", headers=auth_headers, json={"username": "parisa"})
+
+    declined = await client.delete(
+        "/api/v1/users/me/friends/requests/sender_x", headers=bearer(friend_id)
+    )
+    assert declined.status_code == 204
+    assert (
+        await client.get("/api/v1/users/me/friends/requests", headers=bearer(friend_id))
+    ).json()["requests"] == []
+    # The sender is told nothing — their list is as empty as it was, which is
+    # indistinguishable from an unanswered request.
+    assert (await client.get("/api/v1/users/me/friends", headers=auth_headers)).json()[
+        "friends"
+    ] == []
+
+    # And they can be asked again.
+    again = await client.post(
+        "/api/v1/users/me/friends", headers=auth_headers, json={"username": "parisa"}
+    )
+    assert again.status_code == 200
+    assert [
+        r["username"]
+        for r in (
+            await client.get("/api/v1/users/me/friends/requests", headers=bearer(friend_id))
+        ).json()["requests"]
+    ] == ["sender_x"]
+
+
+async def test_removing_a_friend_removes_you_from_their_list_too(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    friend_id = await named(client, make_user, "+989121112024", "parisa")
+    await client.patch("/api/v1/users/me", headers=auth_headers, json={"username": "sender_x"})
+    await client.post("/api/v1/users/me/friends", headers=auth_headers, json={"username": "parisa"})
+    await client.post(
+        "/api/v1/users/me/friends/requests/sender_x/accept", headers=bearer(friend_id)
     )
 
     removed = await client.delete("/api/v1/users/me/friends/parisa", headers=auth_headers)
@@ -689,20 +793,71 @@ async def test_friends_can_be_added_and_removed_by_hand(
     assert (await client.get("/api/v1/users/me/friends", headers=auth_headers)).json()[
         "friends"
     ] == []
+    # Half a removed friendship is somebody still holding you on a list you are
+    # no longer on.
+    assert (await client.get("/api/v1/users/me/friends", headers=bearer(friend_id))).json()[
+        "friends"
+    ] == []
+
+
+async def test_accepting_a_request_nobody_made_is_a_404(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """From here, "declined a moment ago" and "never existed" are one answer.
+
+    They have to be, or this becomes a way to ask who has been asking whom.
+    """
+    await named(client, make_user, "+989121112025", "parisa")
+
+    missing = await client.post(
+        "/api/v1/users/me/friends/requests/parisa/accept", headers=auth_headers
+    )
+    assert missing.status_code == 404
+
+
+async def test_sharing_a_deck_records_the_recipient_without_asking(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """The one path that still writes a friendship outright, and why.
+
+    Sharing is a stronger act than the request it would replace, the recipient
+    has a deck offer of their own to answer, and the sender already knew the
+    handle. Two questions about one act is one too many.
+    """
+    deck_id = await create_deck(client, auth_headers, "Trip")
+    friend_id = await named(client, make_user, "+989121112026", "parisa")
+    await client.patch("/api/v1/users/me", headers=auth_headers, json={"username": "sender_x"})
+
+    await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
+    )
+
+    assert [
+        f["username"]
+        for f in (await client.get("/api/v1/users/me/friends", headers=auth_headers)).json()[
+            "friends"
+        ]
+    ] == ["parisa"]
+    # It is the *sender's* list that gains a name, and it asks the recipient
+    # nothing: what they have to answer is the deck.
+    assert (
+        await client.get("/api/v1/users/me/friends/requests", headers=bearer(friend_id))
+    ).json()["requests"] == []
 
 
 async def test_adding_a_friend_reveals_nothing_but_a_name(
     client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
 ) -> None:
-    await named(client, make_user, "+989121112012", "parisa")
+    await named(client, make_user, "+989121112027", "parisa")
 
     body = (
         await client.post(
             "/api/v1/users/me/friends", headers=auth_headers, json={"username": "parisa"}
         )
     ).json()
-    # No phone, no email, no stats — the handle was already known to the caller.
-    assert set(body) == {"username", "name", "last_shared_at"}
+    # No phone, no email, no stats — and no read receipt: whether they have seen
+    # it is not a question this product answers.
+    assert set(body) == {"username", "name", "requested_at"}
 
 
 async def test_friend_errors_are_user_facing_copy(
