@@ -1,0 +1,1271 @@
+# The ordered headword list. Order is the product: this is the sequence the
+# course teaches, and nothing in the pipeline may reorder it.
+#
+# PROVENANCE, stated plainly because it differs from the 504 deck's: this list
+# was **compiled by Vocably**, not extracted from a printed index. It teaches the
+# vocabulary tier of the source named in deck.yaml and is grouped into 46 weekly
+# units to approximate that book's progression, but the week a given word falls
+# in is our editorial judgement and does not reproduce the source's printed
+# sequence. Nothing here is copied from the book.
+#
+# Words run from the more widely used advanced vocabulary toward the rarer, and
+# each week is built around a shared sense so that a learner meets a family of
+# words together rather than twenty-four unrelated ones.
+#
+# A bare string is a word with no sense preference - the ordinary case.
+# A mapping may add:
+#   sense: {pos: verb, context: Management}   # an exact pin; needs BOTH keys
+#   hint: "to give up completely"             # free text, scored against senses
+#
+# There is deliberately nowhere to put a definition or an example. Those are
+# generated; copying them from a source is the one thing this format forbids.
+
+units:
+  - name: Week 1
+    words:
+      - voracious
+      - gullible
+      - adroit
+      - replete
+      - tantalize
+      - laconic
+      - ostensible
+      - wheedle
+      - hapless
+      - dupe
+      - fraudulent
+      - deplete
+      - unwitting
+      - incisive
+      - jaded
+      - cursory
+      - meticulous
+      - tenuous
+      - redundant
+      - eminent
+      - paradox
+      - indiscriminate
+      - steeped
+      - blandishment
+
+  - name: Week 2
+    words:
+      - annals
+      - implore
+      - drudgery
+      - interminable
+      - fortitude
+      - dissuade
+      - laborious
+      - tedious
+      - arduous
+      - diligent
+      - assiduous
+      - indolent
+      - lethargic
+      - torpid
+      - languid
+      - enervate
+      - invigorate
+      - robust
+      - stamina
+      - resilient
+      - tenacious
+      - dogged
+      - persevere
+      - relentless
+
+  - name: Week 3
+    words:
+      - acrimonious
+      - rancor
+      - vitriolic
+      - caustic
+      - acerbic
+      - sardonic
+      - derisive
+      - disparage
+      - denigrate
+      - malign
+      - vilify
+      - calumny
+      - slander
+      - libel
+      - defame
+      - impugn
+      - castigate
+      - reprimand
+      - rebuke
+      - admonish
+      - censure
+      - upbraid
+      - berate
+      - chastise
+
+  - name: Week 4
+    words:
+      - placate
+      - mollify
+      - appease
+      - conciliate
+      - assuage
+      - mitigate
+      - alleviate
+      - ameliorate
+      - palliate
+      - term: temper
+        hint: "to soften something, or make it less severe"
+      - abate
+      - subside
+      - wane
+      - ebb
+      - dwindle
+      - diminish
+      - curtail
+      - truncate
+      - abridge
+      - condense
+      - terse
+      - succinct
+      - concise
+      - pithy
+
+  - name: Week 5
+    words:
+      - verbose
+      - garrulous
+      - loquacious
+      - prolix
+      - rambling
+      - digress
+      - tangent
+      - circumlocution
+      - platitude
+      - banal
+      - trite
+      - hackneyed
+      - insipid
+      - vapid
+      - mundane
+      - prosaic
+      - pedestrian
+      - humdrum
+      - monotonous
+      - tedium
+      - ennui
+      - listless
+      - apathy
+      - indifferent
+
+  - name: Week 6
+    words:
+      - zealous
+      - fervent
+      - ardent
+      - vehement
+      - impassioned
+      - effusive
+      - exuberant
+      - ebullient
+      - buoyant
+      - jubilant
+      - elated
+      - euphoric
+      - rapture
+      - exultant
+      - gleeful
+      - mirth
+      - levity
+      - jocular
+      - facetious
+      - whimsical
+      - droll
+      - waggish
+      - jest
+      - banter
+
+  - name: Week 7
+    words:
+      - melancholy
+      - morose
+      - sullen
+      - dour
+      - somber
+      - doleful
+      - lugubrious
+      - forlorn
+      - despondent
+      - disconsolate
+      - dejected
+      - crestfallen
+      - woeful
+      - plaintive
+      - poignant
+      - pathos
+      - lament
+      - elegy
+      - dirge
+      - mourn
+      - bereft
+      - grief
+      - anguish
+      - sorrow
+
+  - name: Week 8
+    words:
+      - audacious
+      - intrepid
+      - valiant
+      - dauntless
+      - undaunted
+      - stalwart
+      - resolute
+      - steadfast
+      - unwavering
+      - indomitable
+      - formidable
+      - prowess
+      - valor
+      - mettle
+      - bravado
+      - temerity
+      - brazen
+      - impudent
+      - insolent
+      - impertinent
+      - effrontery
+      - presumptuous
+      - flippant
+      - cheeky
+
+  - name: Week 9
+    words:
+      - timorous
+      - trepidation
+      - apprehensive
+      - wary
+      - leery
+      - circumspect
+      - prudent
+      - judicious
+      - discreet
+      - cautious
+      - vigilant
+      - alert
+      - heed
+      - forewarn
+      - portend
+      - ominous
+      - foreboding
+      - dire
+      - imminent
+      - impending
+      - precarious
+      - perilous
+      - jeopardy
+      - hazard
+
+  - name: Week 10
+    words:
+      - obsequious
+      - sycophant
+      - fawning
+      - servile
+      - subservient
+      - deferential
+      - docile
+      - compliant
+      - acquiesce
+      - submit
+      - capitulate
+      - yield
+      - term: relent
+        hint: "to soften and give in after refusing"
+      - concede
+      - defer
+      - cower
+      - grovel
+      - cringe
+      - toady
+      - unctuous
+      - ingratiate
+      - flatter
+      - adulation
+      - obeisance
+
+  - name: Week 11
+    words:
+      - haughty
+      - arrogant
+      - imperious
+      - supercilious
+      - disdainful
+      - condescending
+      - patronizing
+      - pompous
+      - ostentatious
+      - pretentious
+      - grandiose
+      - bombastic
+      - grandiloquent
+      - turgid
+      - inflated
+      - vainglorious
+      - conceited
+      - egotistical
+      - narcissistic
+      - smug
+      - complacent
+      - self-righteous
+      - sanctimonious
+      - pious
+
+  - name: Week 12
+    words:
+      - humble
+      - modest
+      - unassuming
+      - demure
+      - diffident
+      - reticent
+      - taciturn
+      - reserved
+      - aloof
+      - detached
+      - impassive
+      - stoic
+      - phlegmatic
+      - dispassionate
+      - imperturbable
+      - unflappable
+      - composed
+      - equanimity
+      - poise
+      - aplomb
+      - serene
+      - tranquil
+      - placid
+      - sedate
+
+  - name: Week 13
+    words:
+      - candid
+      - forthright
+      - frank
+      - blunt
+      - curt
+      - brusque
+      - gruff
+      - abrupt
+      - peremptory
+      - categorical
+      - unequivocal
+      - explicit
+      - forthcoming
+      - ingenuous
+      - artless
+      - guileless
+      - naive
+      - credulous
+      - unsophisticated
+      - provincial
+      - parochial
+      - insular
+      - myopic
+      - hidebound
+
+  - name: Week 14
+    words:
+      - duplicity
+      - guile
+      - subterfuge
+      - chicanery
+      - artifice
+      - ruse
+      - stratagem
+      - machination
+      - intrigue
+      - collusion
+      - connive
+      - conspire
+      - surreptitious
+      - clandestine
+      - covert
+      - furtive
+      - stealthy
+      - insidious
+      - devious
+      - wily
+      - crafty
+      - cunning
+      - disingenuous
+      - specious
+
+  - name: Week 15
+    words:
+      - spurious
+      - apocryphal
+      - dubious
+      - sham
+      - counterfeit
+      - forgery
+      - charlatan
+      - quack
+      - imposter
+      - mountebank
+      - hoax
+      - swindle
+      - embezzle
+      - defraud
+      - pilfer
+      - purloin
+      - plagiarize
+      - extort
+      - racketeer
+      - illicit
+      - nefarious
+      - iniquity
+      - malfeasance
+      - venal
+
+  - name: Week 16
+    words:
+      - probity
+      - integrity
+      - rectitude
+      - scrupulous
+      - conscientious
+      - incorruptible
+      - impeccable
+      - exemplary
+      - laudable
+      - commendable
+      - meritorious
+      - virtuous
+      - upright
+      - honorable
+      - principled
+      - ethical
+      - altruistic
+      - magnanimous
+      - benevolent
+      - beneficent
+      - philanthropy
+      - munificent
+      - largesse
+      - bounty
+
+  - name: Week 17
+    words:
+      - parsimonious
+      - miserly
+      - niggardly
+      - frugal
+      - thrifty
+      - austere
+      - spartan
+      - ascetic
+      - abstemious
+      - temperate
+      - restraint
+      - abstinence
+      - forgo
+      - eschew
+      - abstain
+      - renounce
+      - relinquish
+      - forsake
+      - abdicate
+      - divest
+      - forfeit
+      - waive
+      - disavow
+      - repudiate
+
+  - name: Week 18
+    words:
+      - prodigal
+      - profligate
+      - squander
+      - dissipate
+      - extravagant
+      - lavish
+      - opulent
+      - sumptuous
+      - luxuriant
+      - affluent
+      - prosperous
+      - lucrative
+      - remunerative
+      - windfall
+      - surfeit
+      - glut
+      - plethora
+      - superfluous
+      - extraneous
+      - gratuitous
+      - excess
+      - inordinate
+      - exorbitant
+      - prohibitive
+
+  - name: Week 19
+    words:
+      - dearth
+      - paucity
+      - scarcity
+      - meager
+      - scant
+      - sparse
+      - exiguous
+      - destitute
+      - indigent
+      - impoverished
+      - penury
+      - privation
+      - squalor
+      - hovel
+      - threadbare
+      - emaciated
+      - gaunt
+      - haggard
+      - wan
+      - sallow
+      - frail
+      - infirm
+      - decrepit
+      - debilitated
+
+  - name: Week 20
+    words:
+      - convalesce
+      - recuperate
+      - rejuvenate
+      - restorative
+      - salubrious
+      - salutary
+      - wholesome
+      - hale
+      - hearty
+      - vigorous
+      - virile
+      - sturdy
+      - brawny
+      - burly
+      - sinewy
+      - agile
+      - nimble
+      - lithe
+      - supple
+      - dexterous
+      - deft
+      - adept
+      - proficient
+      - consummate
+
+  - name: Week 21
+    words:
+      - novice
+      - neophyte
+      - tyro
+      - fledgling
+      - apprentice
+      - amateur
+      - dilettante
+      - dabbler
+      - inept
+      - maladroit
+      - bungle
+      - botch
+      - blunder
+      - gaffe
+      - foible
+      - shortcoming
+      - deficiency
+      - inadequate
+      - mediocre
+      - lackluster
+      - perfunctory
+      - slipshod
+      - shoddy
+      - amiss
+
+  - name: Week 22
+    words:
+      - erudite
+      - scholarly
+      - learned
+      - sagacious
+      - astute
+      - shrewd
+      - perspicacious
+      - discerning
+      - sapient
+      - sage
+      - savant
+      - polymath
+      - pedagogue
+      - didactic
+      - pedantic
+      - doctrinaire
+      - dogmatic
+      - doctrinal
+      - esoteric
+      - abstruse
+      - recondite
+      - arcane
+      - obscure
+      - cryptic
+
+  - name: Week 23
+    words:
+      - lucid
+      - cogent
+      - coherent
+      - articulate
+      - eloquent
+      - oratory
+      - rhetoric
+      - discourse
+      - expound
+      - elucidate
+      - explicate
+      - delineate
+      - enumerate
+      - expatiate
+      - elaborate
+      - exposition
+      - treatise
+      - disquisition
+      - dissertation
+      - thesis
+      - premise
+      - corollary
+      - axiom
+      - tenet
+
+  - name: Week 24
+    words:
+      - refute
+      - rebut
+      - confute
+      - disprove
+      - invalidate
+      - contravene
+      - gainsay
+      - contradict
+      - controvert
+      - dispute
+      - polemic
+      - contentious
+      - quibble
+      - cavil
+      - haggle
+      - wrangle
+      - altercation
+      - fracas
+      - melee
+      - skirmish
+      - imbroglio
+      - discord
+      - dissension
+      - schism
+
+  - name: Week 25
+    words:
+      - consensus
+      - accord
+      - concord
+      - unanimity
+      - solidarity
+      - cohesion
+      - rapport
+      - amity
+      - camaraderie
+      - fraternize
+      - affable
+      - amiable
+      - congenial
+      - genial
+      - cordial
+      - gracious
+      - hospitable
+      - convivial
+      - gregarious
+      - sociable
+      - animated
+      - vivacious
+      - winsome
+      - engaging
+
+  - name: Week 26
+    words:
+      - misanthrope
+      - recluse
+      - hermit
+      - solitude
+      - seclusion
+      - sequester
+      - isolate
+      - ostracize
+      - shun
+      - spurn
+      - rebuff
+      - repulse
+      - alienate
+      - estrange
+      - exile
+      - banish
+      - expatriate
+      - pariah
+      - outcast
+      - stigma
+      - taboo
+      - anathema
+      - opprobrium
+      - disrepute
+
+  - name: Week 27
+    words:
+      - notorious
+      - infamous
+      - ignominious
+      - disreputable
+      - unsavory
+      - sordid
+      - lurid
+      - salacious
+      - ribald
+      - bawdy
+      - licentious
+      - lascivious
+      - lecherous
+      - debauchery
+      - dissolute
+      - depraved
+      - degenerate
+      - decadent
+      - corrupt
+      - perverse
+      - wanton
+      - libertine
+      - hedonist
+      - epicurean
+
+  - name: Week 28
+    words:
+      - sanctify
+      - consecrate
+      - hallow
+      - revere
+      - venerate
+      - extol
+      - exalt
+      - laud
+      - eulogize
+      - acclaim
+      - accolade
+      - plaudit
+      - homage
+      - tribute
+      - panegyric
+      - encomium
+      - paean
+      - ovation
+      - esteem
+      - solemn
+      - devout
+      - piety
+      - sacrosanct
+      - inviolable
+
+  - name: Week 29
+    words:
+      - heresy
+      - heretic
+      - apostate
+      - blasphemy
+      - sacrilege
+      - profane
+      - desecrate
+      - defile
+      - sully
+      - taint
+      - besmirch
+      - tarnish
+      - blemish
+      - term: mar
+        hint: "to spoil the appearance or quality of something"
+      - mangle
+      - deface
+      - vandalize
+      - ravage
+      - pillage
+      - plunder
+      - marauder
+      - depredation
+      - despoil
+      - term: sack
+        hint: "to rob a captured town violently"
+
+  - name: Week 30
+    words:
+      - quell
+      - quash
+      - squelch
+      - suppress
+      - subjugate
+      - subdue
+      - vanquish
+      - rout
+      - thwart
+      - term: foil
+        hint: "to prevent a plan from succeeding"
+      - stymie
+      - impede
+      - hinder
+      - hamper
+      - encumber
+      - obstruct
+      - stifle
+      - muzzle
+      - throttle
+      - term: curb
+        hint: "to keep something under control, to restrain it"
+      - constrain
+      - fetter
+      - shackle
+      - trammel
+
+  - name: Week 31
+    words:
+      - emancipate
+      - liberate
+      - manumit
+      - extricate
+      - disentangle
+      - unravel
+      - absolve
+      - exonerate
+      - exculpate
+      - vindicate
+      - acquit
+      - pardon
+      - amnesty
+      - reprieve
+      - clemency
+      - leniency
+      - lenient
+      - indulgent
+      - permissive
+      - lax
+      - remiss
+      - negligent
+      - dereliction
+      - culpable
+
+  - name: Week 32
+    words:
+      - incriminate
+      - implicate
+      - indict
+      - arraign
+      - prosecute
+      - litigate
+      - adjudicate
+      - arbitrate
+      - mediate
+      - adjudge
+      - verdict
+      - tribunal
+      - judiciary
+      - jurisprudence
+      - statute
+      - ordinance
+      - edict
+      - decree
+      - mandate
+      - injunction
+      - moratorium
+      - embargo
+      - term: sanction
+        hint: "an official penalty imposed on a country or group"
+      - proscribe
+
+  - name: Week 33
+    words:
+      - ratify
+      - endorse
+      - corroborate
+      - substantiate
+      - authenticate
+      - verify
+      - validate
+      - affirm
+      - avow
+      - attest
+      - testify
+      - aver
+      - assert
+      - allege
+      - purport
+      - profess
+      - proclaim
+      - promulgate
+      - disseminate
+      - propagate
+      - propound
+      - advocate
+      - espouse
+      - champion
+
+  - name: Week 34
+    words:
+      - covenant
+      - pact
+      - treaty
+      - term: compact
+        hint: "a formal agreement between two parties"
+      - alliance
+      - coalition
+      - confederation
+      - consortium
+      - syndicate
+      - cartel
+      - monopoly
+      - oligarchy
+      - autocracy
+      - despot
+      - tyrant
+      - totalitarian
+      - authoritarian
+      - hegemony
+      - dominion
+      - sovereignty
+      - suzerainty
+      - vassal
+      - fealty
+      - allegiance
+
+  - name: Week 35
+    words:
+      - insurgent
+      - insurrection
+      - sedition
+      - mutiny
+      - revolt
+      - uprising
+      - coup
+      - usurp
+      - depose
+      - dethrone
+      - oust
+      - supplant
+      - subvert
+      - undermine
+      - sabotage
+      - dissident
+      - iconoclast
+      - maverick
+      - nonconformist
+      - renegade
+      - term: defect
+        hint: "to abandon your country or cause for a rival one"
+      - secede
+      - partisan
+      - factional
+
+  - name: Week 36
+    words:
+      - demagogue
+      - rabble
+      - mob
+      - riot
+      - anarchy
+      - pandemonium
+      - bedlam
+      - tumult
+      - turmoil
+      - upheaval
+      - maelstrom
+      - cataclysm
+      - calamity
+      - catastrophe
+      - debacle
+      - fiasco
+      - havoc
+      - devastation
+      - carnage
+      - annihilate
+      - scourge
+      - blight
+      - pestilence
+      - famine
+
+  - name: Week 37
+    words:
+      - ephemeral
+      - transient
+      - transitory
+      - fleeting
+      - evanescent
+      - momentary
+      - provisional
+      - interim
+      - temporal
+      - perennial
+      - perpetual
+      - incessant
+      - ceaseless
+      - unremitting
+      - inexorable
+      - immutable
+      - indelible
+      - enduring
+      - abiding
+      - everlasting
+      - eternal
+      - chronic
+      - durable
+      - lasting
+
+  - name: Week 38
+    words:
+      - nascent
+      - incipient
+      - embryonic
+      - inchoate
+      - rudimentary
+      - primordial
+      - primeval
+      - archaic
+      - antiquated
+      - obsolete
+      - anachronism
+      - vestige
+      - relic
+      - remnant
+      - residue
+      - detritus
+      - sediment
+      - dregs
+      - refuse
+      - rubble
+      - debris
+      - salvage
+      - scavenge
+      - glean
+
+  - name: Week 39
+    words:
+      - burgeon
+      - proliferate
+      - flourish
+      - thrive
+      - prosper
+      - escalate
+      - augment
+      - amplify
+      - magnify
+      - exacerbate
+      - aggravate
+      - intensify
+      - compound
+      - accrue
+      - accumulate
+      - amass
+      - garner
+      - hoard
+      - stockpile
+      - reservoir
+      - repository
+      - trove
+      - cache
+      - surplus
+
+  - name: Week 40
+    words:
+      - attenuate
+      - dilute
+      - adulterate
+      - debase
+      - devalue
+      - depreciate
+      - erode
+      - corrode
+      - atrophy
+      - wither
+      - shrivel
+      - desiccate
+      - parch
+      - arid
+      - barren
+      - sterile
+      - fallow
+      - desolate
+      - bleak
+      - dreary
+      - term: stark
+        hint: "bare and bleak, with nothing to soften it"
+      - grim
+      - murky
+      - dank
+
+  - name: Week 41
+    words:
+      - opaque
+      - nebulous
+      - ambiguous
+      - equivocal
+      - enigmatic
+      - inscrutable
+      - impenetrable
+      - unfathomable
+      - ineffable
+      - intangible
+      - ethereal
+      - diaphanous
+      - gossamer
+      - translucent
+      - luminous
+      - radiant
+      - resplendent
+      - iridescent
+      - scintillate
+      - shimmer
+      - glisten
+      - lustrous
+      - burnished
+      - pristine
+
+  - name: Week 42
+    words:
+      - fetid
+      - rancid
+      - putrid
+      - noisome
+      - malodorous
+      - acrid
+      - pungent
+      - term: rank
+        hint: "having a strong, offensive smell"
+      - squalid
+      - grimy
+      - contaminate
+      - pollute
+      - noxious
+      - toxic
+      - virulent
+      - pernicious
+      - deleterious
+      - detrimental
+      - baneful
+      - malignant
+      - insalubrious
+      - infest
+      - fester
+      - putrefy
+
+  - name: Week 43
+    words:
+      - placebo
+      - panacea
+      - antidote
+      - remedy
+      - therapeutic
+      - prophylactic
+      - inoculate
+      - immunize
+      - sterilize
+      - antiseptic
+      - hygienic
+      - sanitary
+      - regimen
+      - respite
+      - interlude
+      - hiatus
+      - lull
+      - dormant
+      - quiescent
+      - latent
+      - inert
+      - stagnant
+      - sedentary
+
+  - name: Week 44
+    words:
+      - peripatetic
+      - itinerant
+      - nomadic
+      - migratory
+      - vagrant
+      - wanderlust
+      - sojourn
+      - pilgrimage
+      - odyssey
+      - trek
+      - traverse
+      - meander
+      - saunter
+      - amble
+      - gallivant
+      - foray
+      - excursion
+      - expedition
+      - exodus
+      - emigrate
+      - diaspora
+      - enclave
+      - hinterland
+
+  - name: Week 45
+    words:
+      - terrain
+      - topography
+      - contour
+      - undulate
+      - precipice
+      - chasm
+      - abyss
+      - crevasse
+      - ravine
+      - gorge
+      - promontory
+      - escarpment
+      - plateau
+      - verdant
+      - lush
+      - fecund
+      - fertile
+      - arable
+      - cultivate
+      - husbandry
+      - pastoral
+      - bucolic
+      - idyllic
+
+  - name: Week 46
+    words:
+      - zenith
+      - apex
+      - pinnacle
+      - culmination
+      - apogee
+      - acme
+      - epitome
+      - quintessence
+      - paragon
+      - paradigm
+      - archetype
+      - prototype
+      - exemplar
+      - nadir
+      - threshold
+      - watershed
+      - denouement
+      - finale
+      - epilogue
+      - valediction
+      - requiem
+      - legacy
+      - testament
