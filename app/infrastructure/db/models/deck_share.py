@@ -44,6 +44,16 @@ class DeckShareModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: What accepting makes them. Viewer by default, like every other way in.
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     shared_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
-    #: Kept after acceptance rather than deleted, so the recipient's list can
-    #: show what they have already taken instead of it silently vanishing.
+    #: Vestigial, and always ``False`` on a row that exists.
+    #:
+    #: Accepting used to set this and keep the row, so the recipient's list
+    #: could show what they had already taken. That turned an inbox into a
+    #: permanent record — a card with no action left on it — and outlived the
+    #: membership it created, so somebody removed from a deck went on seeing it
+    #: under Shared. Accepting now deletes the row, exactly as declining does.
+    #:
+    #: The column stays because the field is still on the wire: an Android
+    #: build months old reads ``accepted`` off ``GET /decks/shared`` and lags
+    #: the server by weeks. It reads ``false`` for every row it is now sent,
+    #: which is true, and which those builds already render correctly.
     accepted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

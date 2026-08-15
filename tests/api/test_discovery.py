@@ -383,6 +383,11 @@ async def test_sharing_with_a_person_shares_the_deck_itself(
     assert [
         d["id"] for d in (await client.get("/api/v1/decks", headers=bearer(friend_id))).json()
     ] == [deck_id]
+    # And it has left the inbox: the deck is theirs now, so the offer has
+    # nothing left to ask. It used to stay, as a card saying it had been taken.
+    assert (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()[
+        "decks"
+    ] == []
 
     # An edit by the owner is visible to them, which a copy would not be.
     await client.patch(
@@ -409,6 +414,95 @@ async def test_declining_removes_the_offer_silently(
     ] == []
     # They did not become a member, and the sender is told nothing.
     assert (await client.get("/api/v1/decks", headers=bearer(friend_id))).json() == []
+
+
+async def test_being_removed_from_a_deck_leaves_no_card_in_the_inbox(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """The bug this is here to stop: a deck you can no longer open, still listed.
+
+    The share row used to survive acceptance, so the recipient's Shared tab
+    kept a card for a deck they had taken — and kept it after the owner removed
+    them, when they had no access to it at all. An offer must never outlive the
+    membership it created.
+    """
+    deck_id = await create_deck(client, auth_headers, "Class set")
+    friend_id = await named(client, make_user, "+989121112011", "parisa")
+    await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
+    )
+    offer = (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()["decks"][0]
+    assert (
+        await client.post(f"/api/v1/decks/shared/{offer['id']}/accept", headers=bearer(friend_id))
+    ).status_code == 200
+
+    removed = await client.delete(f"/api/v1/decks/{deck_id}/members/parisa", headers=auth_headers)
+    assert removed.status_code in (200, 204), removed.text
+
+    # Gone from both lists — not theirs, and not offered to them either.
+    assert (await client.get("/api/v1/decks", headers=bearer(friend_id))).json() == []
+    assert (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()[
+        "decks"
+    ] == []
+
+
+async def test_re_sharing_after_a_removal_arrives_as_a_fresh_offer(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """Inviting somebody back has to reach them.
+
+    With the offer flagged rather than deleted, the upsert met a row already
+    marked accepted and left it that way — so the second invitation was written
+    to the database and never shown to anyone.
+    """
+    deck_id = await create_deck(client, auth_headers, "Class set")
+    friend_id = await named(client, make_user, "+989121112012", "parisa")
+    await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
+    )
+    offer = (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()["decks"][0]
+    await client.post(f"/api/v1/decks/shared/{offer['id']}/accept", headers=bearer(friend_id))
+    await client.delete(f"/api/v1/decks/{deck_id}/members/parisa", headers=auth_headers)
+
+    again = await client.post(
+        f"/api/v1/decks/{deck_id}/share",
+        headers=auth_headers,
+        json={"to_username": "parisa", "role": "editor"},
+    )
+    assert again.status_code == 200, again.text
+
+    inbox = (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()["decks"]
+    assert [d["name"] for d in inbox] == ["Class set"]
+    assert inbox[0]["accepted"] is False
+
+
+async def test_an_offer_overtaken_by_an_invite_code_stops_being_asked(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """Joining by link answers the question the pending offer was asking.
+
+    Nothing deletes the offer in this path — the recipient never touched it —
+    so the inbox has to check membership as well as the flag, or it asks
+    somebody to accept a deck they are already studying.
+    """
+    deck_id = await create_deck(client, auth_headers, "Book 3")
+    friend_id = await named(client, make_user, "+989121112013", "parisa")
+    await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
+    )
+    invite = await client.post(
+        f"/api/v1/decks/{deck_id}/invite", headers=auth_headers, json={"role": "viewer"}
+    )
+    assert invite.status_code == 200, invite.text
+
+    joined = await client.post(
+        "/api/v1/decks/join", headers=bearer(friend_id), json={"code": invite.json()["invite_code"]}
+    )
+    assert joined.status_code == 200, joined.text
+
+    assert (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()[
+        "decks"
+    ] == []
 
 
 async def test_a_share_addressed_to_someone_else_is_invisible(

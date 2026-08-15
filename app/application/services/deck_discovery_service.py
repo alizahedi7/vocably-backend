@@ -172,6 +172,11 @@ class DeckDiscoveryService:
 
     # ── person-to-person ─────────────────────────────────────
     async def list_shared_with(self, user_id: UUID) -> list[SharedDeckView]:
+        """The learner's inbox: offers they have not answered yet.
+
+        Unanswered only — see the repository method for why an accepted offer
+        is not an offer with a flag on it.
+        """
         return await self._discovery.list_shares_for(user_id)
 
     async def list_pending_shares(self, deck_id: UUID, user_id: UUID) -> list[OutgoingShareView]:
@@ -250,7 +255,15 @@ class DeckDiscoveryService:
         return invite.code if invite and invite.accepts(now) else ""
 
     async def accept(self, share_id: UUID, user_id: UUID) -> Deck:
-        """Take a deck someone offered. The same deck, not a copy."""
+        """Take a deck someone offered. The same deck, not a copy.
+
+        The offer is **consumed**, not flagged. Once the membership exists the
+        share row has nothing left to say: the deck is in the learner's own
+        list, and a card in the inbox reading "you accepted this" is a question
+        with no answer left to give. Keeping it was also how somebody removed
+        from a deck went on seeing it under Shared long after they had lost
+        access to it — the offer outliving the membership it made.
+        """
         share = await self._require_own_share(share_id, user_id)
         await self._members.add_if_absent(
             DeckMember(
@@ -264,7 +277,7 @@ class DeckDiscoveryService:
                 self_paced=True,
             )
         )
-        await self._discovery.mark_accepted(share_id)
+        await self._discovery.withdraw(share_id)
         return share.deck
 
     async def decline(self, share_id: UUID, user_id: UUID) -> None:

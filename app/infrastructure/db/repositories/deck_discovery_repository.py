@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -24,6 +24,7 @@ from app.domain.repositories.deck_discovery_repository import (
 from app.infrastructure.db import mappers
 from app.infrastructure.db.dialects import upsert_insert
 from app.infrastructure.db.models.deck import DeckModel
+from app.infrastructure.db.models.deck_member import DeckMemberModel
 from app.infrastructure.db.models.deck_share import DeckShareModel
 from app.infrastructure.db.models.deck_unit import DeckUnitModel
 from app.infrastructure.db.models.user import UserModel
@@ -370,7 +371,23 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
     async def list_shares_for(self, user_id: UUID) -> list[SharedDeckView]:
         stmt = (
             self._share_select()
-            .where(DeckShareModel.to_user_id == user_id)
+            .where(
+                DeckShareModel.to_user_id == user_id,
+                DeckShareModel.accepted.is_(False),
+                # Belt as well as braces. Accepting deletes the row, so the
+                # flag alone should be enough — but an offer can also be
+                # overtaken by its own recipient, who joins the same deck by
+                # invite code while the offer sits unanswered. Nothing deletes
+                # it in that case, and an inbox that asks somebody to accept a
+                # deck they are already in has one wrong card in it. Membership
+                # is the fact; the offer is only a question about it.
+                ~select(DeckMemberModel.deck_id)
+                .where(
+                    DeckMemberModel.deck_id == DeckShareModel.deck_id,
+                    DeckMemberModel.user_id == user_id,
+                )
+                .exists(),
+            )
             .order_by(DeckShareModel.shared_at.desc())
         )
         rows = (await self._session.execute(stmt)).all()
@@ -418,7 +435,9 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
         shared_at: datetime,
     ) -> None:
         # Re-sharing refreshes the existing offer rather than stacking a second
-        # one in the recipient's list — and never un-accepts one they took.
+        # one in the recipient's list. The row it meets can only ever be a
+        # pending one: an answered offer is deleted either way, and somebody
+        # who is already a member is refused by the service before this runs.
         stmt = (
             upsert_insert(self._session)(DeckShareModel)
             .values(
@@ -436,13 +455,6 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
             )
         )
         await self._session.execute(stmt)
-
-    async def mark_accepted(self, share_id: UUID) -> None:
-        await self._session.execute(
-            update(DeckShareModel)
-            .where(DeckShareModel.id == share_id)
-            .values(accepted=True, updated_at=datetime.now(UTC))
-        )
 
     async def withdraw(self, share_id: UUID) -> None:
         await self._session.execute(delete(DeckShareModel).where(DeckShareModel.id == share_id))

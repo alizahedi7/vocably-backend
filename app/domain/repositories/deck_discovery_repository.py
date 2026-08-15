@@ -180,7 +180,23 @@ class DeckDiscoveryRepository(ABC):
         """Publish or unpublish a deck. Admin-only; see the service."""
 
     @abstractmethod
-    async def list_shares_for(self, user_id: UUID) -> list[SharedDeckView]: ...
+    async def list_shares_for(self, user_id: UUID) -> list[SharedDeckView]:
+        """Offers waiting for this user to answer, newest first.
+
+        **Unanswered only, and that is the whole contract** — the recipient's
+        mirror of :meth:`list_pending_shares_of`. This used to return every
+        share row ever addressed to them, accepted ones included, which is what
+        made the Shared tab a permanent record instead of an inbox: a deck
+        taken months ago still sat there as a card saying it had been taken,
+        and there was no action left to perform on it. Worse, the row outlived
+        the membership it created — an owner who removed somebody left them
+        looking at a deck they could no longer open.
+
+        An answered offer is not "an offer with a flag on it"; it has become
+        something else, and something else already reports it. Accepting makes
+        a membership, which the deck list shows. Declining deletes the row.
+        Neither belongs here.
+        """
 
     @abstractmethod
     async def get_share(self, share_id: UUID) -> SharedDeckView | None: ...
@@ -209,7 +225,15 @@ class DeckDiscoveryRepository(ABC):
         """Offer a deck to one person, replacing any pending offer of the same."""
 
     @abstractmethod
-    async def mark_accepted(self, share_id: UUID) -> None: ...
+    async def withdraw(self, share_id: UUID) -> None:
+        """Delete the offer. Both answers end here.
 
-    @abstractmethod
-    async def withdraw(self, share_id: UUID) -> None: ...
+        Accepting and declining differ in what they leave behind — a membership
+        or nothing — but they agree that the *offer* is over, so neither keeps
+        the row. There was a ``mark_accepted`` beside this once, which flagged
+        the row instead and is what kept answered offers in the recipient's
+        inbox forever. Deleting also means a re-share after somebody has been
+        removed from the deck lands as a fresh, visible offer, where the
+        flagged row would have been silently upserted back into "accepted" and
+        never shown to them again.
+        """
