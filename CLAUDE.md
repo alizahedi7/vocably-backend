@@ -522,6 +522,19 @@ That distinction is the whole design and is easy to invert by accident:
   accepting writes a `deck_members` row. Only someone who could already invite
   may share, so a viewer cannot hand a teacher's deck around. Declining deletes
   the offer and tells the sender nothing.
+- **`GET /decks/shared` is the recipient's inbox: unanswered offers only.**
+  Accepting *deletes* the offer, exactly as declining does — the two answers
+  differ in what they leave behind, not in whether the question is over. It used
+  to flag the row and keep it, so the recipient's Shared tab showed a deck taken
+  months ago as a card with no action left on it, and went on showing it after
+  the owner had removed them: an offer outliving the membership it created. It
+  also broke re-inviting somebody, since the upsert met an already-accepted row
+  and wrote a second invitation nobody ever saw. The list additionally excludes
+  decks the user is already a member of, for the one path that deletes nothing —
+  a recipient who joins by invite code while an offer sits unanswered.
+  `deck_shares.accepted` survives as a column and on the wire, always false on a
+  row that exists, because an Android build reads the field and lags the deploy
+  by weeks.
 - **The role rides on the offer**, not on a membership created ahead of it.
   `ShareDeckIn.role` is what *accepting* will make them; it defaults to viewer
   so a client that omits it cannot widen access, and `owner` is downgraded to
@@ -538,10 +551,36 @@ That distinction is the whole design and is easy to invert by accident:
   the sender is not told either way.
 - A share id that is not yours **404s**, like everything else keyed by id.
 
-**Friends are a recency list, not a social graph.** One-directional and needing
-no consent, because they reveal nothing the sharer did not already know — they
-typed the handle, or picked it out of `/users/search` above. Sharing links the
-recipient automatically, which is why a handle is only ever typed once.
+**Adding a friend is an offer; sharing a deck is not.** Friends began as a
+recency list rather than a social graph — one-directional and consent-free,
+because the row revealed nothing the sharer did not already know, having typed
+the handle from memory. `/users/search` ended that reasoning: a handle is
+*found* now, and the person on the other end was never told, could not refuse,
+and could not see it had happened. So `friend_links.accepted` splits the two:
+
+- `POST /users/me/friends` writes a **pending** row and returns the request. It
+  is idempotent and never demotes a friendship — a stale client re-asking
+  somebody already accepted must not reopen a settled question.
+- `GET /users/me/friends/requests` is the recipient's half; `GET
+  /users/me/friends` is accepted rows only, because a request nobody answered is
+  not a friend and listing one would tell the sender something untrue.
+- Accepting writes the **reciprocal** row. A friendship somebody agreed to is
+  mutual, and `unlink` deletes both directions for the same reason — half a
+  removed friendship is somebody still holding you on a list you are no longer
+  on. Declining deletes the row, tells the sender nothing, and leaves them
+  askable; a refusal is not a record this product keeps.
+- Accepting a request that is not there **404s**, exactly as a share id that is
+  not yours does: "declined a moment ago", "never existed" and "addressed to
+  somebody else" have to be one answer, or the endpoint becomes a way to ask who
+  has been asking whom.
+- **Sharing a deck still links the recipient outright**, which is why a handle
+  is only ever typed once. It is a stronger act than the request it would
+  replace, the recipient has a deck offer of their own to answer, and the sharer
+  already knew the handle — two questions about one act is one too many.
+
+Existing links were backfilled to accepted (`a1d47f9c2b58`): they were made
+under the old rule, and asking people to re-approve decisions already taken is
+worse than honouring them.
 
 **XP is a ledger plus a counter**, the same hybrid as the review history.
 `xp_events` is append-only; `users.xp` is what every request reads and is
