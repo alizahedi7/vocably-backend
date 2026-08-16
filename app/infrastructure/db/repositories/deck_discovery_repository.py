@@ -16,6 +16,7 @@ from app.domain.entities.deck import Deck
 from app.domain.entities.word import Word
 from app.domain.repositories.deck_discovery_repository import (
     DeckDiscoveryRepository,
+    DeckPublication,
     OutgoingShareView,
     PublicDeckView,
     PublicUnitView,
@@ -329,6 +330,27 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
             values["description_fa"] = description_fa
         await self._session.execute(
             update(DeckModel).where(DeckModel.id == deck_id).values(**values)
+        )
+
+    async def publication_of(self, deck_id: UUID) -> DeckPublication | None:
+        row = (
+            await self._session.execute(
+                select(
+                    DeckModel.is_public,
+                    DeckModel.is_official,
+                    DeckModel.published_at,
+                ).where(DeckModel.id == deck_id)
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        is_public, is_official, published_at = row
+        return DeckPublication(
+            is_public=bool(is_public),
+            is_official=bool(is_official),
+            # A deck published before this column existed has no date; the flag
+            # is still the answer, so don't let a null read as "not published".
+            published_at=published_at if is_public else None,
         )
 
     # ── person-to-person offers ──────────────────────────────
