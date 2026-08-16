@@ -733,6 +733,42 @@ fact, which is why the log exists before the features that will consume it.
   `ON DELETE CASCADE` from both `users` and `words` means erasure and card
   deletion really erase.
 
+## Production hardening
+
+Four guards in [config.py](app/core/config.py) fire only when
+`ENVIRONMENT=production`, so a laptop and the test suite are untouched. They all
+exist for the same reason: each failure is **silent**. The app boots, serves
+traffic and looks entirely healthy while being wrong, which is the one class of
+misconfiguration no amount of monitoring finds.
+
+- **`SECRET_KEY` must be ≥ 32 characters and must not contain "change-me".** It
+  signs every access and refresh token *and* peppers every OTP hash
+  ([security.py](app/core/security.py)). At its default, anyone reading this
+  repository can mint a valid token for any user id — including an admin's —
+  without a single request to this server, and nothing downstream looks unusual
+  because the signature genuinely verifies. The substring check matters as much
+  as the length floor: `.env.example`'s placeholder is 52 characters and would
+  pass a length test on its own. 32 is HMAC-SHA256's block size, below which the
+  key rather than the algorithm is the weak point. **Rotating it signs every user
+  out and invalidates in-flight OTPs** — do it in a quiet window, but do it.
+- **`DEBUG` must be false.** `deploy/docker-compose.prod.yml` already pins it for
+  api, worker and beat, so this guards that line being edited away or the app
+  being run in production outside that compose file.
+- **`BACKEND_CORS_ORIGINS` must not contain `*`.** [main.py](app/main.py) mounts
+  CORSMiddleware with `allow_credentials=True`, and Starlette answers a wildcard
+  by echoing back whatever `Origin` it was sent once credentials are in play — so
+  `*` is not "anonymous", it is "every origin, with the caller's credentials".
+  Bearer tokens make today's exposure small; the guard exists because the day
+  anything moves to a cookie, nothing else would notice.
+- The pre-existing `OTP_FIXED_CODE` and `GOOGLE_VERIFIER` guards are the same
+  shape and the reason this pattern was already here.
+
+**Ordering is part of the contract.** These run in definition order, ahead of the
+older guards, so a test asserting on one of them must name its own field —
+`tests/unit/test_config.py` constructs `Settings` directly for the negative cases
+and uses the `production_settings()` helper for the positive ones, precisely so a
+test can never pass on a different validator's message.
+
 ## Background tasks (Celery)
 
 A second entry point into the same codebase, alongside the FastAPI app. Tasks are
