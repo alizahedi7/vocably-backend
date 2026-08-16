@@ -318,6 +318,12 @@ class BuildJobDetailOut(_CamelModel):
     states: dict[str, int]
     needs_attention: int = Field(serialization_alias="needsAttention")
     estimated_remaining_usd: float = Field(serialization_alias="estimatedRemainingUsd")
+    #: Whether the built deck is in Explore *right now*. This is what lets the
+    #: admin screen offer "remove from Explore" for a live deck rather than a
+    #: second publish, which would not mean anything. Deliberately not derived
+    #: from ``job.state``: the build's lifecycle does not track visibility.
+    deck_is_public: bool = Field(serialization_alias="deckIsPublic")
+    deck_published_at: datetime | None = Field(serialization_alias="deckPublishedAt")
 
     @classmethod
     def from_dto(cls, dto: BuildJobDetail) -> BuildJobDetailOut:
@@ -326,6 +332,8 @@ class BuildJobDetailOut(_CamelModel):
             states={state.value: count for state, count in dto.states.items()},
             needs_attention=dto.needs_attention,
             estimated_remaining_usd=dto.estimated_remaining_usd,
+            deck_is_public=dto.deck_is_public,
+            deck_published_at=dto.deck_published_at,
         )
 
 

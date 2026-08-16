@@ -13,6 +13,7 @@ they are deliberate verbs rather than something a page does on load.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from app.application.services.deck_build_service import DeckBuildService
@@ -23,13 +24,14 @@ from app.domain.entities.lexeme import Lexeme, LexemeSense
 from app.domain.entities.word import Word
 from app.domain.enums import DeckBuildItemState, SenseSelection, SenseStatus
 from app.domain.repositories.deck_build_repository import DeckBuildRepository
+from app.domain.repositories.deck_discovery_repository import DeckDiscoveryRepository
 from app.domain.repositories.lexicon_repository import LexiconRepository, LexiconStats
 from app.domain.repositories.word_repository import WordRepository
 
 
 @dataclass(frozen=True, slots=True)
 class BuildJobDetail:
-    """A job plus the two things a progress screen cannot derive from it."""
+    """A job plus the things a progress screen cannot derive from it."""
 
     job: DeckBuildJob
     #: Item counts per state, straight from a ``GROUP BY``.
@@ -37,6 +39,14 @@ class BuildJobDetail:
     #: Rough remaining spend. An estimate, labelled as one on the screen, from a
     #: configured per-call price — never billing, and never presented as such.
     estimated_remaining_usd: float
+    #: Whether the deck this job built is in Explore right now. Read from
+    #: ``decks.is_public``, never from :attr:`job.state`: the build's lifecycle
+    #: deliberately does not track visibility (see :class:`DeckBuildState`), so
+    #: the job is not entitled to an opinion here. ``False`` for a job that has
+    #: not attached a deck yet — there is nothing to publish.
+    deck_is_public: bool = False
+    #: When it went into Explore, or ``None`` if it is not there.
+    deck_published_at: datetime | None = None
 
     @property
     def needs_attention(self) -> int:
@@ -53,6 +63,7 @@ class ContentAdminService:
         lexicon: LexiconRepository,
         words: WordRepository,
         build_service: DeckBuildService,
+        discovery: DeckDiscoveryRepository,
         *,
         current_content_version: int,
     ) -> None:
@@ -60,6 +71,7 @@ class ContentAdminService:
         self._lexicon = lexicon
         self._words = words
         self._build_service = build_service
+        self._discovery = discovery
         self._current_version = current_content_version
 
     # ── Builds ────────────────────────────────────────────────
@@ -78,10 +90,18 @@ class ContentAdminService:
         remaining = states.get(DeckBuildItemState.PENDING, 0) + states.get(
             DeckBuildItemState.RESOLVING, 0
         )
+        # A job only has a deck once planning attached one, and a deck the admin
+        # deleted out from under it is not an error here — the screen just has
+        # nothing to offer publishing for.
+        publication = (
+            await self._discovery.publication_of(job.deck_id) if job.deck_id else None
+        )
         return BuildJobDetail(
             job=job,
             states=states,
             estimated_remaining_usd=round(remaining * settings.ai_cost_per_call_usd, 4),
+            deck_is_public=publication.is_public if publication else False,
+            deck_published_at=publication.published_at if publication else None,
         )
 
     async def items(

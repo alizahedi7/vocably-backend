@@ -449,12 +449,14 @@ def get_content_admin_service(
     lexicon: LexiconRepoDep,
     words: WordRepoDep,
     build_service: DeckBuildServiceDep,
+    discovery: DeckDiscoveryRepoDep,
 ) -> ContentAdminService:
     return ContentAdminService(
         builds,
         lexicon,
         words,
         build_service,
+        discovery,
         current_content_version=effective_prompt_version(),
     )
 
