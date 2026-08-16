@@ -277,6 +277,99 @@ async def test_a_build_item_carries_the_card_a_reviewer_must_judge(
     assert card["example"] == "I run every morning."
 
 
+async def test_build_detail_reports_whether_the_deck_is_in_explore(
+    client: AsyncClient,
+    make_user: UserFactory,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The screen has to know, or it offers a second publish that means nothing.
+
+    Read from ``decks.is_public`` rather than the job's state: a build's
+    lifecycle deliberately does not track visibility, so the job cannot answer
+    this and must not be asked to.
+    """
+    from app.application.services.deck_access import DeckAccess
+    from app.domain.entities.deck import Deck
+    from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob
+    from app.infrastructure.db.repositories.deck_build_repository import (
+        SqlAlchemyDeckBuildRepository,
+    )
+    from app.infrastructure.db.repositories.deck_member_repository import (
+        SqlAlchemyDeckMemberRepository,
+    )
+    from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
+
+    headers = await _admin_headers(make_user)
+    owner = await make_user(phone="+989120000997")
+
+    async with session_factory() as session:
+        deck = await SqlAlchemyDeckRepository(session).add(Deck(user_id=owner.id, name="D"))
+        # The build pipeline gives every deck it creates an owner member, and
+        # publishing proves the deck exists by looking for one — so a deck
+        # seeded without it would 404 for a reason the test is not about.
+        await SqlAlchemyDeckMemberRepository(session).add(DeckAccess.owner(deck.id, owner.id))
+        job = DeckBuildJob(deck_id=deck.id, template_slug="t")
+        await SqlAlchemyDeckBuildRepository(session).create_job(
+            job, [DeckBuildItem(job_id=job.id, position=0, source_term="run")]
+        )
+        await session.commit()
+
+    async def detail() -> dict[str, object]:
+        response = await client.get(f"/api/v1/admin/builds/{job.id}", headers=headers)
+        assert response.status_code == 200, response.text
+        result: dict[str, object] = response.json()
+        return result
+
+    # Building never publishes — the deck stays private until somebody says so.
+    before = await detail()
+    assert before["deckIsPublic"] is False
+    assert before["deckPublishedAt"] is None
+
+    published = await client.patch(
+        f"/api/v1/admin/decks/{deck.id}/publish", headers=headers, json={"is_public": True}
+    )
+    assert published.status_code == 204, published.text
+
+    live = await detail()
+    assert live["deckIsPublic"] is True
+    assert live["deckPublishedAt"] is not None
+
+    # Taking it back out clears the date rather than leaving one that reads as
+    # live — this is the reverse action the screen offers for a published deck.
+    removed = await client.patch(
+        f"/api/v1/admin/decks/{deck.id}/publish", headers=headers, json={"is_public": False}
+    )
+    assert removed.status_code == 204, removed.text
+
+    after = await detail()
+    assert after["deckIsPublic"] is False
+    assert after["deckPublishedAt"] is None
+
+
+async def test_build_detail_without_a_deck_is_simply_not_published(
+    client: AsyncClient,
+    make_user: UserFactory,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A job that never attached a deck has nothing to publish, and is not an error."""
+    from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob
+    from app.infrastructure.db.repositories.deck_build_repository import (
+        SqlAlchemyDeckBuildRepository,
+    )
+
+    headers = await _admin_headers(make_user)
+    async with session_factory() as session:
+        job = DeckBuildJob(template_slug="t")
+        await SqlAlchemyDeckBuildRepository(session).create_job(
+            job, [DeckBuildItem(job_id=job.id, position=0, source_term="keen")]
+        )
+        await session.commit()
+
+    response = await client.get(f"/api/v1/admin/builds/{job.id}", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["deckIsPublic"] is False
+
+
 async def test_an_item_with_no_card_yet_reports_none_rather_than_a_blank(
     client: AsyncClient,
     make_user: UserFactory,
