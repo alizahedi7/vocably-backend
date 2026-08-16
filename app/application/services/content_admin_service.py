@@ -93,9 +93,7 @@ class ContentAdminService:
         # A job only has a deck once planning attached one, and a deck the admin
         # deleted out from under it is not an error here — the screen just has
         # nothing to offer publishing for.
-        publication = (
-            await self._discovery.publication_of(job.deck_id) if job.deck_id else None
-        )
+        publication = await self._discovery.publication_of(job.deck_id) if job.deck_id else None
         return BuildJobDetail(
             job=job,
             states=states,
