@@ -93,15 +93,21 @@ def _fresh_shared_limiters() -> Iterator[None]:
         settings.joins_per_ip_per_hour,
         settings.joins_per_user_per_hour,
         settings.username_checks_per_user_per_hour,
+        settings.feedback_reports_per_user_per_hour,
+        settings.ai_feedback_per_user_per_hour,
     )
     settings.joins_per_ip_per_hour = 0
     settings.joins_per_user_per_hour = 0
     settings.username_checks_per_user_per_hour = 0
+    settings.feedback_reports_per_user_per_hour = 0
+    settings.ai_feedback_per_user_per_hour = 0
     yield
     (
         settings.joins_per_ip_per_hour,
         settings.joins_per_user_per_hour,
         settings.username_checks_per_user_per_hour,
+        settings.feedback_reports_per_user_per_hour,
+        settings.ai_feedback_per_user_per_hour,
     ) = previous
     deps._hourly_shared_limiter.cache_clear()
 

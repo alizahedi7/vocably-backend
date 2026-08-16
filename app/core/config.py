@@ -83,6 +83,16 @@ class Settings(BaseSettings):
     #: person, so without a cap they are a slower handle-enumeration oracle
     #: than the availability endpoint.
     shares_per_user_per_hour: int = 60
+    #: Written feedback reports per user per hour. The one endpoint that stores
+    #: unbounded free text on request, so the cap is about storage and moderation
+    #: load rather than enumeration. Ten is far past anything an honest reporter
+    #: does in an hour and well short of a nuisance.
+    feedback_reports_per_user_per_hour: int = 10
+    #: AI card ratings per user per hour. Deliberately loose: rating is an upsert
+    #: keyed by (user, lookup, sense), so a session adding thirty cards writes at
+    #: most a few dozen rows however many times the thumbs are tapped. This is a
+    #: ceiling on a stuck client, not a budget the learner can feel.
+    ai_feedback_per_user_per_hour: int = 300
     # DEV/TEST ONLY: issue this exact code instead of a random one, for every phone
     # number, so mobile/QA can sign in without reading server logs. Forbidden in
     # production (validated below) — it disables OTP secrecy entirely while set.

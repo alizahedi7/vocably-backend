@@ -17,14 +17,19 @@ from app.api.deps import (
     ContentAdminServiceDep,
     CurrentAdmin,
     DeckDiscoveryServiceDep,
+    FeedbackServiceDep,
 )
 from app.api.v1.schemas.admin import (
+    AdminAIFeedbackPageOut,
+    AdminAISenseScoreOut,
     AdminCacheAliasOut,
     AdminCacheAliasPageOut,
     AdminCacheEntryOut,
     AdminCacheEntryPageOut,
     AdminCacheOverviewOut,
     AdminCategoryOut,
+    AdminFeedbackPageOut,
+    AdminFeedbackReportOut,
     AdminPublishDeckIn,
     AdminUserOut,
     AdminWordOut,
@@ -321,3 +326,54 @@ async def update_sense(
         native_meaning=payload.native_meaning,
     )
     return SenseOut.from_entity(sense)
+
+
+# ── feedback ─────────────────────────────────────────────────
+# Reached through ``FeedbackServiceDep`` rather than ``AdminServiceDep``, which
+# is a deliberate departure from the layering note in CLAUDE.md. ``AdminService``
+# exists to aggregate over *other features'* tables; feedback has its own table
+# and its own service, and routing its reads through a second repository would
+# smear one vertical slice across two. What is not departed from is the rule that
+# matters: both routes take ``CurrentAdmin``, or they would be open to anyone
+# holding a token.
+
+
+@router.get("/feedback", response_model=AdminFeedbackPageOut)
+async def feedback_reports(
+    _admin: CurrentAdmin,
+    feedback: FeedbackServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    kind: str | None = Query(default=None, max_length=16),
+) -> AdminFeedbackPageOut:
+    """What learners have written in, newest first.
+
+    ``kind`` narrows to ``bug`` | ``idea`` | ``other``; anything unrecognised
+    reads as ``other``, which is where an unrecognised kind was stored too.
+    """
+    reports, total = await feedback.list_reports(limit=limit, offset=offset, kind=kind)
+    return AdminFeedbackPageOut(
+        items=[AdminFeedbackReportOut.from_entity(r) for r in reports], total=total
+    )
+
+
+@router.get("/ai-feedback", response_model=AdminAIFeedbackPageOut)
+async def ai_feedback(
+    _admin: CurrentAdmin,
+    feedback: FeedbackServiceDep,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> AdminAIFeedbackPageOut:
+    """How the AI card backs are doing: the overall split, then the worst first.
+
+    Rows are per *sense*, not per lookup. A word whose second card is wrong and
+    whose first is fine is a fixable prompt problem, and averaging the two hides
+    exactly the thing worth seeing. Join ``lookupId`` against
+    ``/admin/cache/entries`` to read the text that was rated.
+    """
+    scores, totals = await feedback.ai_scores(limit=limit, offset=offset)
+    return AdminAIFeedbackPageOut(
+        items=[AdminAISenseScoreOut.from_dto(s) for s in scores],
+        ups=totals.ups,
+        downs=totals.downs,
+    )

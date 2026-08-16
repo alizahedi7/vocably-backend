@@ -12,6 +12,7 @@ from app.infrastructure.db.models.deck_invite import DeckInviteModel
 from app.infrastructure.db.models.deck_member import DeckMemberModel
 from app.infrastructure.db.models.deck_share import DeckShareModel
 from app.infrastructure.db.models.deck_unit import DeckUnitModel
+from app.infrastructure.db.models.feedback import AIFeedbackModel, FeedbackReportModel
 from app.infrastructure.db.models.friend_link import FriendLinkModel
 from app.infrastructure.db.models.lexicon import (
     LexemeModel,
@@ -26,6 +27,7 @@ from app.infrastructure.db.models.word_review import WordReviewModel
 from app.infrastructure.db.models.xp_event import XpEventModel
 
 __all__ = [
+    "AIFeedbackModel",
     "AILookupAliasModel",
     "AILookupEntryModel",
     "DailyDeckActivityModel",
@@ -36,6 +38,7 @@ __all__ = [
     "DeckShareModel",
     "DeckModel",
     "DeckUnitModel",
+    "FeedbackReportModel",
     "FriendLinkModel",
     "LexemeModel",
     "LexemeSenseModel",
