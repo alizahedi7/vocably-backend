@@ -373,6 +373,9 @@ was a real bug found by hammering a running server:
   member the owner has since promoted.
 - **The invite row upserts on `deck_id` and never rewrites `code`** — reopening
   a link must not invalidate one already handed to a class.
+- **The streak banks in one guarded statement** (`bank_day`), so two sessions
+  finishing together advance it once. Its rowcount is what says which request
+  crossed the goal — see "The streak advances once a day".
 - **A handle conflict is translated at the constraint**, in
   `SqlAlchemyUserRepository.update`. `/users/username-available` is advisory;
   the unique index decides, and the loser of a race gets a 409 with copy rather
@@ -435,14 +438,76 @@ getting a UTC boundary at 03:30 local. `users.timezone` holds an IANA name
 boundary is computed.** Weeks start Monday, matching the client. Do not scatter
 `date.today()` through services.
 
-`daily_deck_activity(user_id, deck_id, day, reviews, mastered)` backs the
-roster's weekly numbers. It exists because `CLAUDE.md` forbids user-facing
-aggregation over `word_reviews`, and a roster of thirty students would scan that
-log thirty times. Counters ride along on the transaction the grade already
-opens, bucketed by the learner's local day; `mastered` counts only the
-transition *into* box 5 (`ReviewApplied.became_mastered`). The roster is two
-grouped queries for the whole class — the N+1 here is the obvious way to write
-it wrong.
+`daily_deck_activity(user_id, deck_id, day, reviews, due_reviews, mastered)`
+backs the roster's weekly numbers. It exists because `CLAUDE.md` forbids
+user-facing aggregation over `word_reviews`, and a roster of thirty students
+would scan that log thirty times. Counters ride along on the transaction the
+grade already opens, bucketed by the learner's local day; `mastered` counts only
+the transition *into* box 5 (`ReviewApplied.became_mastered`), and `due_reviews`
+only the answers the scheduler had actually asked for (see the streak, below).
+The roster is two grouped queries for the whole class — the N+1 here is the
+obvious way to write it wrong.
+
+### The streak advances once a day, when the day's goal is met
+
+**One rule:** the streak advances when the day's goal is met, at most once per
+local calendar day. The goal is met by *reviewing* — either `reviews_today >=
+daily_goal`, or the day's queue was handed out and is now empty.
+[streak.py](app/domain/services/streak.py) is the whole rule; `StudyService`
+supplies the evidence and nothing else decides.
+
+It used to advance on the first graded card of any day, and was written only
+there. That was wrong in two directions at once, and both are worth keeping in
+mind before loosening any of this:
+
+- **It was too easy to earn.** One card held a streak, which is not a day's
+  studying. Adding words is deliberately *not* a path to the goal either: a card
+  added today is not due until tomorrow (see "A new word's first review is
+  tomorrow"), so a goal satisfiable by typing ten words would let somebody hold a
+  300-day streak having never reviewed anything.
+- **It was never settled on a day nobody studied**, so a learner who missed two
+  days kept seeing the old number — correct-looking, stale, and wrong — until
+  their next review silently reset it to 1. They were never told they had lost
+  it, and the figure on screen while they could still have saved it was a lie.
+  `settle()` runs on `GET /study/overview` and `GET /users/me`, writes back
+  narrowly, and at most once a day.
+
+Three columns carry it. `users.streak_last_day` is the last day that *counted*
+— banked **or** rested — and is what the consecutive-day arithmetic measures
+from. `users.streak_banked_on` is the last day the goal was met, and is the
+once-a-day lock. `users.last_studied_on` stays and keeps its own, different
+meaning: the last day anything at all was reviewed. Conflating the last two is
+the original bug.
+
+**Banking is one guarded statement.** `UserRepository.bank_day` updates where
+`streak_banked_on < today` and derives the new value in SQL, so a session
+finishing on the phone and one in the PWA in the same second cannot both
+collect — the same reasoning as the daily-goal XP award's partial unique index,
+and it belongs under "Writes that two requests can reach at once". Its rowcount
+is the only trustworthy answer to "did this request cross it", which is what a
+client may celebrate on.
+
+**A day has three states**, reported as `day_state` on the overview:
+`open` (work outstanding), `banked` (goal met; the streak has moved and is
+locked) and `rest` (nothing was due — preserved, not advanced, never
+celebrated). `banked` is read from `streak_banked_on` and nowhere else: a
+separate "is the goal met" answer was tried and removed, because it let a read
+report a day as won that no write had ever banked.
+
+Two consequences to know:
+
+- **A rest day is credited only to someone who opens the app.** Reviewing a card
+  rewrites its `due_at`, so what was due on a past day is not reconstructible
+  from `word_progress` — an unattended zero-due day cannot be excused after the
+  fact. Three days away with nothing due still lapses. A nightly job is the only
+  thing that would change that.
+- **`due_reviews` is why the light-day path is safe.** "The queue is empty" is
+  true of a brand-new deck from the moment it is created, since all of its cards
+  are tomorrow's work. Counting scheduled answers separately is what stops one
+  review of a fresh import banking the day.
+
+`tests/unit/test_user_streak.py` holds the rule, `tests/api/test_streak.py` the
+endpoints and the race.
 
 ### Handles
 
