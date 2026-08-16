@@ -399,6 +399,9 @@ async def test_admin_scores_ai_senses_worst_first(
     assert response.status_code == 200, response.text
     body = response.json()
     assert (body["ups"], body["downs"]) == (1, 1)
+    # `total` counts *senses judged*, not verdicts left — one sense can carry
+    # many of the latter, so the pager cannot be driven from ups + downs.
+    assert body["total"] == 2
     # Per sense, not per lookup: a deck whose second card is wrong and whose
     # first is fine is exactly what averaging would hide.
     assert len(body["items"]) == 2

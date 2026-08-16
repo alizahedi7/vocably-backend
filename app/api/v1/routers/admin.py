@@ -376,4 +376,5 @@ async def ai_feedback(
         items=[AdminAISenseScoreOut.from_dto(s) for s in scores],
         ups=totals.ups,
         downs=totals.downs,
+        total=totals.rated_senses,
     )

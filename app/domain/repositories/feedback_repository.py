@@ -49,9 +49,15 @@ class AIFeedbackTotals:
 
     ups: int
     downs: int
+    #: How many distinct card backs have been judged at all — the row count
+    #: behind :meth:`FeedbackRepository.ai_sense_scores`, so a client can page
+    #: through them. Not derivable from ``ups``/``downs``: one sense can carry
+    #: many verdicts, and one learner can rate many senses.
+    rated_senses: int = 0
 
     @property
     def total(self) -> int:
+        """Verdicts left, not senses rated."""
         return self.ups + self.downs
 
 
@@ -123,7 +129,8 @@ class FeedbackRepository(ABC):
         """
 
     @abstractmethod
-    async def ai_totals(self) -> AIFeedbackTotals: ...
+    async def ai_totals(self) -> AIFeedbackTotals:
+        """The overall split, and how many senses it is spread across."""
 
     @abstractmethod
     async def lookup_provenance(self, lookup_id: str) -> LookupProvenance | None:

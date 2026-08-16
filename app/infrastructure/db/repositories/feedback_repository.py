@@ -212,7 +212,17 @@ class SqlAlchemyFeedbackRepository(FeedbackRepository):
             _count_where(AIFeedbackModel.rating == AIRating.DOWN.value).cast(Integer),
         )
         ups, downs = (await self._session.execute(stmt)).one()
-        return AIFeedbackTotals(ups=int(ups or 0), downs=int(downs or 0))
+        # Counted over the grouping, not over the rows: one sense carries many
+        # verdicts, so `ups + downs` says nothing about how long the list is.
+        rated = (
+            select(AIFeedbackModel.lookup_id, AIFeedbackModel.sense_index)
+            .group_by(AIFeedbackModel.lookup_id, AIFeedbackModel.sense_index)
+            .subquery()
+        )
+        senses = (await self._session.execute(select(func.count()).select_from(rated))).scalar_one()
+        return AIFeedbackTotals(
+            ups=int(ups or 0), downs=int(downs or 0), rated_senses=int(senses or 0)
+        )
 
     async def lookup_provenance(self, lookup_id: str) -> LookupProvenance | None:
         stmt = select(AILookupEntryModel).where(AILookupEntryModel.entry_hash == lookup_id)

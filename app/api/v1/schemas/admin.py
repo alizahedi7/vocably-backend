@@ -625,3 +625,7 @@ class AdminAIFeedbackPageOut(_CamelModel):
     items: list[AdminAISenseScoreOut]
     ups: int
     downs: int
+    #: How many senses have been judged at all, so the dashboard can page. Named
+    #: `total` because every other paginated admin response calls the row count
+    #: that; it is deliberately *not* `ups + downs`, which counts verdicts.
+    total: int
