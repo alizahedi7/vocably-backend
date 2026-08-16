@@ -87,7 +87,9 @@ The read-only admin analytics API backing the standalone **vocably-admin** dashb
   Publishing is admin-only because there is no report path and no moderation
   queue; an open publish button without one is an unreviewed-content problem
   rather than a feature. Opening it to deck owners later is a permission
-  change, not a migration.
+  change, not a migration. That one route publishes *and* unpublishes, and
+  `GET /admin/builds/{id}` reports where the built deck currently stands as
+  `deckIsPublic` — see "Publishing is still a separate, deliberate act".
 - **Response contract**: schemas in [admin.py](app/api/v1/schemas/admin.py) serialise via
   `serialization_alias` to **camelCase** to match vocably-admin's TypeScript types. Renaming a
   field is a breaking change for that client — keep the aliases in sync with the dashboard.
@@ -977,6 +979,21 @@ Nothing in this pipeline sets `decks.is_public`. A build creates a private deck
 and leaves it private; `PATCH /admin/decks/{id}/publish` is the only thing that
 puts it in Explore. That is what makes a half-built deck invisible by
 construction rather than by vigilance.
+
+That route is **idempotent and goes both ways**: the same call with `is_public`
+false takes a deck back out and clears `published_at`, so removal is not a
+second endpoint. Re-publishing a live deck is a no-op that refreshes the
+listing fields, which is what lets an admin fix a category or description
+without a conflict — hence no 409 for "already published".
+
+**`decks.is_public` is the only answer to "is this deck in Explore?"** The build
+job's state is not: `DeckBuildState` tracks a build's lifecycle and deliberately
+never tracks visibility, which is why `PUBLISHED` is set by nothing. Read the
+flag through `DeckDiscoveryRepository.publication_of`, which — unlike
+`get_public` — answers for a *private* deck instead of conflating it with one
+that does not exist. `GET /admin/builds/{id}` carries it as `deckIsPublic` /
+`deckPublishedAt` so the dashboard can offer "remove from Explore" for a live
+deck rather than a second publish that would mean nothing.
 
 Official decks are owned by a system account (`CONTENT_OWNER_PHONE`), created on
 first plan. It is never a person and must never be pointed at account deletion.
