@@ -398,7 +398,7 @@ def get_ai_studio_service(
     progress: WordProgressRepoDep,
     users: UserRepoDep,
 ) -> AIStudioService:
-    return AIStudioService(ai, progress, users)
+    return AIStudioService(ai, progress, users, prompt_version=effective_prompt_version())
 
 
 def get_admin_service(admin_repo: AdminRepoDep) -> AdminService:

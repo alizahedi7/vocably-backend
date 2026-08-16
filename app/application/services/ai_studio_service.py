@@ -9,12 +9,13 @@ from __future__ import annotations
 from dataclasses import replace
 from uuid import UUID
 
+from app.application.dto import LookupView
 from app.application.ports.ai_service import (
     AIService,
     GeneratedStory,
     LearnerContext,
-    LookupResult,
 )
+from app.application.ports.lookup_cache import build_lookup_cache_key
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.enums import LeitnerBox
 from app.domain.repositories.user_repository import UserRepository
@@ -38,16 +39,24 @@ class AIStudioService:
         ai: AIService,
         progress: WordProgressRepository,
         users: UserRepository,
+        *,
+        prompt_version: int,
     ) -> None:
         self._ai = ai
         self._progress = progress
         self._users = users
+        # Injected rather than imported, like ``LexiconService``'s
+        # ``content_version``: it comes from ``infrastructure.ai.factory``, and
+        # the application layer does not reach downwards to ask. It is part of
+        # the lookup id because a new prompt writes different cards, and a
+        # verdict on the old ones must not be counted against the new.
+        self._prompt_version = prompt_version
 
     async def look_up_meanings(
         self,
         user_id: UUID,
         term: str,
-    ) -> LookupResult:
+    ) -> LookupView:
         term = term.strip()
         if not term:
             raise ValidationError("A term is required.")
@@ -63,8 +72,23 @@ class AIStudioService:
         # The card deck shows at most 4 backs; enforce it here so no provider can
         # push the client past what the UI can render.
         if len(result.suggestions) > MAX_LOOKUP_SUGGESTIONS:
-            return replace(result, suggestions=result.suggestions[:MAX_LOOKUP_SUGGESTIONS])
-        return result
+            result = replace(result, suggestions=result.suggestions[:MAX_LOOKUP_SUGGESTIONS])
+        return LookupView(result=result, lookup_id=self._lookup_id(result.term, learner))
+
+    def _lookup_id(self, resolved_term: str, learner: LearnerContext) -> str:
+        """The id the client rates a card back under.
+
+        Keyed on the **resolved** term, not the raw input, so a typo, a sentence
+        and the clean word all rate the same deck — which is the same reason the
+        cache stores its senses under the resolved term.
+
+        Empty when there is nothing to rate: an ``unsupported`` lookup resolves
+        to no term and shows no cards, and an id for it would be an id for a
+        deck that does not exist.
+        """
+        if not resolved_term:
+            return ""
+        return build_lookup_cache_key(resolved_term, learner, self._prompt_version).digest()
 
     async def generate_story(self, user_id: UUID) -> GeneratedStory:
         learner = await self._learner_context(user_id)

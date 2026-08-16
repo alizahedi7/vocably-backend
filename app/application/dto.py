@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from uuid import UUID
 
+from app.application.ports.ai_service import LookupResult
 from app.domain.entities.deck import Deck
 from app.domain.entities.user import User
 from app.domain.entities.word import Word
@@ -195,3 +196,20 @@ class AdminCacheAliasRow:
     resolved_term: str
     expires_at: datetime | None
     created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class LookupView:
+    """A lookup's senses, plus the id under which they can be rated.
+
+    ``LookupResult`` is the *port's* shape — what an AI adapter returns — and it
+    knows nothing about caching. The id here is derived from the cache key for
+    the resolved term (``LookupCacheKey.digest``), which is a fact the use case
+    computes and no adapter should have to. Hence a wrapper rather than another
+    field on ``LookupResult``: the adapters would all have to leave it blank.
+
+    ``lookup_id`` is empty exactly when there are no senses to rate.
+    """
+
+    result: LookupResult
+    lookup_id: str = ""

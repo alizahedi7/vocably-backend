@@ -35,6 +35,7 @@ authenticated user's profile. Do not send them.
   "status": "ok",
   "notice": null,
   "phonetic": "/ɹʌn/",
+  "lookup_id": "9f2c…",
   "suggestions": [
     {
       "native_meaning": "دویدن",
@@ -49,6 +50,23 @@ authenticated user's profile. Do not send them.
 
 Between 0 and 4 suggestions, ordered most common sense first. A monosemous word
 returns exactly one — the deck is never padded to four.
+
+### `lookup_id` — the handle for rating a card back
+
+A stable id for *this deck of senses*: the term as resolved, at the prompt
+version that wrote them, for this learner's native language and age bucket. Send
+it back on `POST /ai/feedback` to record a thumb on one of the cards.
+
+**Empty whenever there is nothing to rate**, and that is the ordinary case for an
+`unsupported` answer — treat it exactly as you treat an empty `phonetic`: render
+no control at all, never an error, and never a control that posts nothing.
+
+It is deterministic rather than random, which is the point: two learners who look
+the same word up rate one deck between them instead of two. It names a shared
+dictionary entry (`ai_lookup_entries.entry_hash`) and carries nothing about the
+user, so it is safe to hold on the client for as long as the suggestions are on
+screen. It changes when the prompt version does, so a verdict on the old cards is
+never counted against the new.
 
 ### `phonetic` — optional, and frequently absent
 

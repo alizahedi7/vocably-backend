@@ -22,6 +22,9 @@ async def look_up_meanings(
     meaning, a learner-dictionary definition, and contextual examples. ``status``
     reports how raw input was interpreted (typo corrected, keyword extracted from a
     sentence, translated from the native language, or unsupported).
+
+    ``lookup_id`` is a stable handle for the deck of senses this returned. It is
+    empty when there is nothing to rate.
     """
     return LookupOut.from_dto(await ai.look_up_meanings(current_user.id, payload.term))
 
