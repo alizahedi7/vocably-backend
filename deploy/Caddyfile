@@ -1,6 +1,37 @@
 # Caddy obtains and renews the Let's Encrypt certificate for each site
 # automatically; all it needs is ports 80+443 open and DNS pointing here.
 {$DOMAIN} {
+	# Response hardening for the API origin. The PWA block below sets its own
+	# (and is mirrored from vocably-mobile's Caddyfile.web — edit it there);
+	# this site had none at all, so every API response went out bare.
+	header {
+		# Caddy redirects 80→443 already, but that first plaintext request still
+		# happens once per client. HSTS removes it for a year.
+		#
+		# Deliberately without `includeSubDomains` and `preload`: both are
+		# effectively irreversible for a year of cached browser state, and this
+		# file does not know whether {$DOMAIN} is an apex covering the PWA and
+		# admin hosts. Add them once that is checked and every sibling host is
+		# known to be HTTPS-only.
+		Strict-Transport-Security "max-age=31536000"
+
+		# JSON that a browser is free to re-interpret as HTML or a script is how
+		# a reflected value in an error body becomes stored XSS.
+		X-Content-Type-Options nosniff
+
+		# No HTML is served here (see EXPOSE_DOCS — Swagger UI is off in
+		# production), so framing has nothing to steal today. Both headers cost
+		# nothing and stay correct if that ever changes.
+		X-Frame-Options DENY
+		Content-Security-Policy "frame-ancestors 'none'"
+
+		# An API URL can carry ids in its path; don't send them to third parties.
+		Referrer-Policy no-referrer
+
+		# Free version disclosure. Nothing legitimate reads it.
+		-Server
+	}
+
 	reverse_proxy api:8000
 }
 

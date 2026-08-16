@@ -793,6 +793,18 @@ follows `ENVIRONMENT`, so production is off and everything else is on.
 - `tests/unit/test_app_docs.py` drives real HTTP rather than reading
   `app.routes`, which does not flatten included routers in this FastAPI version.
 
+### Response headers are set at the edge
+
+The API site in [deploy/Caddyfile](deploy/Caddyfile) sets HSTS, `nosniff`,
+`X-Frame-Options`/`frame-ancestors`, `Referrer-Policy` and strips `Server`. It
+had none of these; the PWA block below it did, and that block is **mirrored from
+vocably-mobile's `Caddyfile.web` — edit it there**, not here.
+
+HSTS is deliberately `max-age=31536000` with **no `includeSubDomains` and no
+`preload`**: both are effectively irreversible for a year of cached browser
+state, and this file cannot know whether `{$DOMAIN}` is an apex that also covers
+the PWA and admin hosts. Add them once that is checked.
+
 ## Background tasks (Celery)
 
 A second entry point into the same codebase, alongside the FastAPI app. Tasks are
