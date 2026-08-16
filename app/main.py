@@ -26,11 +26,19 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     configure_logging()
+    # All three, not just the two that were named here: `redoc_url` defaults to
+    # "/redoc" in FastAPI, so leaving it unset published a second docs UI in
+    # production that nothing in this file mentioned. `openapi_url` is the
+    # load-bearing one — the spec is what a scanner consumes, and disabling it
+    # while leaving `docs_url` on renders Swagger as a broken empty page rather
+    # than a 404, which reads as an outage.
+    docs = settings.docs_enabled
     app = FastAPI(
         title=settings.project_name,
         version="0.1.0",
-        docs_url="/docs",
-        openapi_url="/openapi.json",
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
         lifespan=lifespan,
     )
 

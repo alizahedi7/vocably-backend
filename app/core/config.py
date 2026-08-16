@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import Field, PostgresDsn, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -24,11 +24,29 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    #: 32 bytes is HMAC-SHA256's block size; below it the key, not the algorithm,
+    #: is the weak point. ClassVar so pydantic-settings reads it as a constant
+    #: rather than another thing the environment may override.
+    MIN_SECRET_KEY_LENGTH: ClassVar[int] = 32
+
     # ── Application ───────────────────────────────────────────
     project_name: str = "Vocably"
     environment: Environment = "development"
     debug: bool = True
     api_v1_prefix: str = "/api/v1"
+    #: Swagger UI, ReDoc and openapi.json. Off in production by default, on
+    #: everywhere else. The spec is a complete machine-readable map of every
+    #: route, parameter and enum — the input format automated scanners want —
+    #: and no first-party client reads it at runtime: the Flutter app, the PWA
+    #: and vocably-admin are all built against a spec, never a live one. Swagger
+    #: UI additionally puts a "Try it out" console against real user data on the
+    #: production origin, and CDN-loads its own bundle there.
+    #:
+    #: Not a secret and not a security boundary — authorization is per-route
+    #: (`CurrentAdmin`, `DeckAccess`) and stays the thing that matters. This only
+    #: declines to hand out the map. Set EXPOSE_DOCS=true to override
+    #: deliberately, which is what a staging box should do.
+    expose_docs: bool | None = None
     # NoDecode: skip pydantic-settings' JSON pre-parsing so the validator below can
     # accept a plain comma-separated string from the environment.
     backend_cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
@@ -319,6 +337,79 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def docs_enabled(self) -> bool:
+        """Whether to mount Swagger UI, ReDoc and openapi.json. See ``expose_docs``."""
+        if self.expose_docs is not None:
+            return self.expose_docs
+        return not self.is_production
+
+    @model_validator(mode="after")
+    def _validate_secret_key(self) -> Settings:
+        """The one credential whose default is catastrophic rather than merely wrong.
+
+        ``secret_key`` signs every access and refresh token *and* peppers the OTP
+        hashes. Booting production with a value anyone can read in this repository
+        means anyone can mint a token for any user id — including an admin's — with
+        no request to this server at all. Nothing downstream would look unusual: the
+        signature is valid, so every check that follows it passes.
+
+        Length matters separately from secrecy: HS256 is HMAC-SHA256, so a key
+        shorter than its 32-byte block is the weakest link in an otherwise sound
+        chain, and PyJWT warns on every token issued with one.
+        """
+        if not self.is_production:
+            return self
+        placeholder = "change-me" in self.secret_key.lower()
+        if placeholder or len(self.secret_key) < self.MIN_SECRET_KEY_LENGTH:
+            raise ValueError(
+                "SECRET_KEY must be a random string of at least "
+                f"{self.MIN_SECRET_KEY_LENGTH} characters when ENVIRONMENT=production "
+                "— it signs every JWT and peppers every OTP hash, so a default or "
+                "placeholder value lets anyone holding this source forge a token for "
+                "any account. Generate one with `openssl rand -hex 32`. Rotating it "
+                "signs every user out and invalidates OTPs already in flight."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_debug(self) -> Settings:
+        """``debug`` defaults to True, which is right for a laptop and wrong on a VPS.
+
+        deploy/docker-compose.prod.yml already pins DEBUG=false for all three
+        services, so this guards the case where that line is edited away or the app
+        is run in production outside that compose file — not a live misconfiguration.
+        """
+        if self.is_production and self.debug:
+            raise ValueError(
+                "DEBUG must be false when ENVIRONMENT=production — it turns on "
+                "verbose error surfaces that belong in a log, not in a response."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_cors_origins(self) -> Settings:
+        """``*`` and credentialed CORS are individually fine and together are not.
+
+        app/main.py mounts CORSMiddleware with ``allow_credentials=True``. Starlette
+        answers a wildcard origin by echoing back whatever Origin was sent the moment
+        credentials are in play, so ``*`` here is not "any origin, anonymously" — it
+        is "every origin on the internet, with the caller's cookies", which is the
+        classic way a CSRF-proof API stops being one.
+
+        Bearer tokens are what this app actually authenticates with, so the practical
+        exposure today is small. The reason to refuse it at startup is that the day
+        anything moves to a cookie, nothing else would notice.
+        """
+        if self.is_production and "*" in self.backend_cors_origins:
+            raise ValueError(
+                "BACKEND_CORS_ORIGINS must not contain '*' when ENVIRONMENT=production "
+                "— the CORS middleware sends credentials, and a wildcard origin is "
+                "echoed back per-request rather than genuinely anonymous. List the "
+                "app's origins explicitly."
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_fixed_otp_code(self) -> Settings:

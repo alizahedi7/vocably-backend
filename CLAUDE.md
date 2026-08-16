@@ -798,6 +798,78 @@ fact, which is why the log exists before the features that will consume it.
   `ON DELETE CASCADE` from both `users` and `words` means erasure and card
   deletion really erase.
 
+## Production hardening
+
+Four guards in [config.py](app/core/config.py) fire only when
+`ENVIRONMENT=production`, so a laptop and the test suite are untouched. They all
+exist for the same reason: each failure is **silent**. The app boots, serves
+traffic and looks entirely healthy while being wrong, which is the one class of
+misconfiguration no amount of monitoring finds.
+
+- **`SECRET_KEY` must be ≥ 32 characters and must not contain "change-me".** It
+  signs every access and refresh token *and* peppers every OTP hash
+  ([security.py](app/core/security.py)). At its default, anyone reading this
+  repository can mint a valid token for any user id — including an admin's —
+  without a single request to this server, and nothing downstream looks unusual
+  because the signature genuinely verifies. The substring check matters as much
+  as the length floor: `.env.example`'s placeholder is 52 characters and would
+  pass a length test on its own. 32 is HMAC-SHA256's block size, below which the
+  key rather than the algorithm is the weak point. **Rotating it signs every user
+  out and invalidates in-flight OTPs** — do it in a quiet window, but do it.
+- **`DEBUG` must be false.** `deploy/docker-compose.prod.yml` already pins it for
+  api, worker and beat, so this guards that line being edited away or the app
+  being run in production outside that compose file.
+- **`BACKEND_CORS_ORIGINS` must not contain `*`.** [main.py](app/main.py) mounts
+  CORSMiddleware with `allow_credentials=True`, and Starlette answers a wildcard
+  by echoing back whatever `Origin` it was sent once credentials are in play — so
+  `*` is not "anonymous", it is "every origin, with the caller's credentials".
+  Bearer tokens make today's exposure small; the guard exists because the day
+  anything moves to a cookie, nothing else would notice.
+- The pre-existing `OTP_FIXED_CODE` and `GOOGLE_VERIFIER` guards are the same
+  shape and the reason this pattern was already here.
+
+**Ordering is part of the contract.** These run in definition order, ahead of the
+older guards, so a test asserting on one of them must name its own field —
+`tests/unit/test_config.py` constructs `Settings` directly for the negative cases
+and uses the `production_settings()` helper for the positive ones, precisely so a
+test can never pass on a different validator's message.
+
+### The docs surface is off in production
+
+`EXPOSE_DOCS` gates Swagger UI, ReDoc and `openapi.json` together; unset it
+follows `ENVIRONMENT`, so production is off and everything else is on.
+
+- **This is not a security boundary and must never be treated as one.**
+  Authorization is per-route (`CurrentAdmin`, `DeckAccess`) and stays the only
+  thing that matters. What this removes is a complete machine-readable map of
+  every route, parameter and enum — the exact input format automated scanners
+  consume — plus a live "Try it out" console pointed at real user data on the
+  production origin, and a CDN-loaded bundle served from it. Recon cost, not
+  exploitability.
+- **All three URLs, not two.** `redoc_url` defaults to `/redoc` in FastAPI, so
+  leaving it unset published a second docs UI that nothing in `main.py`
+  mentioned. `openapi_url` is load-bearing: disabling it while leaving `docs_url`
+  on renders Swagger as a broken empty page rather than a 404, which reads as an
+  outage.
+- **A staging box should set `EXPOSE_DOCS=true`.** Turning docs off in production
+  is only cheap if client developers have a live, current place to read them;
+  without that they end up reading source, and this becomes a tax rather than a
+  control.
+- `tests/unit/test_app_docs.py` drives real HTTP rather than reading
+  `app.routes`, which does not flatten included routers in this FastAPI version.
+
+### Response headers are set at the edge
+
+The API site in [deploy/Caddyfile](deploy/Caddyfile) sets HSTS, `nosniff`,
+`X-Frame-Options`/`frame-ancestors`, `Referrer-Policy` and strips `Server`. It
+had none of these; the PWA block below it did, and that block is **mirrored from
+vocably-mobile's `Caddyfile.web` — edit it there**, not here.
+
+HSTS is deliberately `max-age=31536000` with **no `includeSubDomains` and no
+`preload`**: both are effectively irreversible for a year of cached browser
+state, and this file cannot know whether `{$DOMAIN}` is an apex that also covers
+the PWA and admin hosts. Add them once that is checked.
+
 ## Background tasks (Celery)
 
 A second entry point into the same codebase, alongside the FastAPI app. Tasks are
