@@ -131,3 +131,21 @@ def test_explicit_cors_origins_accepted_in_production() -> None:
 def test_wildcard_cors_origin_accepted_outside_production() -> None:
     settings = Settings(environment="development", backend_cors_origins="*")
     assert settings.backend_cors_origins == ["*"]
+
+
+# ── API docs exposure ─────────────────────────────────────────
+
+
+def test_docs_are_off_by_default_in_production() -> None:
+    assert production_settings().docs_enabled is False
+
+
+def test_docs_are_on_by_default_outside_production() -> None:
+    assert Settings(environment="development").docs_enabled is True
+    assert Settings(environment="staging").docs_enabled is True
+
+
+def test_expose_docs_overrides_the_environment_in_both_directions() -> None:
+    """A staging box turns them on; a locked-down dev box turns them off."""
+    assert production_settings(expose_docs=True).docs_enabled is True
+    assert Settings(environment="development", expose_docs=False).docs_enabled is False

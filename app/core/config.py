@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     environment: Environment = "development"
     debug: bool = True
     api_v1_prefix: str = "/api/v1"
+    #: Swagger UI, ReDoc and openapi.json. Off in production by default, on
+    #: everywhere else. The spec is a complete machine-readable map of every
+    #: route, parameter and enum — the input format automated scanners want —
+    #: and no first-party client reads it at runtime: the Flutter app, the PWA
+    #: and vocably-admin are all built against a spec, never a live one. Swagger
+    #: UI additionally puts a "Try it out" console against real user data on the
+    #: production origin, and CDN-loads its own bundle there.
+    #:
+    #: Not a secret and not a security boundary — authorization is per-route
+    #: (`CurrentAdmin`, `DeckAccess`) and stays the thing that matters. This only
+    #: declines to hand out the map. Set EXPOSE_DOCS=true to override
+    #: deliberately, which is what a staging box should do.
+    expose_docs: bool | None = None
     # NoDecode: skip pydantic-settings' JSON pre-parsing so the validator below can
     # accept a plain comma-separated string from the environment.
     backend_cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
@@ -324,6 +337,13 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def docs_enabled(self) -> bool:
+        """Whether to mount Swagger UI, ReDoc and openapi.json. See ``expose_docs``."""
+        if self.expose_docs is not None:
+            return self.expose_docs
+        return not self.is_production
 
     @model_validator(mode="after")
     def _validate_secret_key(self) -> Settings:
