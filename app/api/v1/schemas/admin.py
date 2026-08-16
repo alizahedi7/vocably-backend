@@ -26,9 +26,11 @@ from app.application.dto import (
 )
 from app.application.services.content_admin_service import BuildJobDetail
 from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob
+from app.domain.entities.feedback import ClientPlatform, FeedbackKind, FeedbackReport
 from app.domain.entities.lexeme import Lexeme, LexemeSense
 from app.domain.entities.word import Word
 from app.domain.enums import AuthMethod, SenseStatus
+from app.domain.repositories.feedback_repository import AISenseScore
 from app.domain.repositories.lexicon_repository import LexiconStats
 
 
@@ -535,3 +537,95 @@ class BuildItemSenseIn(BaseModel):
 
 class RetryOut(_CamelModel):
     requeued: int
+
+
+# ── feedback ─────────────────────────────────────────────────
+# Read-only, like everything else here. There is deliberately no way to mark a
+# report handled: nothing in the API can change one, and a status column no
+# endpoint writes is a column that lies. Triage state arrives with the endpoint
+# that can move it.
+
+
+class AdminFeedbackReportOut(_CamelModel):
+    id: UUID
+    #: NULL once the reporter deleted their account. The report survives them —
+    #: see the ``ON DELETE SET NULL`` note on ``FeedbackReportModel``.
+    user_id: UUID | None = Field(serialization_alias="userId")
+    kind: FeedbackKind
+    message: str
+    app_version: str = Field(serialization_alias="appVersion")
+    platform: ClientPlatform
+    os_version: str = Field(serialization_alias="osVersion")
+    locale: str
+    created_at: datetime = Field(serialization_alias="createdAt")
+
+    @classmethod
+    def from_entity(cls, report: FeedbackReport) -> AdminFeedbackReportOut:
+        return cls(
+            id=report.id,
+            user_id=report.user_id,
+            kind=report.kind,
+            message=report.message,
+            app_version=report.context.app_version,
+            platform=report.context.platform,
+            os_version=report.context.os_version,
+            locale=report.context.locale,
+            created_at=report.created_at,
+        )
+
+
+class AdminFeedbackPageOut(_CamelModel):
+    items: list[AdminFeedbackReportOut]
+    total: int
+
+
+class AdminAISenseScoreOut(_CamelModel):
+    """One AI-written card back, and how learners have judged it."""
+
+    lookup_id: str = Field(serialization_alias="lookupId")
+    sense_index: int = Field(serialization_alias="senseIndex")
+    term: str
+    ups: int
+    downs: int
+    #: The three reasons, counted. All zero for a sense nobody explained, which
+    #: is the ordinary case — explaining is optional and most people don't.
+    wrong_meaning: int = Field(serialization_alias="wrongMeaning")
+    bad_example: int = Field(serialization_alias="badExample")
+    wrong_sense: int = Field(serialization_alias="wrongSense")
+    prompt_version: int = Field(serialization_alias="promptVersion")
+    provider: str
+    model: str
+    last_rated_at: datetime | None = Field(serialization_alias="lastRatedAt")
+
+    @classmethod
+    def from_dto(cls, dto: AISenseScore) -> AdminAISenseScoreOut:
+        return cls(
+            lookup_id=dto.lookup_id,
+            sense_index=dto.sense_index,
+            term=dto.term,
+            ups=dto.ups,
+            downs=dto.downs,
+            wrong_meaning=dto.wrong_meaning,
+            bad_example=dto.bad_example,
+            wrong_sense=dto.wrong_sense,
+            prompt_version=dto.prompt_version,
+            provider=dto.provider,
+            model=dto.model,
+            last_rated_at=dto.last_rated_at,
+        )
+
+
+class AdminAIFeedbackPageOut(_CamelModel):
+    """The rated card backs, worst first, under the overall split.
+
+    The totals are the headline the page exists for — "are our AI cards any
+    good" is one ratio — and the rows are what to do about it.
+    """
+
+    items: list[AdminAISenseScoreOut]
+    ups: int
+    downs: int
+    #: How many senses have been judged at all, so the dashboard can page. Named
+    #: `total` because every other paginated admin response calls the row count
+    #: that; it is deliberately *not* `ups + downs`, which counts verdicts.
+    total: int

@@ -12,6 +12,7 @@ from app.api.v1.routers import (
     deck_units,
     decks,
     discovery,
+    feedback,
     study,
     users,
     words,
@@ -32,4 +33,5 @@ api_router.include_router(deck_units.units_router)
 api_router.include_router(words.router)
 api_router.include_router(study.router)
 api_router.include_router(ai.router)
+api_router.include_router(feedback.router)
 api_router.include_router(admin.router)

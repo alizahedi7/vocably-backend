@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.admin_repository import AdminRepository
 from app.application.ports.ai_service import AIService
+from app.application.ports.feedback_notifier import FeedbackNotifier, NullFeedbackNotifier
 from app.application.ports.google_verifier import GoogleVerifier
 from app.application.ports.lookup_cache import LookupCacheRepository
 from app.application.ports.otp_sender import OTPSender
@@ -28,6 +29,7 @@ from app.application.services.deck_discovery_service import DeckDiscoveryService
 from app.application.services.deck_service import DeckService
 from app.application.services.deck_sharing_service import DeckSharingService
 from app.application.services.deck_unit_service import DeckUnitService
+from app.application.services.feedback_service import FeedbackService
 from app.application.services.friend_service import FriendService
 from app.application.services.lexicon_service import LexiconService
 from app.application.services.study_service import StudyService
@@ -50,6 +52,7 @@ from app.domain.repositories.deck_invite_repository import DeckInviteRepository
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_repository import DeckRepository
 from app.domain.repositories.deck_unit_repository import DeckUnitRepository
+from app.domain.repositories.feedback_repository import FeedbackRepository
 from app.domain.repositories.friend_repository import FriendRepository
 from app.domain.repositories.lexicon_repository import LexiconRepository
 from app.domain.repositories.otp_repository import OTPChallengeRepository
@@ -90,6 +93,9 @@ from app.infrastructure.db.repositories.deck_member_repository import (
 from app.infrastructure.db.repositories.deck_repository import SqlAlchemyDeckRepository
 from app.infrastructure.db.repositories.deck_unit_repository import (
     SqlAlchemyDeckUnitRepository,
+)
+from app.infrastructure.db.repositories.feedback_repository import (
+    SqlAlchemyFeedbackRepository,
 )
 from app.infrastructure.db.repositories.friend_repository import (
     SqlAlchemyFriendRepository,
@@ -170,6 +176,10 @@ def get_admin_repository(session: SessionDep) -> AdminRepository:
     return SqlAlchemyAdminRepository(session)
 
 
+def get_feedback_repository(session: SessionDep) -> FeedbackRepository:
+    return SqlAlchemyFeedbackRepository(session)
+
+
 def get_lookup_cache_repository(session: SessionDep) -> LookupCacheRepository:
     return SqlAlchemyLookupCacheRepository(session)
 
@@ -199,6 +209,7 @@ FriendRepoDep = Annotated[FriendRepository, Depends(get_friend_repository)]
 XpRepoDep = Annotated[XpRepository, Depends(get_xp_repository)]
 OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
 AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
+FeedbackRepoDep = Annotated[FeedbackRepository, Depends(get_feedback_repository)]
 LookupCacheRepoDep = Annotated[LookupCacheRepository, Depends(get_lookup_cache_repository)]
 ReviewEventRepoDep = Annotated[ReviewEventRepository, Depends(get_review_event_repository)]
 LexiconRepoDep = Annotated[LexiconRepository, Depends(get_lexicon_repository)]
@@ -398,7 +409,35 @@ def get_ai_studio_service(
     progress: WordProgressRepoDep,
     users: UserRepoDep,
 ) -> AIStudioService:
-    return AIStudioService(ai, progress, users)
+    return AIStudioService(ai, progress, users, prompt_version=effective_prompt_version())
+
+
+def get_feedback_notifier() -> FeedbackNotifier:
+    """Nothing is announced today — reports are read from the admin dashboard.
+
+    The seam is here rather than the decision: pointing this at a webhook or a
+    mailer is a change to this function and nothing else.
+    """
+    return NullFeedbackNotifier()
+
+
+def get_feedback_service(
+    feedback: FeedbackRepoDep,
+    notifier: Annotated[FeedbackNotifier, Depends(get_feedback_notifier)],
+) -> FeedbackService:
+    """Wired with the AI configuration this deployment is running.
+
+    Only ever the fallback: a rating is stamped with whatever produced the deck
+    it is about, read from the cache entry. These three are what it falls back to
+    when that entry is gone.
+    """
+    return FeedbackService(
+        feedback,
+        notifier,
+        prompt_version=effective_prompt_version(),
+        provider=settings.ai_provider,
+        model=configured_model(),
+    )
 
 
 def get_admin_service(admin_repo: AdminRepoDep) -> AdminService:
@@ -431,6 +470,7 @@ FriendServiceDep = Annotated[FriendService, Depends(get_friend_service)]
 DeckBuildServiceDep = Annotated[DeckBuildService, Depends(get_deck_build_service)]
 StudyServiceDep = Annotated[StudyService, Depends(get_study_service)]
 AIStudioServiceDep = Annotated[AIStudioService, Depends(get_ai_studio_service)]
+FeedbackServiceDep = Annotated[FeedbackService, Depends(get_feedback_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
 ContentAdminServiceDep = Annotated[ContentAdminService, Depends(get_content_admin_service)]
 
@@ -517,6 +557,38 @@ async def enforce_user_search_limit(current_user: CurrentUser) -> None:
         return
     if not await _hourly_shared_limiter().allow(f"user-search:{current_user.id}", limit):
         raise RateLimitedError("Too many searches just now. Please try again shortly.")
+
+
+async def enforce_feedback_limit(current_user: CurrentUser) -> None:
+    """Cap written reports per user.
+
+    The only endpoint that stores unbounded free text on request, so this is a
+    storage and moderation ceiling rather than an enumeration one. Keyed per
+    user: it needs a token, and a classroom shares an IP.
+    """
+    limit = settings.feedback_reports_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"feedback:{current_user.id}", limit):
+        raise RateLimitedError("Thanks — that's a lot of feedback. Try again in a little while.")
+
+
+async def enforce_ai_feedback_limit(current_user: CurrentUser) -> None:
+    """Cap AI card ratings per user.
+
+    Loose on purpose. Ratings are an upsert keyed by (user, lookup, sense), so
+    an honest session cannot approach this however much the learner changes
+    their mind; it exists to bound a client stuck in a loop.
+
+    The message still has to be readable, because 429 is the one failure this
+    endpoint can produce that the client will surface — see the silent-widget
+    rule in ``FeedbackService``.
+    """
+    limit = settings.ai_feedback_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"ai-feedback:{current_user.id}", limit):
+        raise RateLimitedError("Too many ratings just now. Please try again shortly.")
 
 
 async def enforce_otp_request_ip_limit(request: Request) -> None:

@@ -484,6 +484,84 @@ and the Flutter client's `ApiClient._extractDetail` reads `detail` and otherwise
 shows "Request failed (409)". 4xx messages on the sharing, units and friends
 paths are **user-visible copy** — write them as such, and keep them in English.
 
+## Feedback: what a learner tells us
+
+Two endpoints, two tables, and — this is the whole design — **two opposite
+standards**. Collapsing them into one `feedback` table would put a nullable
+message on every rating, a nullable sense index on every report, and a
+discriminator at the front of every query; they share nothing but the word.
+
+**`POST /feedback/report` is loud.** A written bug, idea or complaint from
+Settings. Somebody took the trouble, so the only thing that can be rejected is
+the message itself — the one field they typed and the one they could fix. An
+unrecognised `kind` becomes `other` and every piece of client metadata is
+*truncated* rather than validated: none of it is worth a 422 that costs somebody
+the paragraph they just wrote. Rate-limited per user
+(`feedback_reports_per_user_per_hour`), because it is the only endpoint in the
+app that writes unbounded free text on request.
+
+**`POST /ai/feedback` is silent.** A thumb on one AI-written card back. The
+client fires it and forgets it, and there is nowhere on that screen to explain a
+refusal — so anything that can be tolerated is: an unreadable `rating` reads as a
+withdrawal, an unreadable `reason` is dropped and the rating is still stored, and
+a lookup we cannot resolve is accepted with blank provenance. Two rejections
+survive, and only two: a missing `lookup_id`, and a `sense_index` the deck
+provably did not have.
+
+It lives on the `/ai` router rather than under `/feedback` because it is the
+second half of `/ai/lookup` — no client has one without the other.
+
+**A verdict is identified by `(user_id, lookup_id, sense_index)`** and stored as
+an upsert. That is what makes the endpoint idempotent under the retries a silent
+client can make without telling anyone, what lets somebody change their mind
+without stacking rows, and what keeps "how many people liked this card" a
+straight count instead of a last-per-user window. `rating: "none"` **deletes** the
+row rather than storing an opinion nobody holds — tapping the lit thumb again.
+
+**Nothing re-stores what was rated.** `lookup_id` is
+`LookupCacheKey.digest()` for the resolved term — the same value as
+`ai_lookup_entries.entry_hash` — and that entry's `payload` already holds every
+sense the provider returned. It is deliberately **not** a foreign key: entries
+are swept when a prompt version retires, and a verdict on a retired prompt is
+exactly the record worth keeping. So four columns are denormalised at rating
+time (`term`, `prompt_version`, `provider`, `model`), read from the entry where
+there is one and stamped from this deployment's own configuration where there is
+not. Prefer the entry: the two differ precisely when a deploy landed between the
+lookup and the thumb, and the older answer is the true one.
+
+`AIStudioService` computes the id and returns a `LookupView` rather than a bare
+`LookupResult` — the id is a fact about the cache key, which no AI adapter should
+have to know. It is empty exactly when there are no senses, and the client
+renders no control then, the same rule an empty `phonetic` follows.
+
+**`user_id` is nullable with `ON DELETE SET NULL` on both tables**, not
+`CASCADE`, for two different reasons. A bug does not stop existing because the
+reporter left. And a rating is not personal data at all — its value is entirely
+in `(lookup_id, sense_index, rating)` — so deletion anonymises it rather than
+destroying a signal about card quality that was never about the rater. In both
+cases the deletion still removes every link back to the person, which is what it
+is for.
+
+**There is no `status` column.** Nothing in the API can move a report to
+"triaged", and a column no endpoint writes is a column that lies. Triage state
+arrives with the endpoint that can change it.
+
+**Reads are admin-only**: `GET /admin/feedback` (newest first, filterable by
+kind) and `GET /admin/ai-feedback` (the overall up/down split, then the rated
+senses worst-first with the three reasons counted). Both take `CurrentAdmin` —
+that rule is not negotiable — but they are reached through `FeedbackServiceDep`
+rather than `AdminServiceDep`, deliberately: `AdminService` aggregates over
+*other features'* tables, and feedback has its own. Rows are per **sense**, not
+per lookup: a word whose second card is wrong and whose first is fine is a
+fixable prompt problem, and averaging the two hides it.
+
+**Nobody is notified.** `FeedbackNotifier` is a port with one implementation
+(`NullFeedbackNotifier`), so pointing it at a webhook, a mailer or a tracker is a
+change to `get_feedback_notifier` and nothing else. Any real adapter must keep
+two rules: notifying can never fail the submit (the service swallows and logs),
+and it must not block the response — it belongs on the Celery `default` queue,
+handed a report id.
+
 ## Explore, sharing, friends and XP
 
 **Saving from Explore takes a copy; sharing with a person shares the deck.**

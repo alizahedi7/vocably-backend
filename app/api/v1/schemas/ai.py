@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from app.application.dto import LookupView
 from app.application.ports.ai_service import (
     GeneratedStory,
-    LookupResult,
     LookupStatus,
     MeaningSuggestion,
 )
@@ -66,15 +66,29 @@ class LookupOut(BaseModel):
     #: is deliberately left blank rather than guessed by a model, because a
     #: confidently wrong transcription teaches a mispronunciation.
     phonetic: str = ""
+    #: Stable id for *this deck of senses* — the term as resolved, at this
+    #: prompt version, for this learner's language and age bucket. Send it back
+    #: on ``POST /ai/feedback`` to rate one of the cards.
+    #:
+    #: **Empty whenever there is nothing to rate**: an ``unsupported`` result has
+    #: no senses. Clients must treat an empty value as "no rating control",
+    #: exactly as they treat an empty ``phonetic`` as "no transcription" — never
+    #: as an error, and never as a control that posts nothing.
+    #:
+    #: Deterministic rather than random, which is what makes ratings from two
+    #: learners who looked the same word up aggregate into one score. It names a
+    #: shared dictionary entry and carries no user data.
+    lookup_id: str = ""
 
     @classmethod
-    def from_dto(cls, dto: LookupResult) -> LookupOut:
+    def from_dto(cls, dto: LookupView) -> LookupOut:
         return cls(
-            term=dto.term,
-            suggestions=[MeaningSuggestionOut.from_dto(s) for s in dto.suggestions],
-            status=dto.status,
-            notice=dto.notice,
-            phonetic=dto.phonetic,
+            term=dto.result.term,
+            suggestions=[MeaningSuggestionOut.from_dto(s) for s in dto.result.suggestions],
+            status=dto.result.status,
+            notice=dto.result.notice,
+            phonetic=dto.result.phonetic,
+            lookup_id=dto.lookup_id,
         )
 
 
