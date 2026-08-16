@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.enums import LeitnerBox
 from app.domain.repositories.deck_activity_repository import (
+    DayTotals,
     DeckActivityRepository,
     MemberTotals,
     MemberWeek,
@@ -31,11 +32,16 @@ class SqlAlchemyDeckActivityRepository(DeckActivityRepository):
         self._session = session
 
     async def record_review(
-        self, user_id: UUID, deck_id: UUID, day: date, *, mastered: bool
+        self, user_id: UUID, deck_id: UUID, day: date, *, mastered: bool, was_due: bool
     ) -> None:
         table = DailyDeckActivityModel
         stmt = upsert_insert(self._session)(table).values(
-            user_id=user_id, deck_id=deck_id, day=day, reviews=1, mastered=1 if mastered else 0
+            user_id=user_id,
+            deck_id=deck_id,
+            day=day,
+            reviews=1,
+            due_reviews=1 if was_due else 0,
+            mastered=1 if mastered else 0,
         )
         # An upsert rather than read-then-write: two grades in the same second
         # would otherwise race, and one learner's review would vanish from the
@@ -45,17 +51,20 @@ class SqlAlchemyDeckActivityRepository(DeckActivityRepository):
                 index_elements=["user_id", "deck_id", "day"],
                 set_={
                     "reviews": table.reviews + 1,
+                    "due_reviews": table.due_reviews + (1 if was_due else 0),
                     "mastered": table.mastered + (1 if mastered else 0),
                 },
             )
         )
 
-    async def reviews_on(self, user_id: UUID, day: date) -> int:
+    async def totals_on(self, user_id: UUID, day: date) -> DayTotals:
         table = DailyDeckActivityModel
-        stmt = select(func.coalesce(func.sum(table.reviews), 0)).where(
-            table.user_id == user_id, table.day == day
-        )
-        return int((await self._session.execute(stmt)).scalar_one())
+        stmt = select(
+            func.coalesce(func.sum(table.reviews), 0),
+            func.coalesce(func.sum(table.due_reviews), 0),
+        ).where(table.user_id == user_id, table.day == day)
+        reviews, due_reviews = (await self._session.execute(stmt)).one()
+        return DayTotals(reviews=int(reviews), due_reviews=int(due_reviews))
 
     async def totals_for_deck(self, deck_id: UUID) -> list[MemberTotals]:
         learning = func.sum(

@@ -87,7 +87,15 @@ EXPECTED_OVERVIEW_ALI: dict[str, Any] = {
     "reviewed_today": 0,
     "due_deck_count": 2,
     "estimated_minutes": 2,
+    # Untouched by the streak change, and that is the claim worth making here:
+    # this account predates the streak columns, so both dates are NULL, and a
+    # settle with nothing to measure from must leave the number exactly as it
+    # found it. Nobody's streak moves on deploy.
     "streak": 3,
+    "daily_goal": 10,
+    # Open, not banked: no day has been banked for this account, and four cards
+    # are still due.
+    "day_state": "open",
     "memory_strength": {
         "total": 6,
         "distribution": [

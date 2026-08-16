@@ -36,10 +36,24 @@ class MemberWeek:
     mastered: int
 
 
+@dataclass(frozen=True, slots=True)
+class DayTotals:
+    """One learner's whole day, across every deck."""
+
+    reviews: int
+    #: Of those, the ones that were *scheduled* — the card was due when it was
+    #: answered. Separate from ``reviews`` because "I cleared today's queue"
+    #: and "I answered ten cards" are different claims, and the streak's
+    #: light-day path turns on the first: a learner practising cards that were
+    #: not due has not finished a queue, and a brand-new deck whose cards are
+    #: all tomorrow's work has no queue to finish.
+    due_reviews: int
+
+
 class DeckActivityRepository(ABC):
     @abstractmethod
     async def record_review(
-        self, user_id: UUID, deck_id: UUID, day: date, *, mastered: bool
+        self, user_id: UUID, deck_id: UUID, day: date, *, mastered: bool, was_due: bool
     ) -> None:
         """Increment today's counters, creating the row on first review.
 
@@ -47,11 +61,12 @@ class DeckActivityRepository(ABC):
         """
 
     @abstractmethod
-    async def reviews_on(self, user_id: UUID, day: date) -> int:
-        """How many cards this learner answered on ``day``, across every deck.
+    async def totals_on(self, user_id: UUID, day: date) -> DayTotals:
+        """What this learner did on ``day``, across every deck.
 
-        Backs ``reviewed_today`` and the daily-goal award. A handful of indexed
-        rows per learner per day, never a scan of the review log.
+        Backs ``reviewed_today``, the daily-goal award and the streak. A
+        handful of indexed rows per learner per day, never a scan of the review
+        log.
         """
 
     @abstractmethod

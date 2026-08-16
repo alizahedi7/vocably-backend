@@ -46,8 +46,15 @@ class UserModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     daily_goal: Mapped[int] = mapped_column(default=10, nullable=False)
 
+    #: Maintained by ``UserRepository.bank_day``/``settle_streak`` in SQL, never
+    #: written back from a read value — see the note on ``xp`` below and
+    #: ``mappers.apply_user``.
     streak: Mapped[int] = mapped_column(default=0, nullable=False)
     last_studied_on: Mapped[date | None] = mapped_column(Date)
+    #: The last day that counted towards the streak — banked or rested.
+    streak_last_day: Mapped[date | None] = mapped_column(Date)
+    #: The last day the daily goal was met; the once-a-day lock.
+    streak_banked_on: Mapped[date | None] = mapped_column(Date)
     onboarded: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     #: Experience points. A counter kept in step with the ``xp_events`` ledger,

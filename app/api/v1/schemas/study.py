@@ -11,6 +11,7 @@ from app.api.v1.schemas.word import WordOut
 from app.application.dto import StudyOverview
 from app.domain.entities.review_event import MAX_LATENCY_MS
 from app.domain.enums import LeitnerBox, ReviewGrade
+from app.domain.services.streak import DayState
 
 
 class SessionCompleteOut(BaseModel):
@@ -57,6 +58,11 @@ class StudyOverviewOut(BaseModel):
     due_deck_count: int
     estimated_minutes: int
     streak: int
+    daily_goal: int
+    #: Additive: a client that predates this field ignores it and behaves
+    #: exactly as it did, which matters because an installed Android build
+    #: outlives the deploy by weeks.
+    day_state: DayState
     memory_strength: MemoryStrengthOut
 
     @classmethod
@@ -70,6 +76,8 @@ class StudyOverviewOut(BaseModel):
             due_deck_count=dto.due_deck_count,
             estimated_minutes=dto.estimated_minutes,
             streak=dto.streak,
+            daily_goal=dto.daily_goal,
+            day_state=dto.day_state,
             memory_strength=MemoryStrengthOut(
                 total=dto.memory_strength.total,
                 distribution=[

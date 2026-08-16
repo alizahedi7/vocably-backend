@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from datetime import date
 from uuid import UUID
 
 from app.domain.entities.user import User
@@ -58,6 +59,31 @@ class UserRepository(ABC):
 
     @abstractmethod
     async def update(self, user: User) -> User: ...
+
+    @abstractmethod
+    async def bank_day(self, user_id: UUID, today: date) -> bool:
+        """Advance the streak for ``today``. True when *this* call did it.
+
+        One statement, never read-modify-write: a session finishing on the
+        phone and one finishing in the PWA in the same second both run it, and
+        exactly one matches the guard. The boolean is therefore not a
+        convenience — it is the only trustworthy answer to "did I cross it?",
+        and it is what a client may celebrate on.
+
+        Idempotent by the day, not by the request: calling it a second time on
+        a day already banked changes nothing and answers ``False``.
+        """
+
+    @abstractmethod
+    async def settle_streak(self, user_id: UUID, *, days: int, last_day: date | None) -> None:
+        """Write back a streak settled at read time.
+
+        Narrow on purpose — it touches two columns and nothing else, so a home
+        screen refreshing cannot clobber a profile edit racing it. Callers pass
+        the result of :func:`app.domain.services.streak.settle` and only when
+        it differs from what they read, which makes this at most one write per
+        learner per day.
+        """
 
     @abstractmethod
     async def delete(self, user_id: UUID) -> None:

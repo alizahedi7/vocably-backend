@@ -16,8 +16,9 @@ from app.domain.enums import AgeRange
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_repository import DeckRepository
 from app.domain.repositories.user_repository import UserRepository
+from app.domain.services import streak as streak_rules
 from app.domain.services import usernames
-from app.domain.services.calendar import is_valid_timezone
+from app.domain.services.calendar import is_valid_timezone, today_for
 
 
 class UserService:
@@ -35,6 +36,28 @@ class UserService:
         user = await self._users.get(user_id)
         if user is None:
             raise NotFoundError("User not found.")
+        return user
+
+    async def settled(self, user: User) -> User:
+        """``user`` with a streak brought up to today before it is shown.
+
+        The profile carries the same streak the home overview does, and the
+        client takes whichever arrives last — so a stale number here would
+        overwrite a settled one there, which is the bug this closes rather than
+        a duplicate of it.
+
+        Dueness is not known at this layer and is passed as "unknown", which
+        costs only the rest-day credit: a lapse is still caught, and a rest day
+        is credited by the overview a moment later. Giving this service a
+        progress repository to answer one question would be the wrong trade.
+        """
+        today = today_for(user.timezone)
+        settled = streak_rules.settle(user.streak_state, today, None)
+        if settled == user.streak_state:
+            return user
+        await self._users.settle_streak(user.id, days=settled.days, last_day=settled.last_day)
+        user.streak = settled.days
+        user.streak_last_day = settled.last_day
         return user
 
     async def is_username_available(self, username: str) -> bool:

@@ -15,6 +15,7 @@ from app.domain.entities.deck import Deck
 from app.domain.entities.user import User
 from app.domain.entities.word import Word
 from app.domain.enums import AuthMethod, DeckRole, LeitnerBox
+from app.domain.services.streak import DayState
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,7 +89,16 @@ class StudyOverview:
     reviewed_today: int
     due_deck_count: int
     estimated_minutes: int
+    #: Settled before it is returned — see ``StudyService._settle_on_read``. A
+    #: streak dies while nobody is looking, and this is the number drawn on the
+    #: screen a learner checks while they can still save it.
     streak: int
+    #: The learner's own goal, echoed so the client's goal ring cannot disagree
+    #: with the figure the server banks against.
+    daily_goal: int
+    #: Where today stands: open, banked, or a rest day. The client celebrates
+    #: on the transition into ``banked`` and never more than once a day.
+    day_state: DayState
     memory_strength: MemoryStrength
 
 

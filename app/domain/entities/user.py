@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 from app.domain.enums import AgeRange, AuthMethod
+from app.domain.services.streak import Streak
 
 
 @dataclass(slots=True)
@@ -41,7 +42,16 @@ class User:
     streak: int = 0
     #: Experience points; the client derives level and progress from it.
     xp: int = 0
+    #: The last day anything at all was reviewed. Kept because it is on
+    #: ``UserOut`` and installed Android builds parse it — and because it is a
+    #: genuinely different question from the two dates below, which are about
+    #: the *streak*: a learner can review one card without banking the day.
     last_studied_on: date | None = None
+    #: The last day that counted towards the streak — banked or rested.
+    streak_last_day: date | None = None
+    #: The last day the daily goal was met. The once-a-day lock; see
+    #: :mod:`app.domain.services.streak`.
+    streak_banked_on: date | None = None
 
     onboarded: bool = False
 
@@ -56,16 +66,25 @@ class User:
     def display_name(self) -> str:
         return self.name.strip() or "there"
 
-    def register_study_day(self, today: date) -> None:
-        """Update the study streak given that the user studied on ``today``.
+    @property
+    def streak_state(self) -> Streak:
+        """The three streak columns as the value the domain rule operates on."""
+        return Streak(
+            days=self.streak,
+            last_day=self.streak_last_day,
+            banked_on=self.streak_banked_on,
+        )
 
-        Same day → no change. Consecutive day → +1. Any gap → reset to 1.
+    def note_study_day(self, today: date) -> bool:
+        """Record that *something* was reviewed on ``today``. True if it changed.
+
+        Deliberately not the streak. Reviewing one card is what this marks;
+        whether the day is worth a streak day is a separate question, answered
+        from the activity rollup by ``StudyService`` — an endpoint that banks a
+        streak on the strength of one grade is an endpoint that hands out a
+        streak on request.
         """
-        last = self.last_studied_on
-        if last == today:
-            return
-        if last is not None and (today - last).days == 1:
-            self.streak += 1
-        else:
-            self.streak = 1
+        if self.last_studied_on == today:
+            return False
         self.last_studied_on = today
+        return True

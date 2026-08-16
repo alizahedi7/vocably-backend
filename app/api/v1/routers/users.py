@@ -76,8 +76,8 @@ async def search_people(
 
 
 @router.get("/me", response_model=UserOut)
-async def get_me(current_user: CurrentUser) -> UserOut:
-    return UserOut.model_validate(current_user)
+async def get_me(current_user: CurrentUser, users: UserServiceDep) -> UserOut:
+    return UserOut.model_validate(await users.settled(current_user))
 
 
 @router.post("/me/onboarding", response_model=UserOut)

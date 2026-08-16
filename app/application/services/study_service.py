@@ -11,6 +11,7 @@ from app.application.dto import BoxCount, MemoryStrength, StudyOverview
 from app.core.exceptions import NotFoundError
 from app.domain.entities.review_event import ReviewEvent
 from app.domain.entities.studied_word import StudiedWord
+from app.domain.entities.user import User
 from app.domain.entities.xp import XpAction
 from app.domain.enums import LeitnerBox, ReviewGrade
 from app.domain.repositories.deck_activity_repository import DeckActivityRepository
@@ -19,7 +20,9 @@ from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.xp_repository import XpRepository
 from app.domain.services import leitner
+from app.domain.services import streak as streak_rules
 from app.domain.services.calendar import day_end_for, day_start_for, today_for
+from app.domain.services.streak import DayState
 
 #: Where a graded answer came from. A review session and a practice drill
 #: are worth different amounts, and the client says which.
@@ -94,19 +97,44 @@ class StudyService:
             ],
         )
         today = today_for(timezone, now)
+        # From the rollup, so it costs a handful of indexed rows rather than an
+        # aggregate over the review log.
+        totals = await self._activity.totals_on(user_id, today)
+        settled, day_state = await self._settle_on_read(user, today, due_count)
         return StudyOverview(
             due_count=due_count,
             total_count=total,
             learned_count=learned,
             mastered_count=per_box.get(LeitnerBox.MASTERED, 0),
-            # From the rollup, so it costs a handful of indexed rows rather
-            # than an aggregate over the review log.
-            reviewed_today=await self._activity.reviews_on(user_id, today),
+            reviewed_today=totals.reviews,
             due_deck_count=len(due_decks),
             estimated_minutes=max(1, round(due_count * _MINUTES_PER_CARD)),
-            streak=user.streak if user else 0,
+            streak=settled,
+            daily_goal=user.daily_goal if user else 0,
+            day_state=day_state,
             memory_strength=memory,
         )
+
+    async def _settle_on_read(
+        self, user: User | None, today: date, due_count: int
+    ) -> tuple[int, DayState]:
+        """The streak as it actually stands, and how today reads.
+
+        A streak dies while nobody is looking, so this is the moment it is
+        brought up to date: without it a learner who missed two days keeps
+        seeing the old number until their next review silently resets it to 1.
+
+        The write is narrow and happens at most once a day — a settled value
+        equal to the stored one issues nothing, which is every refresh after
+        the first.
+        """
+        if user is None:  # pragma: no cover
+            return 0, DayState.OPEN
+        stored = user.streak_state
+        settled = streak_rules.settle(stored, today, due_count)
+        if settled != stored:
+            await self._users.settle_streak(user.id, days=settled.days, last_day=settled.last_day)
+        return settled.days, streak_rules.state_of(settled, today, due_count)
 
     async def build_session(
         self,
@@ -174,6 +202,11 @@ class StudyService:
         user = await self._users.get(user_id)
         timezone = user.timezone if user else None
         outcome = leitner.review(studied.box, grade, now, day_start_for(timezone, now))
+        # Read before apply_review for the same reason the event below is: this
+        # is a fact about the card as the learner met it. A card nobody has
+        # started is in no queue at all, so answering one is practice, not the
+        # day's scheduled work.
+        was_due = studied.started and studied.progress.is_due(day_end_for(timezone, now))
 
         # Built before apply_review, which overwrites the pre-review box, due
         # date and last-reviewed time the event needs.
@@ -209,10 +242,17 @@ class StudyService:
         # request — a roster of thirty students would otherwise scan it thirty
         # times.
         await self._activity.record_review(
-            user_id, studied.deck_id, today, mastered=applied.became_mastered
+            user_id,
+            studied.deck_id,
+            today,
+            mastered=applied.became_mastered,
+            # Whether the scheduler had actually asked for this card, judged
+            # against the pre-review row — `apply_review` above has already
+            # moved `due_at` to the next interval, so asking afterwards would
+            # answer about tomorrow.
+            was_due=was_due,
         )
-        if user is not None:
-            user.register_study_day(today)
+        if user is not None and user.note_study_day(today):
             await self._users.update(user)
 
         await self._award_for_grade(user_id, grade, source, today, now)
@@ -231,25 +271,70 @@ class StudyService:
         else:
             action = XpAction.GRADE_WORD
         await self._xp.award(user_id, action, occurred_at=now, day=today)
-        await self._award_daily_goal_if_met(user_id, today, now)
+        await self._settle_day(user_id, today, now)
 
-    async def _award_daily_goal_if_met(self, user_id: UUID, today: date, now: datetime) -> None:
-        """Pay the daily goal the first time it is met, and only then.
+    async def _goal_met(self, user: User, today: date, now: datetime) -> bool:
+        """Whether the learner has done the day's work.
 
-        Derived from the rollup rather than trusted from the client: an
-        endpoint that accepts "I met my goal" is an endpoint that hands out
-        25 points on request. The once-a-day guarantee is a partial unique
-        index, not a check here, so two sessions finishing together cannot
-        both collect.
+        Two ways, and the second is what makes a light day winnable: either
+        they answered ``daily_goal`` cards, or the queue the scheduler gave
+        them is empty and they were the ones who emptied it. A learner with
+        four cards due and a goal of ten has finished; making them over-review
+        to hold a streak is how a streak stops meaning anything.
+
+        Both are derived from the rollup, never claimed by the client — an
+        endpoint that accepts "I met my goal" is an endpoint that hands out a
+        streak on request.
+        """
+        totals = await self._activity.totals_on(user.id, today)
+        if totals.reviews == 0:
+            return False
+        if user.daily_goal > 0 and totals.reviews >= user.daily_goal:
+            return True
+        if totals.due_reviews == 0:
+            # Nothing scheduled was answered, so there is no queue to have
+            # cleared. This is the guard that stops a brand-new deck — whose
+            # cards are all tomorrow's work — banking a day on one review.
+            return False
+        return await self._due_count(user, now) == 0
+
+    async def _due_count(self, user: User, now: datetime) -> int:
+        """How many cards are still due today.
+
+        Reuses the overview's own query rather than a second, cheaper one: the
+        predicate behind it is subtle — unstarted cards in a self-paced deck
+        are in no queue, and a card added today belongs to tomorrow — and two
+        SQL statements that disagree about *that* by a day is a bug nobody
+        would find.
+        """
+        tallies = await self._progress.tally_by_deck_and_box(
+            user.id,
+            now,
+            day_start=day_start_for(user.timezone, now),
+            day_end=day_end_for(user.timezone, now),
+        )
+        return sum(t.due_count for t in tallies if t.started)
+
+    async def _settle_day(self, user_id: UUID, today: date, now: datetime) -> None:
+        """Pay the daily goal and bank the streak the first time it is met.
+
+        The once-a-day guarantee is not a check here: the XP award has a
+        partial unique index and ``bank_day`` is a single guarded statement, so
+        two sessions finishing together cannot both collect.
         """
         user = await self._users.get(user_id)
         if user is None:  # pragma: no cover
             return
-        if await self._activity.reviews_on(user_id, today) < user.daily_goal:
+        # Cheap and by far the common case on any day already won — it also
+        # keeps the due-count query off every grade after the tenth.
+        if user.streak_banked_on == today:
+            return
+        if not await self._goal_met(user, today, now):
             return
         await self._xp.award(
             user_id, XpAction.DAILY_GOAL, occurred_at=now, day=today, once_per_day=True
         )
+        await self._users.bank_day(user_id, today)
 
     async def complete_session(self, user_id: UUID) -> int:
         """Award the end-of-session bonus, on top of the cards.
@@ -262,5 +347,5 @@ class StudyService:
         user = await self._users.get(user_id)
         today = today_for(user.timezone if user else None, now)
         awarded = await self._xp.award(user_id, XpAction.FINISH_SESSION, occurred_at=now, day=today)
-        await self._award_daily_goal_if_met(user_id, today, now)
+        await self._settle_day(user_id, today, now)
         return awarded
