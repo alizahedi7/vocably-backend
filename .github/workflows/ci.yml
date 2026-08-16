@@ -88,31 +88,80 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Copy compose file and Caddyfile to VPS
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT }}
-          source: "deploy/docker-compose.prod.yml,deploy/Caddyfile"
-          target: /opt/vocably
-          strip_components: 1
+      # The image is pushed by the time we get here, so everything below is
+      # about reaching the box. That link drops inbound connections from
+      # GitHub's runners often enough to lose a deploy to a single
+      # `dial tcp: i/o timeout` on a host that is otherwise healthy — which is
+      # why this is plain ssh/scp in a retry loop rather than the appleboy
+      # actions it replaced: those dial once, with a 30s timeout, and offer no
+      # way to try again. Every hop here is idempotent, so a retry that lands
+      # after a half-finished attempt costs nothing.
+      - name: Deploy to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          # GITHUB_TOKEN is valid for the duration of this job — long enough to pull.
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
 
-      - name: Pull new image and restart stack
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT }}
-          script: |
-            set -e
-            cd /opt/vocably
-            # GITHUB_TOKEN is valid for the duration of this job — long enough to pull.
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker compose -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.prod.yml up -d
-            docker logout ghcr.io
-            docker image prune -f
-            docker compose -f docker-compose.prod.yml ps
+          mkdir -p ~/.ssh
+          install -m 600 /dev/null ~/.ssh/id_deploy
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+
+          # Host keys are not pinned, exactly as the actions this replaced did
+          # not pin them: the private key is the credential. ConnectTimeout is
+          # four times the old 30s because the dial that *succeeded* in the
+          # deploy this replaced took very nearly the whole 30s.
+          SSH_OPTS="-i $HOME/.ssh/id_deploy
+                    -o StrictHostKeyChecking=no
+                    -o UserKnownHostsFile=/dev/null
+                    -o LogLevel=ERROR
+                    -o ConnectTimeout=120
+                    -o ServerAliveInterval=15
+                    -o ServerAliveCountMax=20"
+
+          retry() {
+            local attempt=1
+            until "$@"; do
+              if [ "$attempt" -ge 3 ]; then
+                echo "::error::deploy step failed after $attempt attempts"
+                return 1
+              fi
+              echo "attempt $attempt failed; retrying in $((attempt * 20))s"
+              sleep $((attempt * 20))
+              attempt=$((attempt + 1))
+            done
+          }
+
+          # The remote half is written to a file, then piped in, rather than
+          # passed as an argument: that keeps the registry token off the VPS's
+          # process list, and lets each retry re-read it from the top. The
+          # credentials are prepended as %q-quoted assignments and the body is
+          # a quoted heredoc, so nothing in a token is ever re-expanded by
+          # either shell.
+          {
+            printf 'GHCR_USER=%q\n' "$GHCR_USER"
+            printf 'GHCR_TOKEN=%q\n' "$GHCR_TOKEN"
+            cat <<'REMOTE'
+          set -e
+          cd /opt/vocably
+          printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+          docker compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml up -d
+          docker logout ghcr.io
+          docker image prune -f
+          docker compose -f docker-compose.prod.yml ps
+          REMOTE
+          } > "$RUNNER_TEMP/restart-stack.sh"
+
+          make_target()  { ssh $SSH_OPTS -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" mkdir -p /opt/vocably; }
+          copy_config()  { scp $SSH_OPTS -P "$VPS_PORT" deploy/docker-compose.prod.yml deploy/Caddyfile "$VPS_USER@$VPS_HOST:/opt/vocably/"; }
+          restart_stack() { ssh $SSH_OPTS -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" bash -s < "$RUNNER_TEMP/restart-stack.sh"; }
+
+          retry make_target
+          retry copy_config
+          retry restart_stack
