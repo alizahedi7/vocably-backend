@@ -39,6 +39,10 @@ class DailyDeckActivityModel(Base):
     day: Mapped[date] = mapped_column(Date, primary_key=True)
 
     reviews: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    #: Of those, the ones the scheduler had actually asked for. What makes
+    #: "they cleared today's queue" answerable without re-deriving a past day's
+    #: dueness, which reviewing a card destroys.
+    due_reviews: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     #: Incremented only on the transition *into* box 5, so a learner who lapses
     #: out and returns is not counted twice.
     mastered: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

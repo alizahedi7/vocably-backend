@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date, timedelta
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import CursorResult, and_, case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,6 +99,52 @@ class SqlAlchemyUserRepository(UserRepository):
             raise
         await self._session.refresh(model)
         return mappers.user_to_entity(model)
+
+    async def bank_day(self, user_id: UUID, today: date) -> bool:
+        yesterday = today - timedelta(days=1)
+        stmt = (
+            update(UserModel)
+            .where(
+                UserModel.id == user_id,
+                # The whole once-a-day guarantee, and the race guard, in one
+                # predicate. Two sessions finishing together both run this
+                # statement; the second matches nothing.
+                or_(
+                    UserModel.streak_banked_on.is_(None),
+                    UserModel.streak_banked_on < today,
+                ),
+            )
+            .values(
+                # Derived from the stored value in SQL rather than from one
+                # read a moment ago — the rule in
+                # app.domain.services.streak.advanced, expressed where it
+                # cannot lose a concurrent write.
+                streak=case(
+                    (
+                        and_(
+                            UserModel.streak_last_day.is_not(None),
+                            UserModel.streak_last_day >= yesterday,
+                        ),
+                        UserModel.streak + 1,
+                    ),
+                    else_=1,
+                ),
+                streak_last_day=today,
+                streak_banked_on=today,
+            )
+        )
+        result = await self._session.execute(stmt)
+        # `execute` is typed as returning a Result; an UPDATE always yields a
+        # CursorResult, which is where rowcount lives.
+        return bool(cast("CursorResult[Any]", result).rowcount)
+
+    async def settle_streak(self, user_id: UUID, *, days: int, last_day: date | None) -> None:
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id)
+            .values(streak=days, streak_last_day=last_day)
+        )
+        await self._session.execute(stmt)
 
 
 def _is_username_conflict(exc: IntegrityError) -> bool:

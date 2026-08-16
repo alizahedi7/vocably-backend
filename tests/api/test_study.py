@@ -223,21 +223,27 @@ async def test_cannot_grade_another_users_word(
     assert response.json()["error"]["code"] == "not_found"
 
 
-async def test_first_grade_of_the_day_advances_streak_once(
+async def test_grading_a_card_does_not_by_itself_advance_the_streak(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
+    """One card used to bank the day. The goal does now — see test_streak.py.
+
+    These two cards were added today, so they are not even due: answering one
+    is practice, and a queue that was never handed out cannot have been
+    cleared.
+    """
     _, word_ids = await seed_deck_with_words(client, auth_headers, ["a", "b"])
 
     me = await client.get("/api/v1/users/me", headers=auth_headers)
     assert me.json()["streak"] == 0
 
-    for word_id, expected_streak in zip(word_ids, (1, 1), strict=True):
+    for word_id in word_ids:
         graded = await client.post(
             f"/api/v1/study/words/{word_id}/grade", headers=auth_headers, json={"grade": "good"}
         )
         assert graded.status_code == 200
         me = await client.get("/api/v1/users/me", headers=auth_headers)
-        assert me.json()["streak"] == expected_streak
+        assert me.json()["streak"] == 0
 
 
 async def test_overview_reports_mastered_count_and_reviewed_today(

@@ -144,6 +144,12 @@ async def seed() -> None:
             native_language="Persian",
             app_language="English",
             streak=7,
+            # Dated, or the demo account's streak would be a number with no day
+            # behind it: settling on read leaves it alone (there is nothing to
+            # measure from), but the first day it banked would restart it at 1.
+            streak_last_day=now.date(),
+            streak_banked_on=now.date(),
+            last_studied_on=now.date(),
             onboarded=True,
         )
         session.add(user)
