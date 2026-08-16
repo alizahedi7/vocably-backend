@@ -37,6 +37,24 @@ class PublicDeckView:
 
 
 @dataclass(frozen=True, slots=True)
+class DeckPublication:
+    """Whether a deck is in Explore, for a caller that already knows the deck.
+
+    Deliberately not a :class:`PublicDeckView`: that shape is the *listing*, and
+    it is readable only for a deck that is already public — a private deck and a
+    deck that does not exist both come back as ``None``. The admin surface has to
+    tell those two apart, because the whole point is to offer "publish" for one
+    and "remove from Explore" for the other.
+    """
+
+    is_public: bool
+    is_official: bool
+    #: When it went into Explore. ``None`` whenever ``is_public`` is false:
+    #: unpublishing clears it rather than leaving behind a date that reads live.
+    published_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class PublicUnitView:
     """One section of a published deck, as the preview lists it.
 
@@ -178,6 +196,15 @@ class DeckDiscoveryRepository(ABC):
         published_at: datetime | None,
     ) -> None:
         """Publish or unpublish a deck. Admin-only; see the service."""
+
+    @abstractmethod
+    async def publication_of(self, deck_id: UUID) -> DeckPublication | None:
+        """Where a deck stands with Explore, or ``None`` if there is no such deck.
+
+        The read half of :meth:`set_published`, and the only one that answers for
+        a *private* deck — which is exactly the case the admin screen asks about
+        before deciding whether publishing is a meaningful thing to offer.
+        """
 
     @abstractmethod
     async def list_shares_for(self, user_id: UUID) -> list[SharedDeckView]:
