@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Annotated, ClassVar, Literal
 
@@ -11,6 +12,34 @@ from pydantic import Field, PostgresDsn, computed_field, field_validator, model_
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production", "test"]
+
+#: The gateways that speak the OpenAI Chat Completions protocol and can therefore
+#: appear in a failover chain. Named here rather than imported from
+#: ``app.infrastructure.ai.providers`` because ``core`` must not depend on
+#: ``infrastructure`` — the adapter package imports ``core.logging``, and reaching
+#: back the other way is a circular import. ``test_providers_match_settings``
+#: pins the two lists together, so adding a class without its settings block (or
+#: the reverse) fails a test rather than a deploy.
+OPENAI_PROTOCOL_PROVIDERS: tuple[str, ...] = ("avalai", "gapgpt", "openrouter")
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderProfile:
+    """One OpenAI-protocol gateway's settings, resolved and validated.
+
+    Exists so the factory builds a gateway from one object instead of six
+    ``getattr`` calls, and so "is this gateway usable?" is answered once, at
+    boot, by whatever asks for the profile — rather than per-request, by an
+    exception in the middle of a learner's lookup.
+    """
+
+    name: str
+    api_key: str
+    model: str
+    base_url: str = ""
+    timeout_seconds: float = 30.0
+    max_tokens: int = 4096
+    extra_headers: dict[str, str] = field(default_factory=dict)
 
 
 class Settings(BaseSettings):
@@ -127,7 +156,25 @@ class Settings(BaseSettings):
     google_tokeninfo_timeout_seconds: float = 5.0
 
     # ── AI services ───────────────────────────────────────────
-    ai_provider: Literal["stub", "anthropic", "openai", "avalai"] = "stub"
+    #: The gateway tried first. ``stub`` is offline canned data and what the
+    #: tests run against.
+    ai_provider: Literal["stub", "anthropic", "avalai", "gapgpt", "openrouter"] = "stub"
+    #: Ordered, comma-separated gateways to try when ``AI_PROVIDER`` fails, e.g.
+    #: ``AI_FALLBACK_PROVIDERS=gapgpt,openrouter``. Empty means no failover, and
+    #: is the default because a fallback naming an unfunded account buys nothing
+    #: but latency. Only OpenAI-protocol gateways can appear here — the Anthropic
+    #: adapter speaks a different wire format and ``stub`` would mask a real
+    #: outage behind canned data.
+    ai_fallback_providers: str = ""
+    #: Ceiling on one lookup across *every* gateway tried. Three gateways at a
+    #: 30 s timeout would otherwise stack into 90 s of spinner, which is worse
+    #: for the learner than the single-gateway failure failover exists to fix.
+    ai_failover_deadline_seconds: float = 45.0
+    #: Consecutive failures before a gateway is skipped, and for how long. See
+    #: ``failover_ai_service`` — the breaker is an optimisation, never a
+    #: correctness mechanism.
+    ai_breaker_threshold: int = Field(3, ge=1, le=100)
+    ai_breaker_cooldown_seconds: float = Field(60.0, ge=1.0, le=3600.0)
     #: Required when AI_PROVIDER=anthropic. Never commit a value — set it in the
     #: environment. Rotate immediately if it leaks.
     anthropic_api_key: str = ""
@@ -157,6 +204,29 @@ class Settings(BaseSettings):
     avalai_timeout_seconds: float = 30.0
     #: Ceiling per lookup/story response. Generous enough for 4 full card backs.
     avalai_max_tokens: int = 4096
+
+    #: GapGPT (https://gapgpt.app), also OpenAI-protocol. Measured on 2026-08-17
+    #: at ~4x AvalAI's median latency and ~3.5x its cost for identical output
+    #: quality, which is why it is the fallback rather than the primary — but it
+    #: was the *more reliable* of the two in 2026-07, so it earns its place.
+    gapgpt_api_key: str = ""
+    gapgpt_base_url: str = "https://api.gapgpt.app/v1"
+    gapgpt_model: str = ""
+    gapgpt_timeout_seconds: float = 30.0
+    gapgpt_max_tokens: int = 4096
+
+    #: OpenRouter (https://openrouter.ai). Model ids here are namespaced by
+    #: upstream vendor (``google/gemini-3.5-flash-lite``), so this one's
+    #: ``_MODEL`` cannot be copied from the others.
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = ""
+    openrouter_timeout_seconds: float = 30.0
+    openrouter_max_tokens: int = 4096
+    #: JSON object of extra headers, same shape and purpose as
+    #: ``ANTHROPIC_EXTRA_HEADERS``. OpenRouter reads ``HTTP-Referer`` and
+    #: ``X-Title`` for attribution on its public leaderboards.
+    openrouter_extra_headers: str = ""
 
     # ── AI lookup cache ───────────────────────────────────────
     #: Vocabulary lookups repeat heavily across the user base, so the same
@@ -449,30 +519,81 @@ class Settings(BaseSettings):
     def _validate_ai_provider(self) -> Settings:
         if self.ai_provider == "anthropic" and not self.anthropic_api_key:
             raise ValueError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
-        if self.ai_provider == "openai":
-            raise ValueError(
-                "AI_PROVIDER=openai is not implemented — use 'stub', 'anthropic', or 'avalai'."
-            )
-        if self.ai_provider == "avalai" and not self.avalai_api_key:
-            raise ValueError("AI_PROVIDER=avalai requires AVALAI_API_KEY.")
-        if self.ai_provider == "avalai" and not self.avalai_model:
-            raise ValueError("AI_PROVIDER=avalai requires AVALAI_MODEL.")
+        # Every gateway in the chain, primary included, must be usable at boot.
+        # A fallback whose key is missing is worse than no fallback: it looks
+        # like resilience, and only reveals itself the minute the primary dies.
+        for name in self.provider_chain:
+            self.provider_profile(name)
         self.anthropic_header_map  # noqa: B018 — fail fast on malformed JSON at startup
         return self
 
     @property
+    def provider_chain(self) -> list[str]:
+        """The gateways to try, in order, primary first.
+
+        Empty for ``stub`` and ``anthropic``: neither is an OpenAI-protocol
+        gateway, so neither participates in failover. Duplicates are dropped
+        rather than rejected — naming the primary again in the fallback list is
+        a config typo whose only effect would be calling a dead gateway twice.
+        """
+        if self.ai_provider in ("stub", "anthropic"):
+            return []
+        names: list[str] = [self.ai_provider]
+        for raw in self.ai_fallback_providers.split(","):
+            name = raw.strip().lower()
+            if name and name not in names:
+                names.append(name)
+        return names
+
+    def provider_profile(self, name: str) -> ProviderProfile:
+        """Resolve one gateway's settings, raising if it is not usable.
+
+        Raises rather than returning ``None`` because every caller — the boot
+        validator and the factory alike — treats an unusable gateway as fatal,
+        and a factory discovering it mid-request would surface as a 500 on a
+        learner's lookup instead of a refused deploy.
+        """
+        if name not in OPENAI_PROTOCOL_PROVIDERS:
+            known = ", ".join(OPENAI_PROTOCOL_PROVIDERS)
+            raise ValueError(f"Unknown AI provider {name!r}. Known gateways: {known}.")
+        prefix = name.upper()
+        key = str(getattr(self, f"{name}_api_key", ""))
+        model = str(getattr(self, f"{name}_model", ""))
+        if not key:
+            raise ValueError(f"AI provider {name!r} requires {prefix}_API_KEY.")
+        if not model:
+            # No sensible default across an arbitrary gateway's catalogue, and
+            # guessing one would spend money on the wrong model silently.
+            raise ValueError(f"AI provider {name!r} requires {prefix}_MODEL.")
+        return ProviderProfile(
+            name=name,
+            api_key=key,
+            model=model,
+            base_url=str(getattr(self, f"{name}_base_url", "")),
+            timeout_seconds=float(getattr(self, f"{name}_timeout_seconds", 30.0)),
+            max_tokens=int(getattr(self, f"{name}_max_tokens", 4096)),
+            extra_headers=self._header_map(f"{name}_extra_headers"),
+        )
+
+    @property
     def anthropic_header_map(self) -> dict[str, str]:
         """``anthropic_extra_headers`` parsed, or ``{}`` when unset."""
-        if not self.anthropic_extra_headers.strip():
+        return self._header_map("anthropic_extra_headers")
+
+    def _header_map(self, field: str) -> dict[str, str]:
+        """Parse one ``*_EXTRA_HEADERS`` field, or ``{}`` when unset or absent."""
+        raw = str(getattr(self, field, "") or "")
+        if not raw.strip():
             return {}
+        env_name = field.upper()
         try:
-            parsed = json.loads(self.anthropic_extra_headers)
+            parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"ANTHROPIC_EXTRA_HEADERS must be a JSON object: {exc}") from None
+            raise ValueError(f"{env_name} must be a JSON object: {exc}") from None
         if not isinstance(parsed, dict) or not all(
             isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()
         ):
-            raise ValueError("ANTHROPIC_EXTRA_HEADERS must be a JSON object of string values.")
+            raise ValueError(f"{env_name} must be a JSON object of string values.")
         return parsed
 
 

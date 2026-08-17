@@ -17,9 +17,77 @@ def test_anthropic_provider_requires_an_api_key() -> None:
         _settings(ai_provider="anthropic")
 
 
-def test_openai_provider_is_rejected_until_implemented() -> None:
-    with pytest.raises(ValidationError, match="not implemented"):
+def test_an_unimplemented_provider_name_is_rejected() -> None:
+    """``openai`` used to be a Literal member that a validator then refused.
+
+    It is simply not a member now, so the Literal itself refuses it and the
+    message lists what *is* available — a better error, and one fewer validator.
+    """
+    with pytest.raises(ValidationError, match="Input should be"):
         _settings(ai_provider="openai")
+
+
+def test_a_gateway_without_a_key_or_model_is_refused_at_boot() -> None:
+    with pytest.raises(ValidationError, match="AVALAI_API_KEY"):
+        _settings(ai_provider="avalai")
+    with pytest.raises(ValidationError, match="AVALAI_MODEL"):
+        _settings(ai_provider="avalai", avalai_api_key="k")
+
+
+def test_a_fallback_without_a_key_is_refused_at_boot() -> None:
+    """The failure this prevents: config that *looks* resilient until the day it matters."""
+    with pytest.raises(ValidationError, match="GAPGPT_API_KEY"):
+        _settings(
+            ai_provider="avalai",
+            avalai_api_key="k",
+            avalai_model="m",
+            ai_fallback_providers="gapgpt",
+        )
+
+
+def test_an_unknown_fallback_name_is_refused_and_lists_the_known_ones() -> None:
+    with pytest.raises(ValidationError, match="Unknown AI provider 'nope'"):
+        _settings(
+            ai_provider="avalai",
+            avalai_api_key="k",
+            avalai_model="m",
+            ai_fallback_providers="nope",
+        )
+
+
+def test_the_chain_is_ordered_primary_first_and_deduplicated() -> None:
+    settings = _settings(
+        ai_provider="avalai",
+        avalai_api_key="k",
+        avalai_model="m",
+        gapgpt_api_key="k",
+        gapgpt_model="m",
+        openrouter_api_key="k",
+        openrouter_model="m",
+        ai_fallback_providers=" gapgpt , avalai ,OPENROUTER",
+    )
+    assert settings.provider_chain == ["avalai", "gapgpt", "openrouter"]
+
+
+@pytest.mark.parametrize("provider", ["stub", "anthropic"])
+def test_non_openai_protocol_providers_have_no_chain(provider: str) -> None:
+    """Neither can appear in a failover fleet: one is a different wire format,
+    and the other would mask a real outage behind canned data."""
+    settings = _settings(ai_provider=provider, anthropic_api_key="k")
+    assert settings.provider_chain == []
+
+
+def test_the_provider_registry_matches_the_settings_list() -> None:
+    """The one thing the core/infrastructure split cannot enforce by import.
+
+    ``config`` names the gateways as strings because it must not import
+    ``infrastructure``; ``providers`` maps those names to classes. Adding one
+    without the other fails here rather than at a learner's lookup.
+    """
+    from app.core.config import OPENAI_PROTOCOL_PROVIDERS
+    from app.infrastructure.ai.providers import PROVIDERS
+
+    assert sorted(PROVIDERS) == sorted(OPENAI_PROTOCOL_PROVIDERS)
 
 
 def test_extra_headers_default_to_empty() -> None:

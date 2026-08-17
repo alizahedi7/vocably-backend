@@ -17,7 +17,8 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.infrastructure.ai.avalai_ai_service import AvalAIService
-from app.infrastructure.ai.factory import _avalai_ai_service
+from app.infrastructure.ai.factory import provider_for
+from app.infrastructure.ai.failover_ai_service import FailoverAIService
 from app.infrastructure.ai.stub_ai_service import StubAIService
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
@@ -72,22 +73,66 @@ def test_avalai_service_is_selected_and_memoized(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(settings, "ai_provider", "avalai")
     monkeypatch.setattr(settings, "avalai_api_key", "key")
     monkeypatch.setattr(settings, "avalai_model", "gpt-4o-mini")
-    _avalai_ai_service.cache_clear()
+    monkeypatch.setattr(settings, "ai_fallback_providers", "")
+    provider_for.cache_clear()
     try:
         service = get_ai_provider()
         assert isinstance(service, AvalAIService)
         # Cached so one HTTP client (and its connection pool) is shared.
         assert get_ai_provider() is service
     finally:
-        _avalai_ai_service.cache_clear()
+        provider_for.cache_clear()
+
+
+def test_a_lone_gateway_is_not_wrapped_in_failover(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One gateway behind a failover loop is the same gateway plus a layer of logs."""
+    monkeypatch.setattr(settings, "ai_provider", "avalai")
+    monkeypatch.setattr(settings, "avalai_api_key", "key")
+    monkeypatch.setattr(settings, "avalai_model", "gpt-4o-mini")
+    monkeypatch.setattr(settings, "ai_fallback_providers", "")
+    provider_for.cache_clear()
+    try:
+        assert not isinstance(get_ai_provider(), FailoverAIService)
+    finally:
+        provider_for.cache_clear()
+
+
+def test_fallbacks_build_the_chain_in_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "ai_provider", "avalai")
+    monkeypatch.setattr(settings, "avalai_api_key", "key")
+    monkeypatch.setattr(settings, "avalai_model", "gpt-4o-mini")
+    monkeypatch.setattr(settings, "gapgpt_api_key", "key2")
+    monkeypatch.setattr(settings, "gapgpt_model", "gpt-4o-mini")
+    monkeypatch.setattr(settings, "ai_fallback_providers", "gapgpt")
+    provider_for.cache_clear()
+    try:
+        service = get_ai_provider()
+        assert isinstance(service, FailoverAIService)
+        assert [p.name for p in service._providers] == ["avalai", "gapgpt"]
+    finally:
+        provider_for.cache_clear()
+
+
+def test_naming_the_primary_again_as_a_fallback_does_not_duplicate_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A config typo must not open two pools onto one gateway and call it twice."""
+    monkeypatch.setattr(settings, "ai_provider", "avalai")
+    monkeypatch.setattr(settings, "avalai_api_key", "key")
+    monkeypatch.setattr(settings, "avalai_model", "gpt-4o-mini")
+    monkeypatch.setattr(settings, "ai_fallback_providers", "avalai")
+
+    assert settings.provider_chain == ["avalai"]
 
 
 def test_avalai_without_credentials_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "ai_provider", "avalai")
     monkeypatch.setattr(settings, "avalai_api_key", "")
     monkeypatch.setattr(settings, "avalai_model", "")
+    monkeypatch.setattr(settings, "ai_fallback_providers", "")
+    provider_for.cache_clear()
 
-    with pytest.raises(RuntimeError, match="AVALAI_API_KEY"):
+    with pytest.raises(ValueError, match="AVALAI_API_KEY"):
         get_ai_provider()
 
 

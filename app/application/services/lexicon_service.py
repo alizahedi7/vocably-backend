@@ -167,6 +167,8 @@ class LexiconService:
             register=register,
             status=status,
             source=source,
+            provider=result.provider,
+            model=result.model,
         )
         if senses:
             await self._lexicon.add_senses(lexeme.id, senses)
@@ -253,7 +255,13 @@ class LexiconService:
         register: str,
         status: SenseStatus,
         source: SenseSource,
+        provider: str = "",
+        model: str = "",
     ) -> list[LexemeSense]:
+        # Whoever answered, falling back to the configured gateway. They differ
+        # under failover, and only the caller holding the result knows which.
+        provider = provider or self._provider
+        model = model or self._model
         position = lexeme.next_position(register)
         existing_keys = {s.sense_key for s in lexeme.senses if s.register == register}
         room = MAX_SENSES_PER_LEXEME - len(existing_keys)
@@ -278,8 +286,8 @@ class LexiconService:
                 example=suggestion.example.strip(),
                 status=status,
                 content_version=self._content_version,
-                provider=self._provider,
-                model=self._model,
+                provider=provider,
+                model=model,
                 source=source,
             )
             sense.translations = [

@@ -43,6 +43,7 @@ class InMemoryCache(LookupCacheRepository):
     def __init__(self) -> None:
         self.rows: dict[str, LookupResult] = {}
         self.ttls: list[int | None] = []
+        self.provenance: list[tuple[str, str]] = []
 
     async def get(self, key: LookupCacheKey) -> LookupResult | None:
         return self.rows.get(key.digest()) if key.is_aliasable else None
@@ -57,6 +58,7 @@ class InMemoryCache(LookupCacheRepository):
         model: str = "",
     ) -> None:
         self.ttls.append(alias_ttl_seconds)
+        self.provenance.append((provider, model))
         if key.is_aliasable:
             self.rows[key.digest()] = result
 
@@ -177,3 +179,40 @@ async def test_spelling_noise_hits_the_same_cached_card(term: str) -> None:
     await service.look_up_meanings(term, LearnerContext())
 
     assert provider.calls == 1
+
+
+async def test_the_cache_records_the_gateway_that_actually_answered() -> None:
+    """Not the configured one. Under failover they differ exactly when a
+    fallback served the card, and that is the case where recording the primary
+    would file a sense under a model that never saw the word."""
+    answered = LookupResult(
+        term="run", suggestions=[_SENSE], provider="gapgpt", model="gemini-3.5-flash-lite"
+    )
+    cache = InMemoryCache()
+    service = CachingAIService(
+        RecordingProvider(answered),
+        cache,
+        unsupported_ttl_seconds=604800,
+        provider="avalai",
+        model="configured-model",
+    )
+
+    await service.look_up_meanings("run", LearnerContext())
+
+    assert cache.provenance == [("gapgpt", "gemini-3.5-flash-lite")]
+
+
+async def test_a_result_carrying_no_provenance_falls_back_to_the_configured_gateway() -> None:
+    """The stub sets neither field, and neither does an older adapter."""
+    cache = InMemoryCache()
+    service = CachingAIService(
+        RecordingProvider(),
+        cache,
+        unsupported_ttl_seconds=604800,
+        provider="avalai",
+        model="configured-model",
+    )
+
+    await service.look_up_meanings("run", LearnerContext())
+
+    assert cache.provenance == [("avalai", "configured-model")]

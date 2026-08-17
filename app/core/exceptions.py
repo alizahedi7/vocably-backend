@@ -74,3 +74,21 @@ class RateLimitedError(AppError):
 class ExternalServiceError(AppError):
     code = "external_service_error"
     message = "An external service failed."
+
+
+class AllProvidersUnavailableError(ExternalServiceError):
+    """Every AI gateway in the failover chain refused or failed this request.
+
+    A **subclass**, deliberately, and both halves of that matter. It carries its
+    own ``code`` so a client can tell "every gateway is down" from "one call
+    failed" and say something truer than "try again". And it stays an
+    :class:`ExternalServiceError`, so the two places that already reason about
+    provider failure keep working unchanged: ``app.api.errors`` maps it to
+    **502** through an ``isinstance`` walk, and
+    ``DeckBuildService._is_provider_failure`` halts a build on it — which
+    becomes *more* correct here, since it now means the whole fleet is down
+    rather than one gateway having a bad minute.
+    """
+
+    code = "ai_all_providers_unavailable"
+    message = "The AI service is unavailable right now. Please try again shortly."

@@ -23,9 +23,11 @@ from app.application.services.ai_studio_service import MAX_LOOKUP_SUGGESTIONS
 from app.application.services.lexicon_service import LexiconService
 from app.core.config import settings
 from app.infrastructure.ai.caching_ai_service import CachingAIService
+from app.infrastructure.ai.failover_ai_service import FailoverAIService
 from app.infrastructure.ai.grounded_ai_service import GroundedAIService, SenseTranslator
 from app.infrastructure.ai.lexicon_ai_service import LexiconAIService
 from app.infrastructure.ai.prompts import PROMPT_VERSION
+from app.infrastructure.ai.providers import PROVIDERS
 from app.infrastructure.ai.single_flight import SingleFlight
 from app.infrastructure.ai.stub_ai_service import StubAIService
 from app.infrastructure.ai.translate_prompts import TRANSLATE_PROMPT_VERSION
@@ -36,21 +38,58 @@ from app.infrastructure.dictionary.factory import dictionary_service
 
 
 def raw_ai_provider() -> AIService:
-    """The provider adapter itself, before grounding, lexicon or caching.
+    """The gateway (or failover fleet) itself, before grounding, lexicon or caching.
 
     Also the object used as the enricher and the translator: both are structural
     protocols, and reusing one adapter keeps one HTTP client and one set of
-    response guardrails across every path.
+    response guardrails across every path. ``FailoverAIService`` implements those
+    protocols too, which is what makes enrichment and grounded translation fail
+    over exactly as a plain lookup does.
+
+    **Failover belongs here, at the bottom.** Wrapped at this level, the cache,
+    the lexicon and the grounding layer above it never learn that more than one
+    gateway exists — so one cached entry and one lexeme still serve every
+    learner, whichever gateway happened to write them. Wrapping *outside* the
+    cache would route a fallback around it and re-buy the corpus at the moment
+    the app can least afford it.
     """
     if settings.ai_provider == "anthropic":
         if not settings.anthropic_api_key:
             raise RuntimeError("AI_PROVIDER=anthropic requires ANTHROPIC_API_KEY.")
         return _anthropic_ai_service()
-    if settings.ai_provider == "avalai":
-        if not settings.avalai_api_key or not settings.avalai_model:
-            raise RuntimeError("AI_PROVIDER=avalai requires AVALAI_API_KEY and AVALAI_MODEL.")
-        return _avalai_ai_service()
-    return StubAIService()
+
+    chain = settings.provider_chain
+    if not chain:
+        return StubAIService()
+    if len(chain) == 1:
+        # No wrapper when there is nothing to fall over to: one gateway behind a
+        # failover loop is the same gateway plus a layer of logs.
+        return provider_for(chain[0])
+    return FailoverAIService(
+        [provider_for(name) for name in chain],
+        breaker_threshold=settings.ai_breaker_threshold,
+        breaker_cooldown_seconds=settings.ai_breaker_cooldown_seconds,
+        deadline_seconds=settings.ai_failover_deadline_seconds,
+    )
+
+
+@lru_cache
+def provider_for(name: str) -> AIService:
+    """One configured OpenAI-protocol gateway, memoized per name.
+
+    Memoized so each gateway keeps a single HTTP client and connection pool
+    across requests. Keyed by name rather than by profile so that a chain naming
+    the same gateway twice cannot open two pools onto it.
+    """
+    profile = settings.provider_profile(name)
+    return PROVIDERS[profile.name](
+        api_key=profile.api_key,
+        model=profile.model,
+        base_url=profile.base_url,
+        timeout_seconds=profile.timeout_seconds,
+        max_tokens=profile.max_tokens,
+        extra_headers=profile.extra_headers,
+    )
 
 
 def grounded_ai_provider() -> AIService:
@@ -127,11 +166,19 @@ def effective_prompt_version() -> int:
 
 
 def configured_model() -> str:
-    """The model name recorded on cached entries and senses, for provenance only."""
+    """The *primary* gateway's model, used only as a provenance fallback.
+
+    Under failover the gateway that answered may not be the configured one, so
+    this is no longer the authoritative answer to "who wrote this card":
+    ``LookupResult.provider``/``.model`` are, and the cache and lexicon prefer
+    them. This remains for the paths that have no result to read it from — a
+    story, an enrichment — and for the stub.
+    """
     if settings.ai_provider == "anthropic":
         return settings.anthropic_model
-    if settings.ai_provider == "avalai":
-        return settings.avalai_model
+    chain = settings.provider_chain
+    if chain:
+        return str(getattr(settings, f"{chain[0]}_model", ""))
     return ""
 
 
@@ -177,14 +224,12 @@ def _anthropic_ai_service() -> AIService:
     )
 
 
-@lru_cache
-def _avalai_ai_service() -> AIService:
-    from app.infrastructure.ai.avalai_ai_service import AvalAIService
+def reset_provider_cache() -> None:
+    """Drop every memoized gateway client. For tests and for ``run_async``.
 
-    return AvalAIService(
-        api_key=settings.avalai_api_key,
-        model=settings.avalai_model,
-        base_url=settings.avalai_base_url,
-        timeout_seconds=settings.avalai_timeout_seconds,
-        max_tokens=settings.avalai_max_tokens,
-    )
+    Each cached adapter holds an HTTP connection pool bound to the event loop
+    that opened it, so a Celery task reusing one built by the previous task's
+    loop fails the way ``app.tasks.runtime`` describes. Registered there.
+    """
+    provider_for.cache_clear()
+    _anthropic_ai_service.cache_clear()
