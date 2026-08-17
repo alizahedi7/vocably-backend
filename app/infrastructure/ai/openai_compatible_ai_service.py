@@ -1,6 +1,6 @@
 """Adapter for any gateway that speaks the OpenAI Chat Completions protocol.
 
-AvalAI, GapGPT and OpenRouter are all the same wire format — Chat Completions,
+AvalAI, GapGPT, tabitoken and agentrouter are all the same wire format — Chat Completions,
 not the Anthropic Messages API — so one adapter drives all of them through the
 ``openai`` SDK pointed at a configurable ``base_url``. The concrete providers in
 :mod:`app.infrastructure.ai.providers` are this class plus a name and a default
@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 from typing import Any, ClassVar, Final
 
+import httpx
 import openai
 from pydantic import BaseModel, ValidationError
 
@@ -83,12 +84,34 @@ def _short(body: object) -> str:
     return str(body)[:_ERROR_BODY_CHARS].replace("\n", " ")
 
 
+def _forced_header_client(headers: dict[str, str], timeout_seconds: float) -> httpx.AsyncClient:
+    """An HTTP client that stamps ``headers`` verbatim onto every request.
+
+    The twin of :func:`AnthropicAIService._forced_header_client`, and needed for
+    the same measured reason: passing ``default_headers`` to the SDK is not
+    enough, because it *appends* to its own ``user-agent`` rather than replacing
+    it. Gateways that gate on an exact client string — tabitoken and agentrouter
+    both answer 401 ``unauthorized client detected`` without one — see the SDK's
+    value and refuse. A request hook runs after the SDK has built its headers,
+    so it gets the last word.
+    """
+
+    async def _apply(request: httpx.Request) -> None:
+        for key, value in headers.items():
+            request.headers[key] = value
+
+    return httpx.AsyncClient(timeout=timeout_seconds, event_hooks={"request": [_apply]})
+
+
 class OpenAICompatibleAIService(AIService):
     #: Identifies the gateway in logs, in cache/lexicon provenance, and in the
     #: failover chain's configuration. Subclasses set it; see ``providers.py``.
     name: ClassVar[str] = "openai-compatible"
     #: Used when no ``base_url`` is configured. ``None`` means api.openai.com.
     default_base_url: ClassVar[str | None] = None
+    #: Headers this gateway always needs, before any from configuration. Empty
+    #: for a gateway that authenticates on the bearer token alone.
+    default_extra_headers: ClassVar[dict[str, str]] = {}
 
     def __init__(
         self,
@@ -105,12 +128,16 @@ class OpenAICompatibleAIService(AIService):
         self._max_tokens = max_tokens
         self._timeout_seconds = timeout_seconds
         self._log = get_logger(f"vocably.ai.{self.name}")
+        headers = {**self.default_extra_headers, **(extra_headers or {})}
         self._client = client or openai.AsyncOpenAI(
             api_key=api_key,
             base_url=base_url or self.default_base_url or None,
             timeout=timeout_seconds,
             max_retries=max_retries,
-            default_headers=extra_headers or None,
+            # Not ``default_headers``: see ``_forced_header_client``. The SDK
+            # appends to its own user-agent, and the gateways that need this
+            # match it exactly.
+            http_client=_forced_header_client(headers, timeout_seconds) if headers else None,
         )
         #: Same rationale as the Anthropic adapter: flipped off permanently the
         #: first time the endpoint proves it does not enforce a JSON schema,

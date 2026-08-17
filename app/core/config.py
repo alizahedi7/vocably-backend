@@ -20,7 +20,22 @@ Environment = Literal["development", "staging", "production", "test"]
 #: back the other way is a circular import. ``test_providers_match_settings``
 #: pins the two lists together, so adding a class without its settings block (or
 #: the reverse) fails a test rather than a deploy.
-OPENAI_PROTOCOL_PROVIDERS: tuple[str, ...] = ("avalai", "gapgpt", "openrouter")
+OPENAI_PROTOCOL_PROVIDERS: tuple[str, ...] = ("avalai", "gapgpt", "tabitoken", "agentrouter")
+
+
+def _ordered_names(primary: str, fallbacks: str) -> list[str]:
+    """``primary`` then each comma-separated fallback, trimmed and deduplicated.
+
+    Duplicates are dropped rather than rejected: naming the primary again in the
+    fallback list is a typo whose only effect would be calling a dead gateway
+    twice.
+    """
+    names = [primary.strip().lower()]
+    for raw in fallbacks.split(","):
+        name = raw.strip().lower()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,9 +173,11 @@ class Settings(BaseSettings):
     # ── AI services ───────────────────────────────────────────
     #: The gateway tried first. ``stub`` is offline canned data and what the
     #: tests run against.
-    ai_provider: Literal["stub", "anthropic", "avalai", "gapgpt", "openrouter"] = "stub"
+    ai_provider: Literal["stub", "anthropic", "avalai", "gapgpt", "tabitoken", "agentrouter"] = (
+        "stub"
+    )
     #: Ordered, comma-separated gateways to try when ``AI_PROVIDER`` fails, e.g.
-    #: ``AI_FALLBACK_PROVIDERS=gapgpt,openrouter``. Empty means no failover, and
+    #: ``AI_FALLBACK_PROVIDERS=gapgpt``. Empty means no failover, and
     #: is the default because a fallback naming an unfunded account buys nothing
     #: but latency. Only OpenAI-protocol gateways can appear here — the Anthropic
     #: adapter speaks a different wire format and ``stub`` would mask a real
@@ -215,18 +232,41 @@ class Settings(BaseSettings):
     gapgpt_timeout_seconds: float = 30.0
     gapgpt_max_tokens: int = 4096
 
-    #: OpenRouter (https://openrouter.ai). Model ids here are namespaced by
-    #: upstream vendor (``google/gemini-3.5-flash-lite``), so this one's
-    #: ``_MODEL`` cannot be copied from the others.
-    openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = ""
-    openrouter_timeout_seconds: float = 30.0
-    openrouter_max_tokens: int = 4096
-    #: JSON object of extra headers, same shape and purpose as
-    #: ``ANTHROPIC_EXTRA_HEADERS``. OpenRouter reads ``HTTP-Referer`` and
-    #: ``X-Title`` for attribution on its public leaderboards.
-    openrouter_extra_headers: str = ""
+    #: tabitoken and agentrouter are Claude proxies carrying frontier models and
+    #: nothing cheap, so they belong on ``AI_BUILD_PROVIDER`` rather than on the
+    #: request path. Both gate on an exact ``user-agent``, supplied by the
+    #: provider class; ``*_EXTRA_HEADERS`` only adds to it.
+    #:
+    #: Timeouts are generous because these models think for longer than a
+    #: flash model does, and nobody is watching a spinner during a build.
+    tabitoken_api_key: str = ""
+    tabitoken_base_url: str = "https://tabitoken.com/v1"
+    tabitoken_model: str = ""
+    tabitoken_timeout_seconds: float = 120.0
+    tabitoken_max_tokens: int = 4096
+    tabitoken_extra_headers: str = ""
+
+    agentrouter_api_key: str = ""
+    agentrouter_base_url: str = "https://agentrouter.org/v1"
+    agentrouter_model: str = ""
+    agentrouter_timeout_seconds: float = 120.0
+    agentrouter_max_tokens: int = 4096
+    agentrouter_extra_headers: str = ""
+
+    #: The gateway the **deck-build pipeline** uses, with its own ordered
+    #: fallbacks. Empty means "use the request path's chain", which is what a
+    #: laptop and the test suite get.
+    #:
+    #: A separate chain, not a separate *pipeline*: builds still go through
+    #: ``lookup_chain``, so a word a learner paid for still costs the builder
+    #: nothing and the reuse ratio on every job stays honest. Only the gateway
+    #: at the bottom differs.
+    ai_build_provider: str = ""
+    ai_build_fallback_providers: str = ""
+    #: Ceiling on one build item across every gateway tried. Far above the
+    #: request path's 45s: nobody is watching a spinner, the models think for
+    #: longer, and a batch that stalls is redelivered by Celery anyway.
+    ai_build_deadline_seconds: float = 300.0
 
     # ── AI lookup cache ───────────────────────────────────────
     #: Vocabulary lookups repeat heavily across the user base, so the same
@@ -522,7 +562,7 @@ class Settings(BaseSettings):
         # Every gateway in the chain, primary included, must be usable at boot.
         # A fallback whose key is missing is worse than no fallback: it looks
         # like resilience, and only reveals itself the minute the primary dies.
-        for name in self.provider_chain:
+        for name in (*self.provider_chain, *self.build_provider_chain):
             self.provider_profile(name)
         self.anthropic_header_map  # noqa: B018 — fail fast on malformed JSON at startup
         return self
@@ -538,12 +578,19 @@ class Settings(BaseSettings):
         """
         if self.ai_provider in ("stub", "anthropic"):
             return []
-        names: list[str] = [self.ai_provider]
-        for raw in self.ai_fallback_providers.split(","):
-            name = raw.strip().lower()
-            if name and name not in names:
-                names.append(name)
-        return names
+        return _ordered_names(self.ai_provider, self.ai_fallback_providers)
+
+    @property
+    def build_provider_chain(self) -> list[str]:
+        """The gateways the deck-build pipeline tries, in order.
+
+        Empty when ``AI_BUILD_PROVIDER`` is unset, which every caller reads as
+        "use the request path's chain" — so a laptop and the test suite need no
+        extra configuration to build a deck.
+        """
+        if not self.ai_build_provider.strip():
+            return []
+        return _ordered_names(self.ai_build_provider, self.ai_build_fallback_providers)
 
     def provider_profile(self, name: str) -> ProviderProfile:
         """Resolve one gateway's settings, raising if it is not usable.

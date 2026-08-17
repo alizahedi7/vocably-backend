@@ -41,10 +41,12 @@ from app.core.logging import configure_logging, get_logger
 from app.domain.entities.deck_template import TemplateError
 from app.domain.enums import AuthMethod, DeckBuildState
 from app.infrastructure.ai.factory import (
-    configured_model,
+    build_ai_provider,
+    build_model,
+    build_provider_name,
     effective_prompt_version,
+    grounded_build_provider,
     lookup_chain,
-    raw_ai_provider,
 )
 from app.infrastructure.ai.lexicon_ai_service import SenseEnricher
 from app.infrastructure.db.models.user import UserModel
@@ -233,8 +235,9 @@ def _service(session: AsyncSession) -> DeckBuildService:
     lexicon = LexiconService(
         SqlAlchemyLexiconRepository(session),
         content_version=effective_prompt_version(),
-        provider=settings.ai_provider,
-        model=configured_model(),
+        # The build chain's identity, not the request path's.
+        provider=build_provider_name(),
+        model=build_model(),
     )
     return DeckBuildService(
         SqlAlchemyDeckBuildRepository(session),
@@ -244,9 +247,11 @@ def _service(session: AsyncSession) -> DeckBuildService:
         SqlAlchemyWordRepository(session),
         SqlAlchemyDeckDiscoveryRepository(session),
         lexicon,
-        lookup_chain(session, lexicon),
+        # Same chain as a learner's lookup — same cache, same lexicon. Only the
+        # gateway at the bottom differs.
+        lookup_chain(session, lexicon, provider=grounded_build_provider()),
         content_version=effective_prompt_version(),
-        enricher=cast("SenseEnricher", raw_ai_provider()),
+        enricher=cast("SenseEnricher", build_ai_provider()),
         claim_timeout_seconds=settings.deck_build_claim_timeout_seconds,
     )
 

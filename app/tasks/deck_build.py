@@ -28,10 +28,12 @@ from app.core.config import settings
 from app.core.database import async_session_factory
 from app.core.logging import get_logger
 from app.infrastructure.ai.factory import (
-    configured_model,
+    build_ai_provider,
+    build_model,
+    build_provider_name,
     effective_prompt_version,
+    grounded_build_provider,
     lookup_chain,
-    raw_ai_provider,
 )
 from app.infrastructure.ai.lexicon_ai_service import SenseEnricher
 from app.infrastructure.db.repositories.deck_build_repository import (
@@ -87,8 +89,10 @@ async def _run_batch(job_id: UUID, limit: int) -> BatchOutcome:
         lexicon = LexiconService(
             SqlAlchemyLexiconRepository(session),
             content_version=effective_prompt_version(),
-            provider=settings.ai_provider,
-            model=configured_model(),
+            # The build chain's identity, not the request path's: these senses
+            # are written by AI_BUILD_PROVIDER when one is set.
+            provider=build_provider_name(),
+            model=build_model(),
         )
         service = DeckBuildService(
             SqlAlchemyDeckBuildRepository(session),
@@ -98,11 +102,14 @@ async def _run_batch(job_id: UUID, limit: int) -> BatchOutcome:
             SqlAlchemyWordRepository(session),
             SqlAlchemyDeckDiscoveryRepository(session),
             lexicon,
-            lookup_chain(session, lexicon),
+            # Same chain as a learner's lookup — same cache, same lexicon, so a
+            # word already paid for costs the builder nothing. Only the gateway
+            # at the bottom differs.
+            lookup_chain(session, lexicon, provider=grounded_build_provider()),
             content_version=effective_prompt_version(),
             # The raw adapter: the wrappers above it have nothing to add to a
             # call that is explicitly asking for what the lexicon does not hold.
-            enricher=cast("SenseEnricher", raw_ai_provider()),
+            enricher=cast("SenseEnricher", build_ai_provider()),
             # Pronunciation only — independent of grounding. Off means cards are
             # written without an IPA, exactly as a hand-typed card is.
             dictionary=dictionary_service() if settings.dictionary_available else None,

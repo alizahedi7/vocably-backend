@@ -2,14 +2,21 @@
 
 Each class is :class:`OpenAICompatibleAIService` plus an identity: a name that
 reaches logs, cache provenance and the failover chain's configuration, and the
-URL to use when none is configured. There is deliberately no per-gateway
-transport code — they speak one protocol, and a guardrail that lives in three
-places is a guardrail fixed in one of them.
+URL to use when none is configured, plus any header it gates on. There is
+deliberately no per-gateway transport code — they speak one protocol, and a
+guardrail that lives in four places is a guardrail fixed in one of them.
+
+**Two of these exist for the deck-build pipeline, not for learner lookups.**
+``tabitoken`` and ``agentrouter`` catalogue frontier Claude models and nothing
+cheap. A published course deck is written once and read by everyone, so it is
+worth the better model; an interactive lookup, waited on behind a spinner and
+repeated all day, is not. ``AI_BUILD_PROVIDER`` selects them — see
+:func:`app.infrastructure.ai.factory.build_ai_provider`.
 
 A class rather than a config row because identity is not the only thing that
-ever differs: OpenRouter wants attribution headers, and the next gateway will
-want something else. This is where such a quirk goes, and it stays one override
-rather than a fork of the adapter.
+ever differs: both Claude proxies gate on an exact ``user-agent``, and the next
+gateway will want something else. This is where such a quirk goes, and it stays
+one override rather than a fork of the adapter.
 
 Registered in :data:`PROVIDERS`, which
 :func:`app.infrastructure.ai.factory.provider_for` reads. Adding a gateway is a
@@ -45,17 +52,45 @@ class GapGPTProvider(OpenAICompatibleAIService):
     default_base_url = "https://api.gapgpt.app/v1"
 
 
-class OpenRouterProvider(OpenAICompatibleAIService):
-    """OpenRouter (https://openrouter.ai), a multi-upstream OpenAI-protocol router.
+#: The exact client string tabitoken and agentrouter gate on. Without it both
+#: answer ``401 unauthorized client detected`` however valid the key is, and the
+#: SDK's ``default_headers`` cannot deliver it — see ``_forced_header_client``.
+_CLAUDE_CLI_UA = {"user-agent": "claude-cli/2.1.0 (external, cli)"}
 
-    Model ids are namespaced by upstream vendor — ``google/gemini-3.5-flash-lite``,
-    not ``gemini-3.5-flash-lite`` — so a model name that works on the other two
-    gateways will 404 here. This is the one place a fallback's ``*_MODEL`` cannot
-    simply be copied from the primary's.
+
+class TabiTokenProvider(OpenAICompatibleAIService):
+    """tabitoken (https://tabitoken.com), a Claude proxy.
+
+    Catalogues frontier models only (``claude-opus-5``, ``claude-opus-4-8``)
+    rather than the cheap fast models the request path wants — which is why it
+    belongs on ``AI_BUILD_PROVIDER`` and not on ``AI_PROVIDER``.
+
+    It **accepts ``response_format`` and then ignores it**, answering 200 with
+    prose. That is one of the two failure modes ``_complete`` latches on: the
+    Pydantic validation fails, structured output is switched off for the
+    process, and the retry goes out with the schema stated in the prompt.
     """
 
-    name = "openrouter"
-    default_base_url = "https://openrouter.ai/api/v1"
+    name = "tabitoken"
+    default_base_url = "https://tabitoken.com/v1"
+    default_extra_headers = _CLAUDE_CLI_UA
+
+
+class AgentRouterProvider(OpenAICompatibleAIService):
+    """agentrouter (https://agentrouter.org), likewise a Claude proxy.
+
+    Speaks both protocols; this drives the OpenAI one, since that is where the
+    provider fleet and its failover live. ``ANTHROPIC_BASE_URL`` can still point
+    the Anthropic adapter at the same host for the request path.
+
+    It **rejects ``response_format``** outright with a 400, which the SDK raises
+    as ``BadRequestError`` — the other latch in ``_request``, which falls back to
+    prompt-enforced JSON and retries once.
+    """
+
+    name = "agentrouter"
+    default_base_url = "https://agentrouter.org/v1"
+    default_extra_headers = _CLAUDE_CLI_UA
 
 
 #: Name → class, the only mapping between configuration and code. A name absent
@@ -64,5 +99,6 @@ class OpenRouterProvider(OpenAICompatibleAIService):
 PROVIDERS: dict[str, type[OpenAICompatibleAIService]] = {
     AvalAIProvider.name: AvalAIProvider,
     GapGPTProvider.name: GapGPTProvider,
-    OpenRouterProvider.name: OpenRouterProvider,
+    TabiTokenProvider.name: TabiTokenProvider,
+    AgentRouterProvider.name: AgentRouterProvider,
 }

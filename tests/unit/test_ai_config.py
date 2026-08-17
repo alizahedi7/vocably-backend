@@ -62,11 +62,11 @@ def test_the_chain_is_ordered_primary_first_and_deduplicated() -> None:
         avalai_model="m",
         gapgpt_api_key="k",
         gapgpt_model="m",
-        openrouter_api_key="k",
-        openrouter_model="m",
-        ai_fallback_providers=" gapgpt , avalai ,OPENROUTER",
+        tabitoken_api_key="k",
+        tabitoken_model="m",
+        ai_fallback_providers=" gapgpt , avalai ,TABITOKEN",
     )
-    assert settings.provider_chain == ["avalai", "gapgpt", "openrouter"]
+    assert settings.provider_chain == ["avalai", "gapgpt", "tabitoken"]
 
 
 @pytest.mark.parametrize("provider", ["stub", "anthropic"])
@@ -103,3 +103,54 @@ def test_extra_headers_parse_a_json_object() -> None:
 def test_malformed_extra_headers_fail_at_startup(raw: str) -> None:
     with pytest.raises(ValidationError, match="ANTHROPIC_EXTRA_HEADERS"):
         _settings(anthropic_extra_headers=raw)
+
+
+# ── The deck-build chain ──────────────────────────────────────
+
+
+def test_no_build_provider_means_builds_use_the_request_chain() -> None:
+    """A laptop and the test suite must build a deck with no extra config."""
+    settings = _settings(ai_provider="avalai", avalai_api_key="k", avalai_model="m")
+    assert settings.build_provider_chain == []
+
+
+def test_the_build_chain_is_independent_of_the_request_chain() -> None:
+    """The whole point: a published deck is written once and read by everyone,
+    so it is worth a frontier model the interactive path cannot afford."""
+    settings = _settings(
+        ai_provider="avalai",
+        avalai_api_key="k",
+        avalai_model="gemini-3.5-flash-lite",
+        tabitoken_api_key="k",
+        tabitoken_model="claude-opus-5",
+        agentrouter_api_key="k",
+        agentrouter_model="claude-opus-5",
+        ai_build_provider="tabitoken",
+        ai_build_fallback_providers="agentrouter",
+    )
+    assert settings.provider_chain == ["avalai"]
+    assert settings.build_provider_chain == ["tabitoken", "agentrouter"]
+
+
+def test_a_build_gateway_without_a_key_is_refused_at_boot() -> None:
+    """Same rule as the request path: an unusable gateway fails the deploy, not
+    the first deck build that reaches for it an hour in."""
+    with pytest.raises(ValidationError, match="TABITOKEN_API_KEY"):
+        _settings(
+            ai_provider="avalai",
+            avalai_api_key="k",
+            avalai_model="m",
+            ai_build_provider="tabitoken",
+        )
+
+
+def test_a_build_chain_may_name_a_gateway_the_request_chain_also_uses() -> None:
+    """They are separate lists, not a partition — sharing one gateway is legal."""
+    settings = _settings(
+        ai_provider="avalai",
+        avalai_api_key="k",
+        avalai_model="m",
+        ai_build_provider="avalai",
+    )
+    assert settings.provider_chain == ["avalai"]
+    assert settings.build_provider_chain == ["avalai"]

@@ -106,16 +106,25 @@ backs practice stories.
 
 - **Provider** is chosen by `AI_PROVIDER`: `stub` (default — deterministic, offline,
   what the tests run against), `anthropic`, or one of the OpenAI-protocol gateways
-  `avalai` / `gapgpt` / `openrouter`. Model, base URL, timeout, and max tokens are
+  `avalai` / `gapgpt` / `tabitoken` / `agentrouter`. Model, base URL, timeout, and max tokens are
   all env config ([config.py](app/core/config.py)) because the right model changes
   faster than this code does. `ANTHROPIC_BASE_URL` points the Anthropic adapter at
   any gateway speaking the Anthropic protocol.
-- **One adapter drives all three gateways.**
+- **One adapter drives every gateway.**
   [openai_compatible_ai_service.py](app/infrastructure/ai/openai_compatible_ai_service.py)
   holds every guardrail; [providers.py](app/infrastructure/ai/providers.py) is that
-  class plus a name and a default URL, three times. A gateway-specific quirk goes
-  in the subclass — never a fork of the transport, or the next schema-fallback fix
-  lands in one of three places.
+  class plus a name, a default URL and any header it gates on. A gateway-specific
+  quirk goes in the subclass — never a fork of the transport, or the next
+  schema-fallback fix lands in one of four places.
+- **Both schema fallbacks are live, not theoretical.** `agentrouter` *rejects*
+  `response_format` with a 400; `tabitoken` *accepts it and answers off-schema*.
+  Those are precisely the two latches in `_request`/`_complete`, and each gateway
+  exercises one — which is why neither may be removed as dead code.
+- **`default_headers` does not override the user-agent** in the `openai` SDK any
+  more than in the Anthropic one; the SDK appends to its own. Both Claude proxies
+  gate on an exact `claude-cli` string and answer `401 unauthorized client
+  detected` without it, so headers go through `_forced_header_client`, an httpx
+  request hook that gets the last word. Verified by measurement, not docs.
 - **Give each gateway its own settings block.** Pointing `AVALAI_BASE_URL` at
   GapGPT works, and production ran that way for weeks, but the name then lies in
   the logs, in `ai_lookup_entries.provider` and on every lexicon sense. The old
@@ -1047,6 +1056,25 @@ is the test that fails if anyone does.
 the deck-build worker call `lookup_chain()`. A builder with a private path to
 the provider would stop reusing what learners already paid for, and the reuse
 ratio reported on every job would become a lie.
+
+**`AI_BUILD_PROVIDER` refines that rule; it does not break it.** A build may use
+a *different gateway at the bottom* of the same chain — `tabitoken` and
+`agentrouter` carry frontier Claude models and nothing cheap, and a published
+course deck is written once and read by everyone who saves it, so it is worth a
+slower, better model than an interactive lookup behind a spinner. What must not
+change is the chain above it: builds still go through the same cache and the
+same lexicon, which is what keeps the reuse honest. `build_ai_provider()` and
+`grounded_build_provider()` are the build-side twins of `raw_ai_provider()` and
+`grounded_ai_provider()`; unset, they *are* those functions, so a laptop and the
+test suite need no extra configuration.
+
+The corollary is worth knowing before configuring it: a word already in the
+cache or the lexicon is served from there, so the build model writes only the
+words nobody has looked up yet. A deck is therefore not uniformly written by one
+model. That is the intended trade — the alternative re-buys the corpus per deck
+— and `deck_build_items` records which strategy and gateway wrote each item.
+`AI_BUILD_DEADLINE_SECONDS` is 300 rather than the request path's 45: nobody is
+watching a spinner, and a stalled batch is redelivered by Celery.
 
 ### Senses, and the translation split
 

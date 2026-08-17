@@ -73,6 +73,71 @@ def raw_ai_provider() -> AIService:
     )
 
 
+def build_ai_provider() -> AIService:
+    """The gateway the **deck-build pipeline** uses, before grounding or caching.
+
+    A published course deck is written once and read by everyone who saves it, so
+    it is worth a slower, better model than an interactive lookup is —
+    ``tabitoken`` and ``agentrouter`` carry frontier Claude models and nothing
+    cheap. ``AI_BUILD_PROVIDER`` selects that chain; unset, a build uses the
+    request path's, which is what a laptop and the test suite want.
+
+    Note what this does **not** change: a build still goes through
+    ``lookup_chain``, so the cache and the lexicon are the same ones learners
+    fill. Only the gateway at the bottom differs. A builder with a private path
+    past those would stop reusing what learners have already paid for, and the
+    reuse ratio reported on every job would become a lie.
+
+    The corollary is worth knowing before configuring this: a word already in the
+    cache or the lexicon is served from there, so the build model writes only the
+    words nobody has looked up yet. That is the intended trade — the alternative
+    re-buys the corpus per deck — but it does mean a deck is not uniformly
+    written by one model.
+    """
+    chain = settings.build_provider_chain
+    if not chain:
+        return raw_ai_provider()
+    if len(chain) == 1:
+        return provider_for(chain[0])
+    return FailoverAIService(
+        [provider_for(name) for name in chain],
+        breaker_threshold=settings.ai_breaker_threshold,
+        breaker_cooldown_seconds=settings.ai_breaker_cooldown_seconds,
+        # Builds are not interactive and their models think for longer, so the
+        # deadline is the sum of the gateways' own timeouts rather than a
+        # spinner budget. A batch that stalls is retried by Celery.
+        deadline_seconds=settings.ai_build_deadline_seconds,
+    )
+
+
+def grounded_build_provider() -> AIService:
+    """The build pipeline's gateway, grounded when the dictionary is enabled."""
+    provider = build_ai_provider()
+    if not settings.dictionary_enabled:
+        return provider
+    return GroundedAIService(
+        provider,
+        dictionary_service(),
+        translator=cast("SenseTranslator", provider),
+        max_cards=MAX_LOOKUP_SUGGESTIONS,
+        rewrite_definitions=settings.dictionary_rewrite_definitions,
+    )
+
+
+def build_model() -> str:
+    """The build chain's primary model, for provenance on senses it writes."""
+    chain = settings.build_provider_chain
+    if not chain:
+        return configured_model()
+    return str(getattr(settings, f"{chain[0]}_model", ""))
+
+
+def build_provider_name() -> str:
+    """The build chain's primary gateway name, for provenance."""
+    chain = settings.build_provider_chain
+    return chain[0] if chain else settings.ai_provider
+
+
 @lru_cache
 def provider_for(name: str) -> AIService:
     """One configured OpenAI-protocol gateway, memoized per name.
