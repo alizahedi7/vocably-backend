@@ -35,7 +35,7 @@ from typing import Any
 
 from app.core.database import engine
 from app.core.logging import get_logger
-from app.infrastructure.ai.factory import single_flight
+from app.infrastructure.ai.factory import reset_provider_cache, single_flight
 from app.infrastructure.dictionary.factory import dictionary_service
 
 logger = get_logger("vocably.tasks.runtime")
@@ -46,6 +46,13 @@ logger = get_logger("vocably.tasks.runtime")
 #: Adding a new process-wide async client anywhere means adding it here, or its
 #: second use in a worker fails — quietly, if that client is best-effort.
 _POOLED_FACTORIES: tuple[Any, ...] = (dictionary_service, single_flight)
+
+#: Released the same way, but through a function rather than a cache handle: the
+#: AI gateways are memoized per name, so there is no single ``lru_cache`` entry
+#: to close. Each holds an ``openai.AsyncOpenAI`` and therefore an httpx pool
+#: bound to the loop that opened it — the same trap as everything above, and one
+#: that grew teeth when a failover chain made it several clients instead of one.
+_POOLED_RESETS: tuple[Any, ...] = (reset_provider_cache,)
 
 
 def run_async[T](work: Coroutine[object, object, T]) -> T:
@@ -66,6 +73,11 @@ async def _release_pools() -> None:
     await engine.dispose()
     for factory in _POOLED_FACTORIES:
         await _release(factory)
+    for reset in _POOLED_RESETS:
+        try:
+            reset()
+        except Exception:  # noqa: BLE001 — teardown must never fail a completed task
+            logger.warning("failed to reset %s", getattr(reset, "__name__", reset))
 
 
 async def _release(factory: Any) -> None:
