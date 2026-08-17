@@ -112,6 +112,12 @@ class OpenAICompatibleAIService(AIService):
     #: Headers this gateway always needs, before any from configuration. Empty
     #: for a gateway that authenticates on the bearer token alone.
     default_extra_headers: ClassVar[dict[str, str]] = {}
+    #: Whether to *try* ``response_format`` at all. ``False`` for a gateway
+    #: measured not to honour it, which saves the one doomed attempt the latch
+    #: below would otherwise burn per process — worth ~15s on a slow model, and
+    #: paid once per gateway per worker. The latch still runs, so a gateway that
+    #: regresses is still caught; this only skips a question we know the answer to.
+    supports_structured_output: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -142,8 +148,8 @@ class OpenAICompatibleAIService(AIService):
         #: Same rationale as the Anthropic adapter: flipped off permanently the
         #: first time the endpoint proves it does not enforce a JSON schema,
         #: either by rejecting the parameter or by accepting it and answering
-        #: off-schema anyway.
-        self._structured_output = True
+        #: off-schema anyway. Starts false for a gateway already known not to.
+        self._structured_output = self.supports_structured_output
 
     @property
     def model(self) -> str:

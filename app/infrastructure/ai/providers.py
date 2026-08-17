@@ -74,6 +74,7 @@ class TabiTokenProvider(OpenAICompatibleAIService):
     name = "tabitoken"
     default_base_url = "https://tabitoken.com/v1"
     default_extra_headers = _CLAUDE_CLI_UA
+    supports_structured_output = False
 
 
 class AgentRouterProvider(OpenAICompatibleAIService):
@@ -91,6 +92,7 @@ class AgentRouterProvider(OpenAICompatibleAIService):
     name = "agentrouter"
     default_base_url = "https://agentrouter.org/v1"
     default_extra_headers = _CLAUDE_CLI_UA
+    supports_structured_output = False
 
 
 #: Name → class, the only mapping between configuration and code. A name absent
