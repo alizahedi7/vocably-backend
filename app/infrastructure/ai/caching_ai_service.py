@@ -88,8 +88,12 @@ class CachingAIService(AIService):
                     if result.status is LookupStatus.UNSUPPORTED
                     else None
                 ),
-                provider=self._provider,
-                model=self._model,
+                # What answered, not what is configured. Under failover the two
+                # differ exactly when a fallback served the card, and that is
+                # the case where recording the configured primary would file a
+                # sense under a model that never saw the word.
+                provider=result.provider or self._provider,
+                model=result.model or self._model,
             )
         except Exception:
             logger.warning("lookup cache write failed; result served uncached", exc_info=True)

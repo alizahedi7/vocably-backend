@@ -105,16 +105,33 @@ The read-only admin analytics API backing the standalone **vocably-admin** dashb
 backs practice stories.
 
 - **Provider** is chosen by `AI_PROVIDER`: `stub` (default — deterministic, offline,
-  what the tests run against), `anthropic`, or `avalai`. Model, base URL, timeout,
-  and max tokens are all env config ([config.py](app/core/config.py)) because the
-  right model changes faster than this code does. `ANTHROPIC_BASE_URL` points the
-  Anthropic adapter at any gateway speaking the Anthropic protocol; `avalai`
-  ([avalai_ai_service.py](app/infrastructure/ai/avalai_ai_service.py)) talks to
-  AvalAI's OpenAI-protocol gateway instead, via the `openai` SDK.
-- **Never commit a key.** `ANTHROPIC_API_KEY`/`AVALAI_API_KEY` are environment-only;
-  startup fails if `AI_PROVIDER` selects a provider without its key (and, for
-  `avalai`, without `AVALAI_MODEL` — there is no sane default across an arbitrary
-  gateway's model catalogue).
+  what the tests run against), `anthropic`, or one of the OpenAI-protocol gateways
+  `avalai` / `gapgpt` / `tabitoken` / `agentrouter`. Model, base URL, timeout, and max tokens are
+  all env config ([config.py](app/core/config.py)) because the right model changes
+  faster than this code does. `ANTHROPIC_BASE_URL` points the Anthropic adapter at
+  any gateway speaking the Anthropic protocol.
+- **One adapter drives every gateway.**
+  [openai_compatible_ai_service.py](app/infrastructure/ai/openai_compatible_ai_service.py)
+  holds every guardrail; [providers.py](app/infrastructure/ai/providers.py) is that
+  class plus a name, a default URL and any header it gates on. A gateway-specific
+  quirk goes in the subclass — never a fork of the transport, or the next
+  schema-fallback fix lands in one of four places.
+- **Both schema fallbacks are live, not theoretical.** `agentrouter` *rejects*
+  `response_format` with a 400; `tabitoken` *accepts it and answers off-schema*.
+  Those are precisely the two latches in `_request`/`_complete`, and each gateway
+  exercises one — which is why neither may be removed as dead code.
+- **`default_headers` does not override the user-agent** in the `openai` SDK any
+  more than in the Anthropic one; the SDK appends to its own. Both Claude proxies
+  gate on an exact `claude-cli` string and answer `401 unauthorized client
+  detected` without it, so headers go through `_forced_header_client`, an httpx
+  request hook that gets the last word. Verified by measurement, not docs.
+- **Give each gateway its own settings block.** Pointing `AVALAI_BASE_URL` at
+  GapGPT works, and production ran that way for weeks, but the name then lies in
+  the logs, in `ai_lookup_entries.provider` and on every lexicon sense. The old
+  `avalai_ai_service` module survives only as an import shim for `benchmarks/`.
+- **Never commit a key.** Every `*_API_KEY` is environment-only; startup fails if
+  a gateway in the chain lacks its key or its `*_MODEL` — there is no sane default
+  across an arbitrary gateway's model catalogue.
 - **The prompt is the product surface.** [prompts.py](app/infrastructure/ai/prompts.py)
   decides tone, dictionary register, and age-appropriateness of everything a learner
   reads on a card. Review changes to it as a product change, not a refactor. Both
@@ -126,9 +143,65 @@ backs practice stories.
   than an invented definition. Learner text is always wrapped in `<learner_input>` and
   declared to be data, never instruction.
 - **Never trust the model's shape.** Responses are schema-constrained (`output_config`
-  for Anthropic, `response_format` for AvalAI), then re-validated with Pydantic; one
-  retry, then `ExternalServiceError` → **502**. Gateways that reject the
-  schema parameter fall back to prompt-enforced JSON automatically.
+  for Anthropic, `response_format` for the OpenAI-protocol gateways), then
+  re-validated with Pydantic; one retry, then `ExternalServiceError` → **502**.
+  Gateways that reject the schema parameter fall back to prompt-enforced JSON
+  automatically.
+
+### Failover
+
+`AI_FALLBACK_PROVIDERS` is an ordered, comma-separated list tried when
+`AI_PROVIDER` fails.
+[FailoverAIService](app/infrastructure/ai/failover_ai_service.py) is the whole
+mechanism, and it exists because one gateway is one point of failure: a
+seven-minute upstream stall on 2026-08-17 turned every lookup in that window into
+a 502 with nothing to catch it.
+
+- **It sits at the bottom of the chain**, inside `raw_ai_provider()` —
+  `cache → lexicon → grounded → FAILOVER → [primary, fallback, …]`. Wrapped
+  *outside* the cache, a fallback would route around the cache and the lexicon
+  and re-buy the corpus at the moment the app can least afford it. Below them,
+  one entry and one lexeme serve every learner whichever gateway wrote them.
+  It is also why the enricher and translator get failover for free: both are
+  handed `raw_ai_provider()` directly.
+- **It delegates five methods, not two** — the port's pair plus `translate_only`,
+  `translate_senses` and `enrich_senses`, the structural protocols
+  `GroundedAIService` and `LexiconAIService` cast it to. Miss one and grounding
+  loses failover at runtime with no type error to catch it.
+- **It trips on `ExternalServiceError` and nothing else.** The adapters already
+  funnel every transport error, status code, content filter and schema failure
+  into that one type, so it means "this gateway did not answer". A
+  `ValidationError` is about the learner's input and would fail identically
+  everywhere — retrying it elsewhere spends money to produce the same 422.
+- **All gateways exhausted → `AllProvidersUnavailableError`**, a *subclass* of
+  `ExternalServiceError`. It carries its own `code` so a client can say something
+  truer than "try again", and stays a subclass so the `isinstance` walk in
+  `app.api.errors` still maps it to 502 and `_is_provider_failure` still halts a
+  deck build — which becomes more correct, since it now means the whole fleet is
+  down rather than one gateway having a bad minute.
+- **The budget is bounded.** `AI_FAILOVER_DEADLINE_SECONDS` (45) caps the whole
+  call, and a gateway whose own timeout will not fit in what remains is skipped
+  *before* it is started. The first gateway is always tried, however small the
+  deadline: answering a misconfiguration by making zero calls would turn a slow
+  lookup into a total outage. The SDK's transport retries dropped from 2 to 1
+  for the same reason — a second gateway beats a third attempt at a stalled one.
+- **The circuit breaker is never load-bearing**, exactly like `SingleFlight`.
+  In-process, unsynchronised, so the API and each worker hold their own view and
+  two requests can both slip through half-open; both cost one redundant call.
+  Correctness is the try-the-next-one loop, which works with every breaker
+  permanently closed.
+- **A single-gateway chain is not wrapped** — one provider behind a failover loop
+  is the same provider plus a layer of logs.
+- **`LookupResult.provider`/`.model` say who actually answered**, and the cache
+  and lexicon record them in preference to the configured gateway. Without that,
+  a card written by the fallback is filed under the primary and
+  `/admin/ai-feedback` blames the wrong model for a bad sense. Enrichment returns
+  bare suggestions with no provenance to read, so it still falls back to the
+  configured values.
+- **A fallback naming an unfunded account is worse than no fallback** — it looks
+  like resilience and only reveals itself the minute the primary dies. Hence the
+  empty default and the boot-time check that every gateway in the chain has a key
+  and a model.
 - **Response contract**: field-by-field mapping to the v7 design, and the client
   wiring it implies, is in [ai-card-magic-contract.md](docs/ai-card-magic-contract.md).
   Renaming a `MeaningSuggestion` field is a breaking change for that screen — update
@@ -969,7 +1042,8 @@ AIStudioService
   └─ CachingAIService      # request-shaped, keyed by prompt version
       └─ LexiconAIService  # term-shaped, durable, survives a prompt bump
           └─ GroundedAIService
-              └─ provider
+              └─ FailoverAIService   # only when AI_FALLBACK_PROVIDERS is set
+                  └─ provider(s)
 ```
 
 The cache is **outside** so repeats cost one indexed read. The lexicon is
@@ -982,6 +1056,25 @@ is the test that fails if anyone does.
 the deck-build worker call `lookup_chain()`. A builder with a private path to
 the provider would stop reusing what learners already paid for, and the reuse
 ratio reported on every job would become a lie.
+
+**`AI_BUILD_PROVIDER` refines that rule; it does not break it.** A build may use
+a *different gateway at the bottom* of the same chain — `tabitoken` and
+`agentrouter` carry frontier Claude models and nothing cheap, and a published
+course deck is written once and read by everyone who saves it, so it is worth a
+slower, better model than an interactive lookup behind a spinner. What must not
+change is the chain above it: builds still go through the same cache and the
+same lexicon, which is what keeps the reuse honest. `build_ai_provider()` and
+`grounded_build_provider()` are the build-side twins of `raw_ai_provider()` and
+`grounded_ai_provider()`; unset, they *are* those functions, so a laptop and the
+test suite need no extra configuration.
+
+The corollary is worth knowing before configuring it: a word already in the
+cache or the lexicon is served from there, so the build model writes only the
+words nobody has looked up yet. A deck is therefore not uniformly written by one
+model. That is the intended trade — the alternative re-buys the corpus per deck
+— and `deck_build_items` records which strategy and gateway wrote each item.
+`AI_BUILD_DEADLINE_SECONDS` is 300 rather than the request path's 45: nobody is
+watching a spinner, and a stalled batch is redelivered by Celery.
 
 ### Senses, and the translation split
 

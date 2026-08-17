@@ -98,6 +98,18 @@ class LookupResult:
     #: than showing no pronunciation at all. Clients must render this as
     #: optional.
     phonetic: str = ""
+    #: Which gateway actually answered, and with which model. Empty from any
+    #: adapter that does not set them (the stub) and from a cache hit, which
+    #: carries the provenance already stored on the row instead.
+    #:
+    #: These exist because the configured provider stopped being the answer:
+    #: with a failover chain, a card can be written by the second gateway while
+    #: ``settings.ai_provider`` still names the first. The cache and the lexicon
+    #: record what is here in preference to the configuration, so a sense being
+    #: downvoted on ``/admin/ai-feedback`` is attributed to the model that wrote
+    #: it. Never sent to a client — the API schemas map fields explicitly.
+    provider: str = ""
+    model: str = ""
 
 
 @dataclass(frozen=True, slots=True)
