@@ -23,7 +23,6 @@ from __future__ import annotations
 import json
 from typing import Any, ClassVar, Final
 
-import httpx
 import openai
 from pydantic import BaseModel, ValidationError
 
@@ -84,23 +83,34 @@ def _short(body: object) -> str:
     return str(body)[:_ERROR_BODY_CHARS].replace("\n", " ")
 
 
-def _forced_header_client(headers: dict[str, str], timeout_seconds: float) -> httpx.AsyncClient:
+def _forced_header_client(
+    headers: dict[str, str], timeout_seconds: float
+) -> openai.DefaultAsyncHttpxClient:
     """An HTTP client that stamps ``headers`` verbatim onto every request.
 
     The twin of :func:`AnthropicAIService._forced_header_client`, and needed for
-    the same measured reason: passing ``default_headers`` to the SDK is not
-    enough, because it *appends* to its own ``user-agent`` rather than replacing
-    it. Gateways that gate on an exact client string — tabitoken and agentrouter
-    both answer 401 ``unauthorized client detected`` without one — see the SDK's
-    value and refuse. A request hook runs after the SDK has built its headers,
-    so it gets the last word.
+    the same measured reason: gateways that gate on an exact client string —
+    tabitoken and agentrouter both answer 401 ``unauthorized client detected``
+    without one — never see it otherwise. Neither the SDK's ``default_headers``
+    nor a per-request ``extra_headers`` can deliver it, because the SDK builds
+    its own ``user-agent`` last; both were measured to still 401. A request event
+    hook runs after that, so it gets the final word.
+
+    Built from ``openai.DefaultAsyncHttpxClient`` rather than ``httpx.AsyncClient``
+    **on purpose**. The SDK moved from ``httpx`` to ``httpx2`` between releases,
+    and this project does not commit its lockfile — so CI and the production
+    image resolve the SDK fresh and can land on either. That export is whichever
+    flavour the installed SDK actually binds to, which makes this correct on both
+    instead of correct on a laptop and a 401 in production.
     """
 
-    async def _apply(request: httpx.Request) -> None:
+    async def _apply(request: Any) -> None:
         for key, value in headers.items():
             request.headers[key] = value
 
-    return httpx.AsyncClient(timeout=timeout_seconds, event_hooks={"request": [_apply]})
+    return openai.DefaultAsyncHttpxClient(
+        timeout=timeout_seconds, event_hooks={"request": [_apply]}
+    )
 
 
 class OpenAICompatibleAIService(AIService):
