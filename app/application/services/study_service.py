@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import UTC, date, datetime
+from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
@@ -27,6 +28,18 @@ from app.domain.services.streak import DayState
 #: Where a graded answer came from. A review session and a practice drill
 #: are worth different amounts, and the client says which.
 ReviewSource = Literal["session", "drill"]
+
+
+class CelebrationClaim(StrEnum):
+    """Who, if anyone, gets to show today's "goal reached" celebration."""
+
+    #: Yours. Exactly one request per account per local day is answered this.
+    CLAIMED = "claimed"
+    #: The day was won, and somebody has already been told. Stop asking today.
+    TAKEN = "taken"
+    #: Nothing has been won yet. Ask again after the next refresh.
+    UNBANKED = "unbanked"
+
 
 #: Rough estimate used for the "~N min" hint on the home screen.
 _MINUTES_PER_CARD = 0.5
@@ -335,6 +348,40 @@ class StudyService:
             user_id, XpAction.DAILY_GOAL, occurred_at=now, day=today, once_per_day=True
         )
         await self._users.bank_day(user_id, today)
+
+    async def claim_goal_celebration(self, user_id: UUID) -> CelebrationClaim:
+        """Whether *this* client is the one that gets to congratulate them.
+
+        The daily goal is banked once per account per day, but until this
+        existed the "you reached your goal" overlay was locked behind a stamp
+        in each device's own storage — so a learner who earned it on the phone
+        and then opened the PWA was congratulated a second time for the same
+        day. There is no device-local answer to that: the fact belongs to the
+        account.
+
+        The two refusals are **not** interchangeable, which is why this returns
+        three answers and not a boolean:
+
+        - ``TAKEN`` — the day was won and somebody has already been told
+          (another device, or an earlier launch of this one). Final: the client
+          should stop asking for the rest of the day.
+        - ``UNBANKED`` — nothing has been won *yet*. A client counts the day's
+          reviews on the device and can cross the goal a round trip before the
+          grade that banks it has landed, so this is an ordinary "ask me
+          again", not a no. Collapsing it into ``TAKEN`` would lose the
+          celebration of the very learner who just earned it — the client
+          would stamp its local lock on an answer that only meant "too early".
+          A rest day reads as unbanked here too, and is never celebrated, which
+          is the existing rule.
+        """
+        user = await self._users.get(user_id)
+        if user is None:  # pragma: no cover
+            return CelebrationClaim.UNBANKED
+        today = today_for(user.timezone, datetime.now(UTC))
+        if user.streak_banked_on != today:
+            return CelebrationClaim.UNBANKED
+        won = await self._users.claim_goal_celebration(user_id, today)
+        return CelebrationClaim.CLAIMED if won else CelebrationClaim.TAKEN
 
     async def complete_session(self, user_id: UUID) -> int:
         """Award the end-of-session bonus, on top of the cards.

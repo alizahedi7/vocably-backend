@@ -94,10 +94,12 @@ def apply_user(entity: User, m: UserModel) -> None:
     m.timezone = entity.timezone
     m.interests = list(entity.interests)
     m.daily_goal = entity.daily_goal
-    # xp and the three streak columns are deliberately absent: each is
-    # maintained in SQL — XpRepository.award, UserRepository.bank_day and
-    # settle_streak — and writing a read-then-written value here would clobber
-    # a concurrent award or a day banked on the learner's other device.
+    # xp, the three streak columns and goal_celebrated_on are deliberately
+    # absent: each is maintained in SQL — XpRepository.award,
+    # UserRepository.bank_day, settle_streak and claim_goal_celebration — and
+    # writing a read-then-written value here would clobber a concurrent award,
+    # a day banked on the learner's other device, or a celebration that device
+    # has already been given.
     m.last_studied_on = entity.last_studied_on
     m.onboarded = entity.onboarded
     m.is_admin = entity.is_admin

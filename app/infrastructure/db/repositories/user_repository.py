@@ -138,6 +138,25 @@ class SqlAlchemyUserRepository(UserRepository):
         # CursorResult, which is where rowcount lives.
         return bool(cast("CursorResult[Any]", result).rowcount)
 
+    async def claim_goal_celebration(self, user_id: UUID, today: date) -> bool:
+        stmt = (
+            update(UserModel)
+            .where(
+                UserModel.id == user_id,
+                # The whole once-a-day-per-account guarantee, and the race
+                # guard, in one predicate — the phone and the PWA both
+                # refreshing at the same instant run this statement, and the
+                # second matches nothing.
+                or_(
+                    UserModel.goal_celebrated_on.is_(None),
+                    UserModel.goal_celebrated_on < today,
+                ),
+            )
+            .values(goal_celebrated_on=today)
+        )
+        result = await self._session.execute(stmt)
+        return bool(cast("CursorResult[Any]", result).rowcount)
+
     async def settle_streak(self, user_id: UUID, *, days: int, last_day: date | None) -> None:
         stmt = (
             update(UserModel)

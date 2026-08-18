@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.api.v1.schemas.word import WordOut
 from app.application.dto import StudyOverview
+from app.application.services.study_service import CelebrationClaim
 from app.domain.entities.review_event import MAX_LATENCY_MS
 from app.domain.enums import LeitnerBox, ReviewGrade
 from app.domain.services.streak import DayState
@@ -86,6 +87,23 @@ class StudyOverviewOut(BaseModel):
                 ],
             ),
         )
+
+
+class GoalCelebrationOut(BaseModel):
+    """Whether the caller may show the "goal reached" celebration.
+
+    ``claimed`` is true for exactly one request per account per local day, and
+    only on a day that was actually banked. Every later caller — the same
+    device relaunching, or the learner's other device — is refused.
+
+    ``status`` says *which* refusal, and a client needs the difference:
+    ``taken`` is final for the day, ``unbanked`` means the goal has not been
+    met yet and is an ordinary "ask again". A client that treated the second as
+    the first would lock itself out of the celebration it had just earned.
+    """
+
+    claimed: bool
+    status: CelebrationClaim
 
 
 class StudySessionOut(BaseModel):

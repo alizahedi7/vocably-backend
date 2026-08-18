@@ -75,6 +75,26 @@ class UserRepository(ABC):
         """
 
     @abstractmethod
+    async def claim_goal_celebration(self, user_id: UUID, today: date) -> bool:
+        """Claim the right to congratulate this learner for ``today``.
+
+        Exactly like :meth:`bank_day`, and for the same reason: one guarded
+        statement, whose rowcount is the only trustworthy answer. The question
+        it answers is different, though — ``bank_day`` asks "did this request
+        *win* the day", this asks "is this the client that gets to *say so*".
+
+        They come apart whenever a learner is signed in on more than one
+        device. The day is banked once, by whichever device was reviewing; the
+        other one later reads ``day_state: banked`` on a plain refresh and,
+        with no lock but its own storage, threw the same confetti again. That
+        is one celebration per device per day, which is not what "once a day"
+        means to the person reading it.
+
+        Idempotent by the day, not by the request: a second call on a day
+        already claimed changes nothing and answers ``False``.
+        """
+
+    @abstractmethod
     async def settle_streak(self, user_id: UUID, *, days: int, last_day: date | None) -> None:
         """Write back a streak settled at read time.
 
