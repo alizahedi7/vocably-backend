@@ -19,6 +19,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.domain.services.calendar import today_for
 from app.infrastructure.db.models.user import UserModel
 from tests.api.conftest import sleep_on_it
 
@@ -60,11 +61,28 @@ async def set_goal(client: AsyncClient, headers: dict[str, str], goal: int) -> N
     assert response.status_code == 200, response.text
 
 
+def service_today() -> date:
+    """The day the *app* is working in, which is not always this machine's.
+
+    `calendar.py` is the one place a day boundary is decided and says so — "one
+    module, and nothing else calls ``date.today()``" — and these tests were
+    calling it anyway. A test user has no timezone, so every boundary the
+    service computes falls back to UTC; backdating from the machine's local
+    date agrees with that only while the two happen to fall on the same date.
+
+    East of UTC they part company for the last hours of the evening, so the
+    suite passed all day and failed after 20:30 UTC — a failure of the test and
+    not of the code, and one that costs an evening to work out. Asking the same
+    function the service asks is the fix, and it holds wherever it is run.
+    """
+    return today_for(None, datetime.now(UTC))
+
+
 async def backdate_streak(
     session_factory: async_sessionmaker[AsyncSession], *, days: int, streak: int
 ) -> date:
     """Put the learner's last banked day ``days`` ago, with ``streak`` behind it."""
-    when = date.today() - timedelta(days=days)
+    when = service_today() - timedelta(days=days)
     async with session_factory() as session:
         user = (await session.execute(select(UserModel))).scalars().first()
         assert user is not None
@@ -215,7 +233,7 @@ async def test_a_live_streak_survives_a_day_that_asked_for_nothing(
         user = (await session.execute(select(UserModel))).scalars().first()
         assert user is not None
         # The chain moved forward so tomorrow is still consecutive...
-        assert user.streak_last_day == date.today()
+        assert user.streak_last_day == service_today()
         # ...but the day was not banked, which is what keeps it uncelebrated
         # and stops it counting as one of the learner's days.
         assert user.streak_banked_on == yesterday
@@ -270,7 +288,7 @@ async def test_a_banked_streak_continues_from_a_rest_day(
     await sleep_on_it(session_factory)
 
     # Banked two days ago, then a rest day yesterday.
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = service_today() - timedelta(days=1)
     async with session_factory() as session:
         user = (await session.execute(select(UserModel))).scalars().first()
         assert user is not None
@@ -443,11 +461,7 @@ async def test_yesterdays_claim_does_not_suppress_this_morning(
     async with session_factory() as session:
         user = (await session.execute(select(UserModel))).scalars().first()
         assert user is not None
-        # The *service's* yesterday, not the machine's. A user with no timezone
-        # has their day computed in UTC, so on a machine east of it the two
-        # disagree for the last hours of the local evening — and a test that
-        # backdates to the wrong yesterday passes all day and fails at night.
-        user.goal_celebrated_on = datetime.now(UTC).date() - timedelta(days=1)
+        user.goal_celebrated_on = service_today() - timedelta(days=1)
         await session.commit()
 
     assert await celebrate(client, auth_headers) is True
