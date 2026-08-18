@@ -55,6 +55,14 @@ class UserModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     streak_last_day: Mapped[date | None] = mapped_column(Date)
     #: The last day the daily goal was met; the once-a-day lock.
     streak_banked_on: Mapped[date | None] = mapped_column(Date)
+    #: The last day the "goal reached" celebration was handed to a client.
+    #: Separate from ``streak_banked_on`` because they answer different
+    #: questions: that one is whether the day was *won*, this one is whether
+    #: anybody has been *told*. A learner signed in on a phone and in the PWA
+    #: banks the day once and used to be congratulated on each device, because
+    #: the only lock was in each device's own storage. Claimed by
+    #: ``UserRepository.claim_goal_celebration``, never written from a read.
+    goal_celebrated_on: Mapped[date | None] = mapped_column(Date)
     onboarded: Mapped[bool] = mapped_column(default=False, nullable=False)
 
     #: Experience points. A counter kept in step with the ``xp_events`` ledger,

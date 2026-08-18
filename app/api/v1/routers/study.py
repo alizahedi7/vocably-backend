@@ -9,12 +9,14 @@ from fastapi import APIRouter, Query
 
 from app.api.deps import CurrentUser, StudyServiceDep, UserServiceDep
 from app.api.v1.schemas.study import (
+    GoalCelebrationOut,
     GradeIn,
     SessionCompleteOut,
     StudyOverviewOut,
     StudySessionOut,
 )
 from app.api.v1.schemas.word import WordOut
+from app.application.services.study_service import CelebrationClaim
 from app.domain.entities.xp import level_for
 
 router = APIRouter(prefix="/study", tags=["study"])
@@ -63,6 +65,29 @@ async def grade_word(
         source=payload.source,
     )
     return WordOut.model_validate(word)
+
+
+@router.post("/day/celebration", response_model=GoalCelebrationOut)
+async def claim_goal_celebration(
+    current_user: CurrentUser,
+    study: StudyServiceDep,
+) -> GoalCelebrationOut:
+    """Claim the right to congratulate this learner for today.
+
+    Answers ``true`` to exactly one caller per account per local day, and only
+    on a day the goal was actually met. The client asks before drawing the
+    celebration; every later asker — the same device on its next launch, or the
+    learner's other device — is told ``false`` and draws nothing.
+
+    A POST because it *is* a write: asking is claiming. A GET that reported
+    "not yet celebrated" followed by a separate write would let two devices
+    refreshing in the same second both read "not yet" and both celebrate, which
+    is the bug this endpoint exists to close.
+
+    ``status`` distinguishes the two refusals — see :class:`GoalCelebrationOut`.
+    """
+    status = await study.claim_goal_celebration(current_user.id)
+    return GoalCelebrationOut(claimed=status is CelebrationClaim.CLAIMED, status=status)
 
 
 @router.post("/session/complete", response_model=SessionCompleteOut)

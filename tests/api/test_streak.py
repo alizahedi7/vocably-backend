@@ -13,7 +13,7 @@ to 1.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -325,3 +325,129 @@ async def test_two_sessions_finishing_together_bank_one_day(
         assert not isinstance(result, BaseException), result
 
     assert (await overview(client, auth_headers))["streak"] == 1
+
+
+# ── being told, which is not the same as having won ──
+
+
+async def celebrate(client: AsyncClient, headers: dict[str, str]) -> bool:
+    response = await client.post("/api/v1/study/day/celebration", headers=headers)
+    assert response.status_code == 200, response.text
+    claimed: bool = response.json()["claimed"]
+    return claimed
+
+
+async def celebration_status(client: AsyncClient, headers: dict[str, str]) -> str:
+    response = await client.post("/api/v1/study/day/celebration", headers=headers)
+    assert response.status_code == 200, response.text
+    status: str = response.json()["status"]
+    return status
+
+
+async def test_the_celebration_is_claimed_once_per_account_not_once_per_device(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The phone earns it; the PWA must not congratulate them for it again.
+
+    Banking the day is per account and always was. Being *told* used to be per
+    device — a `yyyy-mm-dd` stamp in each client's own storage — so one day's
+    work produced one celebration on Android and another in the browser.
+    """
+    await set_goal(client, auth_headers, 5)
+    _, word_ids = await seed(client, auth_headers, [f"w{i}" for i in range(5)])
+    await sleep_on_it(session_factory)
+    for word_id in word_ids:
+        await grade(client, auth_headers, word_id)
+    await client.post("/api/v1/study/session/complete", headers=auth_headers)
+    assert (await overview(client, auth_headers))["day_state"] == "banked"
+
+    assert await celebrate(client, auth_headers) is True, "the device that earned it is told"
+    assert await celebration_status(client, auth_headers) == "taken", "the same device again"
+    assert await celebration_status(client, auth_headers) == "taken", "their other device"
+
+
+async def test_an_unbanked_day_has_nothing_to_claim_and_spends_nothing(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Refusing because nothing was won must not burn the day's one claim.
+
+    A rest day reads as unbanked here too, which is the existing rule — nothing
+    was asked of the learner, so nothing was achieved either.
+    """
+    await set_goal(client, auth_headers, 5)
+    _, word_ids = await seed(client, auth_headers, [f"w{i}" for i in range(5)])
+    await sleep_on_it(session_factory)
+
+    assert await celebration_status(client, auth_headers) == "unbanked", (
+        "nothing has been won yet, and saying so is not the same as refusing"
+    )
+
+    for word_id in word_ids:
+        await grade(client, auth_headers, word_id)
+    await client.post("/api/v1/study/session/complete", headers=auth_headers)
+
+    assert await celebrate(client, auth_headers) is True, (
+        "the earlier refusal was not the day's celebration being used up"
+    )
+
+
+async def test_two_devices_asking_together_produce_one_celebration(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The reason this is a POST and not a read followed by a write.
+
+    Both devices refreshing in the same instant would both read "not yet
+    celebrated" and both draw the overlay. One guarded statement, so exactly
+    one rowcount comes back non-zero.
+    """
+    await set_goal(client, auth_headers, 5)
+    _, word_ids = await seed(client, auth_headers, [f"w{i}" for i in range(5)])
+    await sleep_on_it(session_factory)
+    for word_id in word_ids:
+        await grade(client, auth_headers, word_id)
+    await client.post("/api/v1/study/session/complete", headers=auth_headers)
+
+    results = await asyncio.gather(
+        *(client.post("/api/v1/study/day/celebration", headers=auth_headers) for _ in range(4)),
+        return_exceptions=True,
+    )
+    claims = []
+    for result in results:
+        assert not isinstance(result, BaseException), result
+        assert result.status_code == 200, result.text
+        claims.append(result.json()["claimed"])
+
+    assert claims.count(True) == 1, f"exactly one caller may celebrate, got {claims}"
+
+
+async def test_yesterdays_claim_does_not_suppress_this_morning(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The lock is a date, not a flag: a new day is a new celebration."""
+    await set_goal(client, auth_headers, 5)
+    _, word_ids = await seed(client, auth_headers, [f"w{i}" for i in range(5)])
+    await sleep_on_it(session_factory)
+    for word_id in word_ids:
+        await grade(client, auth_headers, word_id)
+    await client.post("/api/v1/study/session/complete", headers=auth_headers)
+    assert await celebrate(client, auth_headers) is True
+
+    async with session_factory() as session:
+        user = (await session.execute(select(UserModel))).scalars().first()
+        assert user is not None
+        # The *service's* yesterday, not the machine's. A user with no timezone
+        # has their day computed in UTC, so on a machine east of it the two
+        # disagree for the last hours of the local evening — and a test that
+        # backdates to the wrong yesterday passes all day and fails at night.
+        user.goal_celebrated_on = datetime.now(UTC).date() - timedelta(days=1)
+        await session.commit()
+
+    assert await celebrate(client, auth_headers) is True

@@ -579,8 +579,38 @@ Two consequences to know:
   are tomorrow's work. Counting scheduled answers separately is what stops one
   review of a fresh import banking the day.
 
+**Winning the day and being told about it are two locks, not one.**
+`streak_banked_on` says the day was *won* — it drives `day_state`, the at-risk
+flame and the arithmetic, and it must go on saying "banked" for the rest of the
+day whoever has been told what. `users.goal_celebrated_on` says somebody has
+been *told*, and is claimed through `POST /study/day/celebration`.
+
+That endpoint exists because the client's lock could not work. The celebration
+was gated on a `yyyy-mm-dd` stamp in each device's own storage, which stops one
+device celebrating twice and cannot stop two devices celebrating once each: a
+learner signed in on Android and in the PWA met one goal, and the second device
+later read `day_state: banked` on an ordinary refresh and congratulated them
+again. `claim_goal_celebration` is `bank_day`'s guarded statement with a
+different predicate, so its rowcount is again the only trustworthy answer and
+two devices asking in the same instant cannot both collect.
+
+It answers three ways, and the two refusals are **not** interchangeable.
+`taken` is final for the day. `unbanked` means the goal has not been met yet —
+a client counts the day's reviews on the device and can cross the goal a round
+trip before the grade that banks it has landed, so this is an ordinary "ask
+again". Collapsing it into `taken` would make the client stamp its own lock on
+an answer that only meant "too early", and the learner who had just earned the
+celebration would never see it. A rest day reads as `unbanked` too, and is
+never celebrated — the existing rule.
+
+The column is deliberately **not backfilled** (migration `b8e2f47c19d3`): NULL
+means "nobody has been told", so on the morning after deploy every learner whose
+day is already banked is eligible for exactly one celebration. Backfilling from
+`streak_banked_on` looks tidier and would silently swallow the celebration of
+anyone who met their goal in the hours before the deploy.
+
 `tests/unit/test_user_streak.py` holds the rule, `tests/api/test_streak.py` the
-endpoints and the race.
+endpoints, the race and the claim.
 
 ### Handles
 
