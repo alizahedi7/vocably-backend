@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from sqlalchemy import RowMapping
+
 from app.domain.entities.deck import Deck
 from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob, SenseHint
 from app.domain.entities.deck_member import DeckMember
@@ -183,6 +185,36 @@ def word_progress_to_entity(m: WordProgressModel) -> WordProgress:
         last_grade=ReviewGrade.from_ordinal(m.last_grade) if m.last_grade is not None else None,
         created_at=m.created_at,
         updated_at=m.updated_at,
+    )
+
+
+def word_progress_row_to_entity(row: RowMapping) -> WordProgress:
+    """The same translation as :func:`word_progress_to_entity`, from a raw row.
+
+    A write that ends in ``RETURNING`` gets column values rather than an ORM
+    instance, and it needs them precisely because the row that landed under a
+    concurrent write is not the one the caller computed. Both shapes have to be
+    readable, and the column list is long enough that two copies of it drift —
+    a field added to :class:`WordProgress` would be read by one caller and
+    silently dropped by the other.
+    """
+    return WordProgress(
+        user_id=row["user_id"],
+        word_id=row["word_id"],
+        deck_id=row["deck_id"],
+        box=LeitnerBox(row["box"]),
+        due_at=row["due_at"],
+        review_count=row["review_count"],
+        last_reviewed_at=row["last_reviewed_at"],
+        lapse_count=row["lapse_count"],
+        consecutive_correct=row["consecutive_correct"],
+        first_reviewed_at=row["first_reviewed_at"],
+        mastered_at=row["mastered_at"],
+        last_grade=(
+            ReviewGrade.from_ordinal(row["last_grade"]) if row["last_grade"] is not None else None
+        ),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
     )
 
 

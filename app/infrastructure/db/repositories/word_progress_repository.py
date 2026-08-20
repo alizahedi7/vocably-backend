@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.studied_word import StudiedWord
 from app.domain.entities.word_progress import WordProgress
-from app.domain.enums import LeitnerBox, ReviewGrade
+from app.domain.enums import LeitnerBox
 from app.domain.repositories.word_progress_repository import (
     DeckBoxTally,
     WordProgressRepository,
@@ -456,23 +456,4 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         # RETURNING so the caller answers with the row that actually landed
         # rather than the one it hoped for — under a double-tap those differ.
         row = (await self._session.execute(stmt)).mappings().one()
-        return WordProgress(
-            user_id=row["user_id"],
-            word_id=row["word_id"],
-            deck_id=row["deck_id"],
-            box=LeitnerBox(row["box"]),
-            due_at=row["due_at"],
-            review_count=row["review_count"],
-            last_reviewed_at=row["last_reviewed_at"],
-            lapse_count=row["lapse_count"],
-            consecutive_correct=row["consecutive_correct"],
-            first_reviewed_at=row["first_reviewed_at"],
-            mastered_at=row["mastered_at"],
-            last_grade=(
-                ReviewGrade.from_ordinal(row["last_grade"])
-                if row["last_grade"] is not None
-                else None
-            ),
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
+        return mappers.word_progress_row_to_entity(row)
