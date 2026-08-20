@@ -55,6 +55,17 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         )
 
     @staticmethod
+    def _box() -> ColumnElement[int]:
+        """Which box a joined row is in.
+
+        A missing progress row reads as box 1 — that is what "never studied"
+        means — so the coalesce is the whole of it. Named here for the reason
+        :meth:`_is_started` is: it is the definition of "box" for every read,
+        and a query that spells it out again is a query that can disagree.
+        """
+        return func.coalesce(WordProgressModel.box, int(LeitnerBox.NEW))
+
+    @staticmethod
     def _is_due(day_start: datetime, day_end: datetime) -> ColumnElement[bool]:
         """Whether a joined row is waiting for the learner *today*.
 
@@ -217,13 +228,20 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         limit: int | None = None,
         offset: int = 0,
         started_only: bool = False,
+        box: LeitnerBox | None = None,
         day_start: datetime | None = None,
     ) -> list[StudiedWord]:
         now = datetime.now(UTC)
         boundary = self._day_start(now, day_start)
         stmt = self._visible(user_id)
-        if started_only:
+        # Asking for a box implies asking for started cards, and the two cannot
+        # be separated: a card nobody has started is in no box at all, and its
+        # box-1 placeholder would answer `box=1` with a whole self-paced import
+        # the learner has never met.
+        if started_only or box is not None:
             stmt = stmt.where(self._is_started())
+        if box is not None:
+            stmt = stmt.where(self._box() == int(box))
         if deck_id is not None:
             stmt = stmt.where(WordModel.deck_id == deck_id)
         stmt = stmt.order_by(WordModel.created_at.desc(), WordModel.id.desc())
@@ -246,7 +264,7 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         # computed in SQL so the box lands in the GROUP BY rather than being
         # patched up in Python over a fetched result set — which is what the
         # home screen used to do, for every due row the learner had.
-        box = func.coalesce(WordProgressModel.box, int(LeitnerBox.NEW))
+        box = self._box()
         started = self._is_started()
         due = case(
             (and_(started, self._is_due(*self._day_bounds(now, day_start, day_end))), 1),

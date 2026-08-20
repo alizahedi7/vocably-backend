@@ -87,6 +87,7 @@ class WordProgressRepository(ABC):
         limit: int | None = None,
         offset: int = 0,
         started_only: bool = False,
+        box: LeitnerBox | None = None,
         day_start: datetime | None = None,
     ) -> list[StudiedWord]:
         """Every card the learner can see, started or not.
@@ -94,6 +95,11 @@ class WordProgressRepository(ABC):
         ``started_only`` is for callers that are choosing cards to *study*: the
         deck screen lists a self-paced deck in full, but a session must never
         deal a card nobody has started.
+
+        ``box`` narrows to one Leitner box and **implies** ``started_only``, for
+        a reason that is not a shortcut: a card nobody has started is in no box,
+        and the box-1 placeholder a missing progress row reads as would answer
+        ``box=1`` with a whole self-paced import the learner has never met.
         """
         ...
 

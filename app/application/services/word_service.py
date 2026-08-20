@@ -18,6 +18,7 @@ from app.domain.entities.studied_word import StudiedWord
 from app.domain.entities.word import Word
 from app.domain.entities.word_progress import WordProgress
 from app.domain.entities.xp import XpAction
+from app.domain.enums import LeitnerBox
 from app.domain.repositories.deck_member_repository import DeckMemberRepository
 from app.domain.repositories.deck_unit_repository import DeckUnitRepository
 from app.domain.repositories.user_repository import UserRepository
@@ -79,6 +80,7 @@ class WordService:
         deck_id: UUID | None = None,
         limit: int | None = None,
         offset: int = 0,
+        box: LeitnerBox | None = None,
     ) -> list[StudiedWord]:
         if deck_id is not None:
             await self._access.require_read(deck_id, user_id)
@@ -87,6 +89,7 @@ class WordService:
             deck_id=deck_id,
             limit=limit,
             offset=offset,
+            box=box,
             day_start=await self._day_start(user_id),
         )
 
