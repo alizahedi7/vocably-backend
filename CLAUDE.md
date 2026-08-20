@@ -521,6 +521,30 @@ only the answers the scheduler had actually asked for (see the streak, below).
 The roster is two grouped queries for the whole class — the N+1 here is the
 obvious way to write it wrong.
 
+### One box, rather than the whole library
+
+`GET /words?box=N` narrows the word list to one Leitner box. The app's box
+roster reads it; without it that screen fetched every card the learner owns and
+filtered on the device, which for somebody holding "1100 Words You Need to Know"
+is eleven hundred rows to show one box.
+
+- **It implies started**, and that is not a shortcut. A card nobody has started
+  is in no box at all, and the box-1 placeholder a missing progress row reads as
+  would answer `box=1` with a whole self-paced import the learner has never met
+  — exactly what self-pacing exists to prevent.
+- **The filter is `_box()`**, a named expression beside `_is_started()` and
+  `_is_due()`, and `tally_by_deck_and_box` now uses it too. One definition of
+  "which box", so the roster and the home screen's five figures cannot disagree
+  — `test_it_agrees_with_the_memory_strength_tally` is that assertion.
+- **It composes with `deck_id`** and spans every deck otherwise: a stage is a
+  fact about the learner, not about one deck. Two members hold two rows against
+  one `words.id`, so it is emphatically *their* box.
+- **Additive.** An Android build that predates the parameter omits it and lists
+  everything, exactly as before, which matters because such a build outlives the
+  deploy by weeks.
+
+`tests/api/test_list_words_by_box.py` holds it.
+
 ### Moving a card to a box is not reviewing it
 
 `POST /study/words/{id}/box` takes a target `box` and moves the card there. It

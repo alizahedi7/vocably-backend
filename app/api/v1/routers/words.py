@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query, status
 from app.api.deps import CurrentUser, WordServiceDep
 from app.api.v1.schemas.word import WordCreateIn, WordOut, WordUpdateIn
 from app.application.services.word_service import UNSET
+from app.domain.enums import LeitnerBox
 
 router = APIRouter(prefix="/words", tags=["words"])
 
@@ -19,6 +20,13 @@ async def list_words(
     current_user: CurrentUser,
     words: WordServiceDep,
     deck_id: Annotated[UUID | None, Query(description="Filter by deck")] = None,
+    # Narrows to one Leitner box, which is what the box roster reads. It
+    # **implies** started: a card nobody has started is in no box, and its
+    # box-1 placeholder would answer `box=1` with a whole self-paced import the
+    # learner has never met.
+    box: Annotated[
+        LeitnerBox | None, Query(description="Filter by Leitner box (started cards only)")
+    ] = None,
     # The ceiling has to clear the largest deck a learner can hold, because a
     # client that asks for the maximum and does not paginate gets a silently
     # truncated deck: no `total` comes back, so nothing downstream can tell a
@@ -29,7 +37,9 @@ async def list_words(
     limit: Annotated[int, Query(ge=1, le=2000, description="Page size")] = 100,
     offset: Annotated[int, Query(ge=0, description="Rows to skip")] = 0,
 ) -> list[WordOut]:
-    items = await words.list_words(current_user.id, deck_id=deck_id, limit=limit, offset=offset)
+    items = await words.list_words(
+        current_user.id, deck_id=deck_id, limit=limit, offset=offset, box=box
+    )
     return [WordOut.model_validate(w) for w in items]
 
 
