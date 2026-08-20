@@ -39,6 +39,17 @@ class GradeIn(BaseModel):
     session_id: UUID | None = None
 
 
+class SetBoxIn(BaseModel):
+    """Where the learner wants this card, overriding the scheduler.
+
+    A target box rather than a bare "reset", so the client's undo is the same
+    call with the box the card came from. A one-way ``/reset`` would need a
+    second endpoint to undo it, or none at all.
+    """
+
+    box: LeitnerBox
+
+
 class BoxCountOut(BaseModel):
     box: LeitnerBox
     label: str

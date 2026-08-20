@@ -405,6 +405,36 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         return len((await self._session.execute(stmt)).scalars().all())
 
     # ── writes ───────────────────────────────────────────────
+    async def set_box(self, progress: WordProgress) -> WordProgress:
+        """Write the box and due date the learner chose, leaving the rest.
+
+        An upsert like :meth:`record_grade`, because the row may not exist —
+        a card in an ordinary deck sits in box 1 from creation without one.
+        On insert the values are ``progress``'s own, which for such a card are
+        the untouched :meth:`WordProgress.unstudied` defaults; on conflict only
+        three columns move, so the review counters and timestamps a real review
+        wrote survive a move untouched.
+
+        No counter arithmetic here, and no ``ON CONFLICT`` guard either: two
+        moves of one card at the same instant have to resolve to one schedule
+        and the most recent answer is the right one to keep, exactly as
+        ``box``/``due_at`` already resolve under two concurrent grades.
+        """
+        model = WordProgressModel
+        values = mappers.word_progress_values(progress)
+        insert = upsert_insert(self._session)(model).values(**values)
+        stmt = insert.on_conflict_do_update(
+            index_elements=["user_id", "word_id"],
+            set_={
+                "deck_id": insert.excluded.deck_id,
+                "box": insert.excluded.box,
+                "due_at": insert.excluded.due_at,
+                "updated_at": insert.excluded.updated_at,
+            },
+        ).returning(*model.__table__.columns)
+        row = (await self._session.execute(stmt)).mappings().one()
+        return mappers.word_progress_row_to_entity(row)
+
     async def record_grade(self, progress: WordProgress, *, is_lapse: bool) -> WordProgress:
         """Persist a graded review, and return the row as it now stands.
 

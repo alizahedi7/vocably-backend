@@ -159,6 +159,28 @@ class WordProgress:
         self.updated_at = now
         return ReviewApplied(became_mastered=became_mastered)
 
+    def move_to_box(self, box: LeitnerBox, due_at: datetime, now: datetime) -> None:
+        """Put this card in a box because the learner said so.
+
+        The counterpart to :meth:`apply_review`, and the contrast is the whole
+        point of it being a separate method: a review is evidence about memory
+        and everything here records that evidence — ``review_count``,
+        ``lapse_count``, ``consecutive_correct``, ``last_grade``,
+        ``first_reviewed_at``, ``last_reviewed_at``. A move is not evidence. It
+        is the learner correcting the scheduler's belief ("I have not actually
+        got this one"), so it changes the schedule and writes down nothing that
+        would claim a review happened.
+
+        ``mastered_at`` in particular is left alone even when ``box`` is 5.
+        It exists so ``mastered_at - first_reviewed_at`` measures how long a
+        card took to learn, and a hand-set box did not learn it. Nor is it
+        cleared on the way down: it already records that mastery was once
+        reached, which stays true.
+        """
+        self.box = box
+        self.due_at = due_at
+        self.updated_at = now
+
     @property
     def lapse_rate(self) -> float:
         """Share of reviews that were lapses, in ``0.0..1.0``; 0.0 if never reviewed.

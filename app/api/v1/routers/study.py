@@ -12,6 +12,7 @@ from app.api.v1.schemas.study import (
     GoalCelebrationOut,
     GradeIn,
     SessionCompleteOut,
+    SetBoxIn,
     StudyOverviewOut,
     StudySessionOut,
 )
@@ -64,6 +65,40 @@ async def grade_word(
         session_id=payload.session_id,
         source=payload.source,
     )
+    return WordOut.model_validate(word)
+
+
+@router.post("/words/{word_id}/box", response_model=WordOut)
+async def set_word_box(
+    word_id: UUID,
+    payload: SetBoxIn,
+    current_user: CurrentUser,
+    study: StudyServiceDep,
+) -> WordOut:
+    """Move a card to a Leitner box because the learner said so.
+
+    The case it exists for is box 5: a mastered card does not come back for
+    three weeks, so a learner who knows they have forgotten one has no way to
+    say so through the review loop. This is that override, and its whole
+    contract is what it does *not* do — no review is logged, no XP is awarded,
+    no deck activity is recorded, and the study day and streak are untouched.
+
+    Deliberately not ``POST /grade`` with ``again``, which lands on the same
+    box and does all four: tidying a dozen mastered words would otherwise earn
+    XP for reviewing nothing, could bank the daily goal without a card being
+    answered, and would publish reviews that never happened to everyone else in
+    a shared deck.
+
+    The new due date is the target box's own interval from the start of the
+    learner's day — the same schedule a card *graded* into that box gets — so
+    box 1 comes back tomorrow rather than in this minute, and an undo restores
+    the schedule as well as the box.
+
+    **409** when the card is not in the learner's boxes at all: starting a
+    self-paced deck's cards is ``POST /decks/{id}/start``, and a scheduling
+    endpoint must not be a back door into it.
+    """
+    word = await study.set_box(current_user.id, word_id, payload.box)
     return WordOut.model_validate(word)
 
 
