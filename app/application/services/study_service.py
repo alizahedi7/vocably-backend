@@ -9,7 +9,7 @@ from typing import Literal
 from uuid import UUID
 
 from app.application.dto import BoxCount, MemoryStrength, StudyOverview
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.domain.entities.review_event import ReviewEvent
 from app.domain.entities.studied_word import StudiedWord
 from app.domain.entities.user import User
@@ -270,6 +270,66 @@ class StudyService:
 
         await self._award_for_grade(user_id, grade, source, today, now)
         return studied
+
+    async def set_box(self, user_id: UUID, word_id: UUID, box: LeitnerBox) -> StudiedWord:
+        """Move a card to a box because the learner asked, not because a review did.
+
+        The case this exists for is the last box. A card in box 5 does not come
+        back for three weeks and may not come back for months, so a learner who
+        knows perfectly well they have forgotten one has no way to say so
+        through the review loop — the loop's whole answer is "we will ask you in
+        twenty-one days". This is the override.
+
+        **It is not a review, and that is the entire contract.** Nothing here
+        writes a :class:`ReviewEvent`, awards XP, records deck activity, touches
+        the learner's study day or settles the streak. ``grade`` with
+        ``again`` would land on the same box and do all five, which is why it
+        is the wrong implementation however tempting the one-liner is: a
+        learner tidying fifteen mastered words would earn ninety XP for
+        reviewing nothing, could bank the daily goal and advance the streak
+        without answering a card, and would write fifteen reviews that never
+        happened into the rollup other members of a shared deck read as
+        "Active today · 24 reviews".
+
+        **The schedule is the box's own**, ``day_start + interval_for(box)`` —
+        the same expression :func:`leitner.review` uses, so a card moved to a
+        box is due exactly when a card graded into it would be. Box 1 therefore
+        comes back tomorrow rather than in this minute: the learner has just
+        said they do not know the word, and a repetition thirty seconds later
+        measures nothing. It is also what makes the client's undo land
+        correctly — moving back to box 5 restores box 5's schedule rather than
+        leaving the card due tomorrow.
+
+        **A card nobody has started cannot be moved.** Putting one into the
+        boxes is ``POST /decks/{id}/start``, and letting a scheduling endpoint
+        do it would smuggle a start through the back door — the learner would
+        find a word in their queue that they never took on.
+
+        Permitted to anyone who can *read* the card, exactly as grading is:
+        what it writes is the caller's own queue, which nobody else can see, so
+        a viewer of a class deck may move their own boxes like anyone else.
+        """
+        studied = await self._progress.get_for_user(word_id, user_id)
+        if studied is None:
+            # 404 rather than 403 for the reason grade does it: a 403 would
+            # confirm that another class's card exists.
+            raise NotFoundError("Word not found.")
+        if not studied.started:
+            raise ConflictError("This word is not in your boxes yet. Start it first.")
+
+        now = datetime.now(UTC)
+        user = await self._users.get(user_id)
+        timezone = user.timezone if user else None
+        progress = studied.progress
+        progress.move_to_box(
+            box,
+            day_start_for(timezone, now) + leitner.interval_for(box),
+            now,
+        )
+        return StudiedWord(
+            word=studied.word,
+            progress=await self._progress.set_box(progress),
+        )
 
     async def _award_for_grade(
         self,

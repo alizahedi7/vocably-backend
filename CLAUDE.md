@@ -521,6 +521,54 @@ only the answers the scheduler had actually asked for (see the streak, below).
 The roster is two grouped queries for the whole class — the N+1 here is the
 obvious way to write it wrong.
 
+### Moving a card to a box is not reviewing it
+
+`POST /study/words/{id}/box` takes a target `box` and moves the card there. It
+exists for box 5: a mastered card does not come back for three weeks, so a
+learner who knows they have forgotten one has no way to say so through the
+review loop — its whole answer is "we will ask you in twenty-one days".
+
+**The contract is what it does not do.** No `ReviewEvent`, no XP, no
+`daily_deck_activity` row, no `last_studied_on`, no `_settle_day`. Grading
+`again` lands on the same box and does all five, which is why it is the wrong
+implementation however tempting the one-liner is: a learner tidying fifteen
+mastered words would earn ninety XP for reviewing nothing, could bank the daily
+goal and advance the streak without answering a card, and would publish fifteen
+reviews that never happened to everyone else in a shared deck's roster.
+`WordProgress.move_to_box` is the counterpart to `apply_review` for exactly this
+reason — a review is evidence about memory and records itself as such; a move is
+the learner correcting the scheduler's belief.
+
+- **A target box, not a bare `/reset`.** That is what makes the client's undo
+  the same call with the box the card came from. A one-way reset needs a second
+  endpoint to undo it, or none at all.
+- **The schedule is the target box's own**, `day_start + interval_for(box)` —
+  the same expression `leitner.review` uses, so a card *moved* to a box is due
+  exactly when a card *graded* into it would be. Box 1 therefore comes back
+  tomorrow rather than in this minute (the learner has just said they do not
+  know it; asking again in thirty seconds measures nothing), and moving back up
+  restores box 5's twenty-one days rather than leaving the card due tomorrow.
+- **`mastered_at` is never stamped by a move, and never cleared by one.** It
+  exists so `mastered_at - first_reviewed_at` measures how long a card took to
+  learn, and a hand-set box did not learn it; on the way down, it already
+  records that mastery was once reached, which stays true.
+- **A card nobody has started is refused with 409.** Putting one into the boxes
+  is `POST /decks/{id}/start`; a scheduling endpoint must not be a back door
+  into it, or a learner would find a word in their queue they never took on.
+  Note this bites on shared decks too — `add_member` is self-paced, so a student
+  starts a card before they can move it.
+- **`set_box` is still an upsert**, because "started" and "has a progress row"
+  are different questions: a card in a deck the learner built is in their boxes
+  from creation and has no row until something writes one. On conflict it moves
+  three columns only, so a real review's counters survive.
+- Permitted to anyone who can **read** the card, exactly as grading is — what it
+  writes is the caller's own queue, which nobody else can see. A stranger gets
+  404 rather than 403, so the refusal cannot confirm another class's card exists.
+
+`tests/api/test_set_word_box.py` holds it, and most of what it holds is a
+negative: every assertion in `test_moving_a_card_is_not_a_review` fails if this
+is ever reimplemented as a grade.
+
 ### The streak advances once a day, when the day's goal is met
 
 **One rule:** the streak advances when the day's goal is met, at most once per

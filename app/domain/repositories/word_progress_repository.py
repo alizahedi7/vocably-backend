@@ -159,6 +159,22 @@ class WordProgressRepository(ABC):
         """
 
     @abstractmethod
+    async def set_box(self, progress: WordProgress) -> WordProgress:
+        """Persist a box and due date the learner chose, and nothing else.
+
+        Deliberately **not** :meth:`record_grade` with a grade that happens to
+        land on the right box. That method increments the review counters and
+        stamps the review timestamps, because it is recording that a review
+        happened; this one is recording that the learner disagreed with the
+        scheduler, which is not a review and must leave no trace of one.
+
+        Still an upsert, and for a reason that is easy to miss: a card in an
+        ordinary deck is *in the boxes* from the moment it is created but has no
+        progress row until something writes one. "Started" and "has a row" are
+        different questions — see :meth:`_is_started` in the adapter.
+        """
+
+    @abstractmethod
     async def record_grade(self, progress: WordProgress, *, is_lapse: bool) -> WordProgress:
         """Persist a graded review, returning the row as it now stands.
 
