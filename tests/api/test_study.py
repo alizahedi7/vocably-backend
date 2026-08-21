@@ -279,6 +279,48 @@ async def test_overview_reports_mastered_count_and_reviewed_today(
     assert body["reviewed_today"] == 5
 
 
+async def test_overview_reports_words_answered_at_least_once(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """`reviewed_count` is the pool the shuffle exercise draws from.
+
+    It is a different question from every other number here, and the box
+    distribution cannot answer it: a card graded "again" is back in box 1
+    beside the cards nobody has ever seen. Only the counter tells them apart.
+    """
+    _, word_ids = await seed_deck_with_words(client, auth_headers, ["one", "two", "three"])
+
+    fresh = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    # Three words written down, none of them tested.
+    assert fresh["total_count"] == 3
+    assert fresh["reviewed_count"] == 0
+
+    await client.post(
+        f"/api/v1/study/words/{word_ids[0]}/grade", headers=auth_headers, json={"grade": "good"}
+    )
+    body = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    assert body["reviewed_count"] == 1
+
+    # Straight back to box 1, and still a word this learner has met.
+    await client.post(
+        f"/api/v1/study/words/{word_ids[0]}/grade", headers=auth_headers, json={"grade": "again"}
+    )
+    back = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    assert back["memory_strength"]["distribution"][0]["count"] == 3
+    assert back["reviewed_count"] == 1
+
+    # A second card, answered twice: it is words that are counted, not answers.
+    for _ in range(2):
+        await client.post(
+            f"/api/v1/study/words/{word_ids[1]}/grade",
+            headers=auth_headers,
+            json={"grade": "good"},
+        )
+    both = (await client.get("/api/v1/study/overview", headers=auth_headers)).json()
+    assert both["reviewed_count"] == 2
+    assert both["total_count"] == 3
+
+
 async def test_overview_keys_the_client_hard_casts_are_all_present(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
@@ -291,6 +333,7 @@ async def test_overview_keys_the_client_hard_casts_are_all_present(
         "learned_count",
         "mastered_count",
         "reviewed_today",
+        "reviewed_count",
         "due_deck_count",
         "estimated_minutes",
         "streak",

@@ -274,6 +274,15 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
         # screen still has to say "504 words", and the boxes still have to say
         # "12 of them are yours". One query answers both.
         started_flag = case((started, True), else_=False)
+        # Answered at least once — a fact the box cannot carry. A card graded
+        # "again" is back in box 1 beside cards nobody has ever seen, so
+        # anything selecting on "words this learner has actually met" has to
+        # read the counter. A missing progress row has no counter and is not
+        # one of them.
+        reviewed = case(
+            (and_(started, func.coalesce(WordProgressModel.review_count, 0) > 0), 1),
+            else_=0,
+        )
         stmt = (
             select(
                 WordModel.deck_id,
@@ -281,6 +290,7 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
                 started_flag.label("started"),
                 func.count().label("word_count"),
                 func.coalesce(func.sum(due), 0).label("due_count"),
+                func.coalesce(func.sum(reviewed), 0).label("reviewed_count"),
             )
             .join(
                 DeckMemberModel,
@@ -308,8 +318,16 @@ class SqlAlchemyWordProgressRepository(WordProgressRepository):
                 started=bool(started_value),
                 word_count=int(word_count),
                 due_count=int(due_count),
+                reviewed_count=int(reviewed_count),
             )
-            for deck_id, box_value, started_value, word_count, due_count in rows
+            for (
+                deck_id,
+                box_value,
+                started_value,
+                word_count,
+                due_count,
+                reviewed_count,
+            ) in rows
         ]
 
     async def list_unstarted(
