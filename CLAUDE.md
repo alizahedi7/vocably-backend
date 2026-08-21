@@ -924,6 +924,17 @@ overwrite it.
 different number from `learned_count` (boxes 4 and 5). A derived badge cannot
 go stale or disagree with the words.
 
+**`reviewed_count` is the one number the boxes cannot express.** It counts the
+words this learner has answered at least once, and it exists because the client's
+shuffle exercise ("test everything you know, nothing is scored") may only ask
+about words they have actually met — a word that has been written down has been
+read, not tested. Neither of the numbers beside it will do: `total_count`
+includes cards nobody has answered, and the distribution cannot separate a card
+graded `again` from one never seen, since box 1 holds both. It rides on
+`DeckBoxTally`, so it is the same grouped query the whole overview is, and it is
+gated on `started` like every other figure there — an unstarted card in a
+self-paced deck has no progress row, no counter and no place in any exercise.
+
 ## Review history
 
 Every press of Again/Hard/Good/Easy appends one immutable row to `word_reviews`.

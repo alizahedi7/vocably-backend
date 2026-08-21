@@ -85,7 +85,7 @@ class StudyService:
         )
 
         per_box: dict[LeitnerBox, int] = defaultdict(int)
-        total = due_count = learned = 0
+        total = due_count = learned = reviewed = 0
         due_decks: set[UUID] = set()
         for tally in tallies:
             # A card in a self-paced deck that nobody has started is not part of
@@ -96,6 +96,7 @@ class StudyService:
             per_box[tally.box] += tally.word_count
             total += tally.word_count
             due_count += tally.due_count
+            reviewed += tally.reviewed_count
             if tally.box in LEARNED_BOXES:
                 learned += tally.word_count
             if tally.due_count:
@@ -118,6 +119,7 @@ class StudyService:
             due_count=due_count,
             total_count=total,
             learned_count=learned,
+            reviewed_count=reviewed,
             mastered_count=per_box.get(LeitnerBox.MASTERED, 0),
             reviewed_today=totals.reviews,
             due_deck_count=len(due_decks),

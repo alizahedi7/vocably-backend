@@ -83,6 +83,13 @@ class StudyOverview:
     #: counts boxes 4 and 5 — the mastery badges are a pure function of this
     #: one, which is why no badge table exists.
     mastered_count: int
+    #: Words this learner has answered at least once — the pool the shuffle
+    #: exercise draws from, and deliberately not ``total_count``. A word that
+    #: has only been written down has been read, not tested, and asking it back
+    #: in a "test everything you know" drill tests nothing. It cannot be
+    #: derived from the boxes: a card answered wrong and a card never answered
+    #: are both in box 1.
+    reviewed_count: int
     #: Cards answered today, in the learner's own timezone. The client keeps a
     #: local counter too and takes the larger of the two: a grade that never
     #: reached the server is still work the learner did.
