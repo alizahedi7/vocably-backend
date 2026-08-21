@@ -33,6 +33,14 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
 
 ### Added
 
+- **`reviewed_count` on `GET /study/overview`** — words this learner has
+  answered at least once, ever, across every deck. The Practice tab's shuffle
+  exercise asks only about words the learner has actually met, and no other
+  number here answers that: `total_count` includes cards that have only been
+  written down, and the box distribution cannot tell a card graded "again" from
+  one nobody has ever seen — both sit in box 1. Computed in the same grouped
+  tally as everything else on the overview, so it costs no extra query.
+  Additive: a client that predates the field ignores it.
 - **A phone and an email on one account.** `POST /auth/link/request-otp` sends
   a code to a phone number (SMS) or an email (LetterMint), `POST
   /auth/link/verify-otp` attaches it, and `DELETE /auth/link/{email|phone}`
