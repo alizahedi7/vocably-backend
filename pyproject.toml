@@ -15,7 +15,13 @@ dependencies = [
     "pyjwt[crypto]>=2.10",
     "python-multipart>=0.0.17",
     "httpx>=0.28",
-    "anthropic>=0.69",
+    # Upper bound deliberate: anthropic 1.0 swapped its HTTP transport to
+    # `httpx2`, so `AsyncAnthropic(http_client=...)` no longer accepts the
+    # `httpx.AsyncClient` this project builds for forced headers. `uv.lock` is
+    # not committed, so CI resolves fresh on every run and picked the new major
+    # up the day it was published — turning a green tree red without a commit.
+    # Lift it with the migration, not before.
+    "anthropic>=0.69,<1",
     "openai>=1.54",
     "celery[redis]>=5.4",
     "pyyaml>=6.0",
