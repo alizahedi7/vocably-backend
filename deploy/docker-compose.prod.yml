@@ -186,6 +186,13 @@ services:
       # the admin dashboard still starts cleanly. Set this once the DNS
       # record and the vocably-admin container both exist.
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:-}
+      # The marketing site (vocably-landing) on the apex, reached over
+      # vocably-net like the dashboard above. Unset-tolerant for the same
+      # reason. LANDING_WWW_DOMAIN has no site block yet — www has no A
+      # record, and Caddy would retry ACME for it forever — but it is passed
+      # through so enabling that block is one uncomment plus one .env line.
+      LANDING_DOMAIN: ${LANDING_DOMAIN:-}
+      LANDING_WWW_DOMAIN: ${LANDING_WWW_DOMAIN:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # The PWA (vocably-mobile), published as static files by that repo's
