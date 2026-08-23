@@ -950,6 +950,70 @@ async def test_cancelling_cannot_end_a_friendship(
     ] == ["sender_x"]
 
 
+async def test_accepting_a_shared_deck_makes_the_friendship_mutual(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """Sharing writes one half; taking the deck is what writes the other.
+
+    The sender's half needs no consent — they typed the handle. The recipient's
+    did, and for as long as the offer sat unanswered there was none to have. So
+    it is written at the one moment the recipient has actually agreed to
+    something: accepting the deck. Before that, the sender holds them and they
+    hold nobody, which is the half-friendship this closes.
+    """
+    deck_id = await create_deck(client, auth_headers, "Trip")
+    friend_id = await named(client, make_user, "+989121112044", "parisa")
+    await client.patch("/api/v1/users/me", headers=auth_headers, json={"username": "sender_x"})
+    await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
+    )
+
+    # Offered but unanswered: one-sided, and deliberately so.
+    assert (await client.get("/api/v1/users/me/friends", headers=bearer(friend_id))).json()[
+        "friends"
+    ] == []
+
+    offer = (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()["decks"][0]
+    taken = await client.post(
+        f"/api/v1/decks/shared/{offer['id']}/accept", headers=bearer(friend_id)
+    )
+    assert taken.status_code == 200, taken.text
+
+    assert [
+        f["username"]
+        for f in (await client.get("/api/v1/users/me/friends", headers=bearer(friend_id))).json()[
+            "friends"
+        ]
+    ] == ["sender_x"]
+    # And the sender keeps the half they already had, rather than gaining a
+    # duplicate of it.
+    assert [
+        f["username"]
+        for f in (await client.get("/api/v1/users/me/friends", headers=auth_headers)).json()[
+            "friends"
+        ]
+    ] == ["parisa"]
+
+
+async def test_declining_a_shared_deck_befriends_nobody(
+    client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
+) -> None:
+    """Refusing is not agreeing, so nothing is written back."""
+    deck_id = await create_deck(client, auth_headers, "Trip")
+    friend_id = await named(client, make_user, "+989121112045", "parisa")
+    await client.patch("/api/v1/users/me", headers=auth_headers, json={"username": "sender_x"})
+    await client.post(
+        f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "parisa"}
+    )
+
+    offer = (await client.get("/api/v1/decks/shared", headers=bearer(friend_id))).json()["decks"][0]
+    await client.delete(f"/api/v1/decks/shared/{offer['id']}", headers=bearer(friend_id))
+
+    assert (await client.get("/api/v1/users/me/friends", headers=bearer(friend_id))).json()[
+        "friends"
+    ] == []
+
+
 async def test_sharing_a_deck_records_the_recipient_without_asking(
     client: AsyncClient, auth_headers: dict[str, str], make_user: UserFactory
 ) -> None:

@@ -78,6 +78,12 @@ class SharedDeckView:
     #: Who it was offered to. Checked before accepting or declining, so a
     #: share id belonging to someone else cannot be redeemed.
     to_user_id: UUID
+    #: Who sent it. Accepting writes the friendship back to them, which is the
+    #: one moment the recipient has actually agreed to anything. None once the
+    #: sender has deleted their account — the offer outlives them, because what
+    #: matters to the recipient is the deck — and then there is nobody to
+    #: befriend rather than a friendship to invent.
+    from_user_id: UUID | None
     #: What accepting makes them.
     role: str
     word_count: int

@@ -382,6 +382,7 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
             share_id=share.id,
             deck=mappers.deck_to_entity(deck),
             to_user_id=share.to_user_id,
+            from_user_id=share.from_user_id,
             role=share.role,
             word_count=int(words),
             from_name=name or "",

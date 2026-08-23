@@ -913,6 +913,16 @@ and could not see it had happened. So `friend_links.accepted` splits the two:
   is only ever typed once. It is a stronger act than the request it would
   replace, the recipient has a deck offer of their own to answer, and the sharer
   already knew the handle — two questions about one act is one too many.
+- **Accepting the deck is what makes that friendship mutual.** The share writes
+  the sender's half only, and until this it wrote nothing else ever: the sender
+  held the recipient, the recipient held nobody, and taking somebody's deck left
+  them off your own friends list for good. A friendship one person holds is not
+  one. `DeckDiscoveryService.accept` writes the reciprocal link, at the first
+  moment the recipient has actually agreed to anything — which is exactly why no
+  friend request is sent beside the deck offer, and why declining writes
+  nothing. It needs `SharedDeckView.from_user_id`, which is `UUID | None`: the
+  offer outlives a sender who deletes their account, and then there is nobody to
+  befriend rather than a friendship to invent.
 
 Existing links were backfilled to accepted (`a1d47f9c2b58`): they were made
 under the old rule, and asking people to re-approve decisions already taken is

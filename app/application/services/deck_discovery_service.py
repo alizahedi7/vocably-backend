@@ -277,6 +277,20 @@ class DeckDiscoveryService:
                 self_paced=True,
             )
         )
+        # Taking the deck is what makes the friendship mutual, and this is the
+        # first moment it can be. Sharing writes the sender's half outright —
+        # they typed the handle, so nothing is revealed and there is nothing to
+        # ask — but that left a half-friendship for as long as the offer sat
+        # unanswered: the sender held the recipient, the recipient held nobody.
+        # A friendship one person holds is not one, and it showed as exactly
+        # that: accept a deck and the person who sent it is still not on your
+        # list. Accepting is the recipient's own affirmative act, so it needs no
+        # second question of its own — which is the whole reason the share path
+        # never sent a friend request beside the deck offer.
+        # None when the sender has since deleted their account: the offer
+        # outlives them, and there is nobody left to hold the other half.
+        if share.from_user_id is not None:
+            await self._friends.link(user_id, share.from_user_id)
         await self._discovery.withdraw(share_id)
         return share.deck
 
