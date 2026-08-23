@@ -43,7 +43,7 @@ async def list_public_decks(
     current_user: CurrentUser,
     discovery: DeckDiscoveryServiceDep,
     category: Annotated[str | None, Query(max_length=32)] = None,
-    q: Annotated[str | None, Query(max_length=80, description="Name or author handle")] = None,
+    q: Annotated[str | None, Query(max_length=80, description="Name or author username")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PublicDecksOut:
@@ -208,6 +208,47 @@ async def list_friend_requests(
     """
     views = await friends.list_requests(current_user.id)
     return FriendRequestsOut(requests=[FriendRequestOut.from_view(v) for v in views])
+
+
+@friends_router.get("/requests/sent", response_model=FriendRequestsOut)
+async def list_sent_friend_requests(
+    current_user: CurrentUser, friends: FriendServiceDep
+) -> FriendRequestsOut:
+    """What you have asked, and nobody has answered yet.
+
+    There deliberately was no such list: declining is silent and never reported
+    back, so a list of unanswered requests doubles as a list of people who may
+    have said no. What that reasoning cost was larger than what it protected —
+    somebody who asked to add a friend got a toast and then no record anywhere
+    that they had asked, could not tell an unanswered request from one that
+    never left the phone, and had no way to take one back.
+
+    The silence that mattered survives. Nobody is told they were declined: a
+    declined request leaves this list exactly as an accepted one does, and only
+    the appearance of a friendship separates the two. Withdrawn requests read
+    the same way, and the sender may always ask again.
+
+    Declared before ``/{username}`` so the literal path wins the match, exactly
+    as ``/requests`` above it does.
+    """
+    views = await friends.list_sent(current_user.id)
+    return FriendRequestsOut(requests=[FriendRequestOut.from_view(v) for v in views])
+
+
+@friends_router.delete("/requests/sent/{username}", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_sent_friend_request(
+    username: str,
+    current_user: CurrentUser,
+    friends: FriendServiceDep,
+) -> None:
+    """Take back a request you sent. The other person is not told either.
+
+    Deliberately not ``DELETE /users/me/friends/{username}``, which unlinks in
+    both directions whatever the state: a request accepted between the tap and
+    the call would then be answered by unfriending somebody who had just said
+    yes. This touches an unanswered outgoing request and nothing else.
+    """
+    await friends.cancel(current_user.id, username=username)
 
 
 @friends_router.post("/requests/{username}/accept", response_model=FriendOut)

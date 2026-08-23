@@ -210,11 +210,13 @@ class FriendsOut(BaseModel):
 
 
 class FriendRequestOut(BaseModel):
-    """Somebody waiting on this learner to answer.
+    """One unanswered request — whoever is asking, or whoever is being asked.
 
     Deliberately the same two identity fields a friend carries and nothing
-    else. How long they have waited is on the row; how many times they have
+    else. How long it has been out is on the row; how many times somebody has
     asked is not reported, and neither is whether the recipient has looked.
+    The same shape serves both ends: which end it describes is the endpoint's
+    question, not the row's.
     """
 
     username: str

@@ -57,7 +57,7 @@ async def search_people(
     users: UserServiceDep,
     q: Annotated[
         str,
-        Query(max_length=USERNAME_MAX_LENGTH + 1, description="Start of a handle"),
+        Query(max_length=USERNAME_MAX_LENGTH + 1, description="Start of a username"),
     ],
 ) -> PeopleOut:
     """Find someone by the start of their handle, so a sharer can pick a name

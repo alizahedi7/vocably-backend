@@ -94,19 +94,19 @@ async def test_inviting_an_unknown_or_own_handle_is_refused(
         f"/api/v1/decks/{deck_id}/members", headers=auth_headers, json={"username": "ghost"}
     )
     assert nobody.status_code == 422
-    assert nobody.json()["detail"] == "No one uses that handle"
+    assert nobody.json()["detail"] == "No one uses that username"
 
     myself = await client.post(
         f"/api/v1/decks/{deck_id}/members", headers=auth_headers, json={"username": "teacher"}
     )
     assert myself.status_code == 422
-    assert myself.json()["detail"] == "That is your own handle"
+    assert myself.json()["detail"] == "That is your own username"
 
     blank = await client.post(
         f"/api/v1/decks/{deck_id}/members", headers=auth_headers, json={"username": "  "}
     )
     assert blank.status_code == 422
-    assert blank.json()["detail"] == "Enter a handle first"
+    assert blank.json()["detail"] == "Enter a username first"
 
 
 async def test_the_invite_link_lets_a_class_join_and_keeps_its_code(

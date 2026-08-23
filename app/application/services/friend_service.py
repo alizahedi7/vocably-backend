@@ -44,6 +44,17 @@ class FriendService:
         """Who has asked to add this learner and is waiting on an answer."""
         return await self._friends.list_requests_for(user_id)
 
+    async def list_sent(self, user_id: UUID) -> list[FriendRequestView]:
+        """What this learner has asked and nobody has answered yet.
+
+        The other end of the same rows, and the answer to "did that go?" — which
+        had no answer at all while adding somebody produced a toast and then
+        nothing that outlived it. It reveals only that a request is still out:
+        an answered one leaves the list whichever way it was answered, so this
+        is never a list of people who said no.
+        """
+        return await self._friends.list_sent_by(user_id)
+
     async def add(self, user_id: UUID, *, username: str) -> FriendRequestView:
         """Ask to add somebody. Nothing happens to their list until they agree.
 
@@ -76,7 +87,7 @@ class FriendService:
             # a moment ago, one that never existed, and one addressed to
             # somebody else are the same answer — and must be, or this becomes a
             # way to ask who has been asking whom.
-            raise NotFoundError("No request from that handle")
+            raise NotFoundError("No request from that username")
         return FriendView(
             username=requester.username or username.strip().lower(),
             name=requester.name,
@@ -93,23 +104,36 @@ class FriendService:
         """
         requester = await self._users.get_by_username(username.strip().lower())
         if requester is None:
-            raise NotFoundError("No one uses that handle")
+            raise NotFoundError("No one uses that username")
         await self._friends.decline(user_id, requester.id)
+
+    async def cancel(self, user_id: UUID, *, username: str) -> None:
+        """Take back a request this learner sent, before it is answered.
+
+        Not [remove]: that unlinks in both directions whatever the state, so a
+        request accepted between the tap and the call would be answered by
+        quietly unfriending somebody. Withdrawing one that is no longer out is
+        not an error — the caller wanted it gone, and it is.
+        """
+        friend = await self._users.get_by_username(username.strip().lower())
+        if friend is None:
+            raise NotFoundError("No one uses that username")
+        await self._friends.cancel(user_id, friend.id)
 
     async def remove(self, user_id: UUID, *, username: str) -> None:
         """Remove somebody, from both lists. Also the way to undo a request."""
         friend = await self._users.get_by_username(username.strip().lower())
         if friend is None:
-            raise NotFoundError("No one uses that handle")
+            raise NotFoundError("No one uses that username")
         await self._friends.unlink(user_id, friend.id)
 
     async def _resolve(self, username: str, *, actor_id: UUID) -> User:
         handle = username.strip().lower()
         if not handle:
-            raise ValidationError("Enter a handle first")
+            raise ValidationError("Enter a username first")
         friend = await self._users.get_by_username(handle)
         if friend is None:
-            raise ValidationError("No one uses that handle")
+            raise ValidationError("No one uses that username")
         if friend.id == actor_id:
-            raise ValidationError("That is your own handle")
+            raise ValidationError("That is your own username")
         return friend

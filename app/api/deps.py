@@ -543,7 +543,7 @@ async def enforce_username_check_limit(current_user: CurrentUser) -> None:
     if limit <= 0:
         return
     if not await _hourly_shared_limiter().allow(f"username-check:{current_user.id}", limit):
-        raise RateLimitedError("Too many handle checks. Please try again shortly.")
+        raise RateLimitedError("Too many username checks. Please try again shortly.")
 
 
 async def enforce_user_search_limit(current_user: CurrentUser) -> None:

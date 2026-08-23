@@ -121,7 +121,7 @@ async def test_two_people_racing_for_one_handle_get_a_409_not_a_500(
     assert codes == [200, 409], [r.json() for r in responses]
 
     loser = next(r for r in responses if r.status_code == 409)
-    assert loser.json()["detail"] == "That handle is already taken."
+    assert loser.json()["detail"] == "That username is already taken."
 
 
 async def test_concurrent_invite_opens_mint_one_code(

@@ -871,6 +871,14 @@ That distinction is the whole design and is easy to invert by accident:
   the sender is not told either way.
 - A share id that is not yours **404s**, like everything else keyed by id.
 
+**The word the learner reads is "username"; this file and the code say
+"handle".** A deliberate split, and the one thing to keep in step: these
+messages are *copy*, not error codes — the app renders `detail` verbatim — so a
+string here that still says "handle" puts a second word for one thing on a
+screen whose own labels say username. Change them alongside `l10n.dart` in the
+app. The identifiers (`username` columns, `get_by_username`, the handle locals)
+are unaffected either way.
+
 **Adding a friend is an offer; sharing a deck is not.** Friends began as a
 recency list rather than a social graph — one-directional and consent-free,
 because the row revealed nothing the sharer did not already know, having typed
@@ -881,9 +889,25 @@ and could not see it had happened. So `friend_links.accepted` splits the two:
 - `POST /users/me/friends` writes a **pending** row and returns the request. It
   is idempotent and never demotes a friendship — a stale client re-asking
   somebody already accepted must not reopen a settled question.
-- `GET /users/me/friends/requests` is the recipient's half; `GET
-  /users/me/friends` is accepted rows only, because a request nobody answered is
-  not a friend and listing one would tell the sender something untrue.
+- `GET /users/me/friends/requests` is the recipient's half and `GET
+  /users/me/friends/requests/sent` is the sender's, over the same rows read from
+  the other end; `GET /users/me/friends` is accepted rows only, because a
+  request nobody answered is not a friend and listing one would tell the sender
+  something untrue.
+- **The sender's half deliberately did not exist**, on the reasoning that
+  declining is silent and never reported back, so a list of unanswered requests
+  doubles as a list of people who may have said no. That cost more than it
+  protected: somebody who asked got a toast and then no record anywhere that
+  they had asked, could not tell an unanswered request from one that never left
+  the phone, and had no way to take one back. Every product that ships this
+  shows the sender what they sent, and for that reason. The silence that
+  mattered survives — a declined request leaves the list exactly as an accepted
+  one does, and only the appearance of a friendship separates them.
+- `DELETE /users/me/friends/requests/sent/{username}` withdraws one, and is
+  deliberately **not** `DELETE /users/me/friends/{username}`: that unlinks in
+  both directions whatever the state, so a request accepted between the tap and
+  the call would be answered by unfriending somebody who had just said yes. The
+  cancel touches an unaccepted outgoing row and nothing else.
 - Accepting writes the **reciprocal** row. A friendship somebody agreed to is
   mutual, and `unlink` deletes both directions for the same reason — half a
   removed friendship is somebody still holding you on a list you are no longer
@@ -897,6 +921,16 @@ and could not see it had happened. So `friend_links.accepted` splits the two:
   is only ever typed once. It is a stronger act than the request it would
   replace, the recipient has a deck offer of their own to answer, and the sharer
   already knew the handle — two questions about one act is one too many.
+- **Accepting the deck is what makes that friendship mutual.** The share writes
+  the sender's half only, and until this it wrote nothing else ever: the sender
+  held the recipient, the recipient held nobody, and taking somebody's deck left
+  them off your own friends list for good. A friendship one person holds is not
+  one. `DeckDiscoveryService.accept` writes the reciprocal link, at the first
+  moment the recipient has actually agreed to anything — which is exactly why no
+  friend request is sent beside the deck offer, and why declining writes
+  nothing. It needs `SharedDeckView.from_user_id`, which is `UUID | None`: the
+  offer outlives a sender who deletes their account, and then there is nobody to
+  befriend rather than a friendship to invent.
 
 Existing links were backfilled to accepted (`a1d47f9c2b58`): they were made
 under the old rule, and asking people to re-approve decisions already taken is
