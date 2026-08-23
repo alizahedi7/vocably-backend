@@ -59,6 +59,24 @@ class SqlAlchemyFriendRepository(FriendRepository):
             for username, name, requested_at in rows
         ]
 
+    async def list_sent_by(self, user_id: UUID) -> list[FriendRequestView]:
+        # The same rows as `list_requests_for`, joined the other way round: it
+        # names whoever is *asking*, this names whoever is *being asked*.
+        stmt = (
+            select(UserModel.username, UserModel.name, FriendLinkModel.created_at)
+            .join(UserModel, UserModel.id == FriendLinkModel.friend_user_id)
+            .where(
+                FriendLinkModel.user_id == user_id,
+                FriendLinkModel.accepted.is_(False),
+            )
+            .order_by(FriendLinkModel.created_at.desc(), UserModel.username)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [
+            FriendRequestView(username=username or "", name=name, requested_at=requested_at)
+            for username, name, requested_at in rows
+        ]
+
     async def request(self, user_id: UUID, friend_user_id: UUID, *, at: datetime) -> None:
         stmt = (
             upsert_insert(self._session)(FriendLinkModel)
@@ -147,6 +165,19 @@ class SqlAlchemyFriendRepository(FriendRepository):
                 # Only an unanswered request. A friendship is ended by
                 # `unlink`, and letting this delete one would make "decline"
                 # able to quietly remove somebody already accepted.
+                FriendLinkModel.accepted.is_(False),
+            )
+        )
+
+    async def cancel(self, user_id: UUID, friend_user_id: UUID) -> None:
+        await self._session.execute(
+            delete(FriendLinkModel).where(
+                FriendLinkModel.user_id == user_id,
+                FriendLinkModel.friend_user_id == friend_user_id,
+                # Unaccepted only. Once they have said yes the row is a
+                # friendship, and ending one is `unlink`'s job in both
+                # directions — a stale client pressing "cancel" on a request
+                # answered a second ago must not half-remove the friend it made.
                 FriendLinkModel.accepted.is_(False),
             )
         )

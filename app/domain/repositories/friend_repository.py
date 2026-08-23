@@ -17,13 +17,27 @@ class FriendView:
 
 @dataclass(frozen=True, slots=True)
 class FriendRequestView:
-    """Somebody who has asked to add this learner, and is waiting.
+    """One unanswered request, seen from either end.
 
-    The sender's half is deliberately not modelled: there is no "sent requests"
-    list, for the same reason the deck share sheet has no way to withdraw an
-    invitation — declining is the recipient's alone and is never reported back,
-    so a list of unanswered requests would be a list of people who may simply
-    have said no.
+    The same two identity fields a friend carries plus when it was sent, and
+    which end it is read from is the caller's question rather than the view's:
+    :meth:`FriendRepository.list_requests_for` names whoever is asking, and
+    :meth:`FriendRepository.list_sent_by` names whoever is being asked.
+
+    **The sender's half used to be deliberately absent**, on the reasoning that
+    declining is silent and never reported back, so a list of unanswered
+    requests would double as a list of people who may simply have said no. The
+    cost of that turned out to be larger than the leak it prevented: somebody
+    who asked to add a friend saw a toast and then nothing at all — no record on
+    any screen that they had asked, no way to tell an unanswered request from
+    one that never left the device, and no way to take one back. Every product
+    that does this shows the sender their sent requests, and for that reason.
+
+    What survives is the part that mattered. Nobody is *told* they were
+    declined: a declined request leaves this list exactly as an accepted one
+    does, and the difference between them is visible only in whether a
+    friendship appeared. The sender learns "this is no longer outstanding",
+    which is also true of a request they withdrew themselves, and may ask again.
     """
 
     username: str
@@ -52,6 +66,15 @@ class FriendRepository(ABC):
         Asking again refreshes the request that is out rather than stacking a
         second — and if the two are already friends it changes nothing, so a
         stale client cannot turn an answered question back into an open one.
+        """
+
+    @abstractmethod
+    async def list_sent_by(self, user_id: UUID) -> list[FriendRequestView]:
+        """Requests **this** user has sent that nobody has answered, newest first.
+
+        The mirror of :meth:`list_requests_for`, over the same rows read from
+        the other end. It is what lets the sender see that an ask is out — see
+        :class:`FriendRequestView` for why that is worth the little it reveals.
         """
 
     @abstractmethod
@@ -89,3 +112,15 @@ class FriendRepository(ABC):
     @abstractmethod
     async def decline(self, user_id: UUID, requester_id: UUID) -> None:
         """Delete a request addressed to this user. The sender is not told."""
+
+    @abstractmethod
+    async def cancel(self, user_id: UUID, friend_user_id: UUID) -> None:
+        """Withdraw an unanswered request **this** user sent.
+
+        Deliberately narrower than :meth:`unlink`, which removes a friendship in
+        both directions whatever its state: taking back a question must not be
+        able to end a friendship, and the two arrive at the same row the moment
+        the other person accepts. So this touches an unaccepted outgoing row and
+        nothing else, and withdrawing one that has just been accepted does
+        nothing rather than quietly unfriending somebody who said yes.
+        """
