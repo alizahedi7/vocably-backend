@@ -230,12 +230,12 @@ class DeckDiscoveryService:
 
         handle = to_username.strip().lower()
         if not handle:
-            raise ValidationError("Enter a handle to share with")
+            raise ValidationError("Enter a username to share with")
         recipient = await self._users.get_by_username(handle)
         if recipient is None:
-            raise ValidationError("No one uses that handle")
+            raise ValidationError("No one uses that username")
         if recipient.id == user_id:
-            raise ValidationError("That is your own handle")
+            raise ValidationError("That is your own username")
         if await self._members.get(deck_id, recipient.id) is not None:
             raise ConflictError("They already have this deck")
 

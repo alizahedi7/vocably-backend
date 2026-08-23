@@ -871,6 +871,14 @@ That distinction is the whole design and is easy to invert by accident:
   the sender is not told either way.
 - A share id that is not yours **404s**, like everything else keyed by id.
 
+**The word the learner reads is "username"; this file and the code say
+"handle".** A deliberate split, and the one thing to keep in step: these
+messages are *copy*, not error codes — the app renders `detail` verbatim — so a
+string here that still says "handle" puts a second word for one thing on a
+screen whose own labels say username. Change them alongside `l10n.dart` in the
+app. The identifiers (`username` columns, `get_by_username`, the handle locals)
+are unaffected either way.
+
 **Adding a friend is an offer; sharing a deck is not.** Friends began as a
 recency list rather than a social graph — one-directional and consent-free,
 because the row revealed nothing the sharer did not already know, having typed

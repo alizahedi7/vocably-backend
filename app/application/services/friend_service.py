@@ -87,7 +87,7 @@ class FriendService:
             # a moment ago, one that never existed, and one addressed to
             # somebody else are the same answer — and must be, or this becomes a
             # way to ask who has been asking whom.
-            raise NotFoundError("No request from that handle")
+            raise NotFoundError("No request from that username")
         return FriendView(
             username=requester.username or username.strip().lower(),
             name=requester.name,
@@ -104,7 +104,7 @@ class FriendService:
         """
         requester = await self._users.get_by_username(username.strip().lower())
         if requester is None:
-            raise NotFoundError("No one uses that handle")
+            raise NotFoundError("No one uses that username")
         await self._friends.decline(user_id, requester.id)
 
     async def cancel(self, user_id: UUID, *, username: str) -> None:
@@ -117,23 +117,23 @@ class FriendService:
         """
         friend = await self._users.get_by_username(username.strip().lower())
         if friend is None:
-            raise NotFoundError("No one uses that handle")
+            raise NotFoundError("No one uses that username")
         await self._friends.cancel(user_id, friend.id)
 
     async def remove(self, user_id: UUID, *, username: str) -> None:
         """Remove somebody, from both lists. Also the way to undo a request."""
         friend = await self._users.get_by_username(username.strip().lower())
         if friend is None:
-            raise NotFoundError("No one uses that handle")
+            raise NotFoundError("No one uses that username")
         await self._friends.unlink(user_id, friend.id)
 
     async def _resolve(self, username: str, *, actor_id: UUID) -> User:
         handle = username.strip().lower()
         if not handle:
-            raise ValidationError("Enter a handle first")
+            raise ValidationError("Enter a username first")
         friend = await self._users.get_by_username(handle)
         if friend is None:
-            raise ValidationError("No one uses that handle")
+            raise ValidationError("No one uses that username")
         if friend.id == actor_id:
-            raise ValidationError("That is your own handle")
+            raise ValidationError("That is your own username")
         return friend

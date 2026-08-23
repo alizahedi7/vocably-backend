@@ -62,7 +62,7 @@ async def test_a_taken_handle_is_refused_with_copy_the_user_can_read(
     )
     assert response.status_code == 409
     # The client shows `detail` verbatim, so 4xx messages are user-facing copy.
-    assert response.json()["detail"] == "That handle is already taken."
+    assert response.json()["detail"] == "That username is already taken."
 
 
 async def test_malformed_handles_are_refused(

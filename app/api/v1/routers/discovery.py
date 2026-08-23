@@ -43,7 +43,7 @@ async def list_public_decks(
     current_user: CurrentUser,
     discovery: DeckDiscoveryServiceDep,
     category: Annotated[str | None, Query(max_length=32)] = None,
-    q: Annotated[str | None, Query(max_length=80, description="Name or author handle")] = None,
+    q: Annotated[str | None, Query(max_length=80, description="Name or author username")] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> PublicDecksOut:

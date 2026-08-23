@@ -112,7 +112,7 @@ class UserService:
             # The unique index is the real guarantee — this check only exists to
             # turn the race into good copy rather than a 500. The repository
             # raising on the index is still the backstop.
-            raise AlreadyExistsError("That handle is already taken.")
+            raise AlreadyExistsError("That username is already taken.")
         user.username = candidate
 
     async def complete_onboarding(

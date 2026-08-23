@@ -95,7 +95,7 @@ class SqlAlchemyUserRepository(UserRepository):
             # the same instant and only one row can win. Translating here keeps
             # the loser on a 409 with copy they can read, rather than a 500.
             if _is_username_conflict(exc):
-                raise AlreadyExistsError("That handle is already taken.") from exc
+                raise AlreadyExistsError("That username is already taken.") from exc
             raise
         await self._session.refresh(model)
         return mappers.user_to_entity(model)

@@ -271,12 +271,12 @@ class DeckSharingService:
     async def _resolve_handle(self, username: str, *, actor_id: UUID) -> User:
         handle = username.strip().lower()
         if not handle:
-            raise ValidationError("Enter a handle first")
+            raise ValidationError("Enter a username first")
         user = await self._users.get_by_username(handle)
         if user is None:
-            raise ValidationError("No one uses that handle")
+            raise ValidationError("No one uses that username")
         if user.id == actor_id:
-            raise ValidationError("That is your own handle")
+            raise ValidationError("That is your own username")
         return user
 
     async def _member_by_handle(self, deck_id: UUID, username: str) -> DeckMember:

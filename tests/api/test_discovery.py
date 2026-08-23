@@ -596,17 +596,17 @@ async def test_sharing_is_refused_with_readable_copy(
         f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": " "}
     )
     assert blank.status_code == 422
-    assert blank.json()["detail"] == "Enter a handle to share with"
+    assert blank.json()["detail"] == "Enter a username to share with"
 
     unknown = await client.post(
         f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "ghost"}
     )
-    assert unknown.json()["detail"] == "No one uses that handle"
+    assert unknown.json()["detail"] == "No one uses that username"
 
     myself = await client.post(
         f"/api/v1/decks/{deck_id}/share", headers=auth_headers, json={"to_username": "owner_x"}
     )
-    assert myself.json()["detail"] == "That is your own handle"
+    assert myself.json()["detail"] == "That is your own username"
 
     # Already a member.
     await client.post(
@@ -1068,12 +1068,12 @@ async def test_friend_errors_are_user_facing_copy(
         "/api/v1/users/me/friends", headers=auth_headers, json={"username": " "}
     )
     assert blank.status_code == 422
-    assert blank.json()["detail"] == "Enter a handle first"
+    assert blank.json()["detail"] == "Enter a username first"
 
     own = await client.post(
         "/api/v1/users/me/friends", headers=auth_headers, json={"username": "me_x"}
     )
-    assert own.json()["detail"] == "That is your own handle"
+    assert own.json()["detail"] == "That is your own username"
 
 
 async def test_friends_require_authentication(client: AsyncClient) -> None:
