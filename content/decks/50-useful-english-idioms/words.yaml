@@ -1,0 +1,126 @@
+# The ordered idiom list. Order is the product: this is the sequence the deck
+# teaches, and nothing in the pipeline may reorder it. It follows the source
+# page's own numbering, cut into sets of ten.
+#
+# Every entry carries a `hint`, which is unusual for a deck here and is the
+# point of this one: a card front like "break the ice" or "on the ball" has a
+# perfectly good literal reading, and without a hint the pipeline would happily
+# teach it. The hints are Vocably's own wording — there is deliberately nowhere
+# in this format to put a definition or an example, and copying one from the
+# source page is the one thing the format forbids.
+
+units:
+  - name: Set 1
+    words:
+      - term: "break the ice"
+        hint: "to get a first conversation going between people who do not know each other yet"
+      - term: "cut corners"
+        hint: "to skip steps to save time or money, so the work comes out worse"
+      - term: "hit the nail on the head"
+        hint: "to say precisely the right thing about a situation"
+      - term: "piece of cake"
+        hint: "something that takes almost no effort at all"
+      - term: "cost an arm and a leg"
+        hint: "to be extremely expensive"
+      - term: "bite off more than you can chew"
+        hint: "to take on more work than you are able to finish"
+      - term: "beat around the bush"
+        hint: "to talk around a subject instead of coming to the point"
+      - term: "cry over spilled milk"
+        hint: "to stay upset about something that can no longer be changed"
+      - term: "get your act together"
+        hint: "to organise yourself and start behaving more sensibly"
+      - term: "kill two birds with one stone"
+        hint: "to settle two problems with a single action"
+
+  - name: Set 2
+    words:
+      - term: "let the cat out of the bag"
+        hint: "to give away a secret without meaning to"
+      - term: "pull someone's leg"
+        hint: "to tease someone by telling them something untrue"
+      - term: "burn the midnight oil"
+        hint: "to keep working late into the night"
+      - term: "bite the bullet"
+        hint: "to face something unpleasant you have been putting off"
+      - term: "break a leg"
+        hint: "said to wish a performer good luck before they go on"
+      - term: "call it a day"
+        hint: "to stop working and finish for now"
+      - term: "steal someone's thunder"
+        hint: "to draw attention away from what someone else has achieved"
+      - term: "the ball is in your court"
+        hint: "it is now your turn to decide or to act"
+      - term: "throw in the towel"
+        hint: "to admit defeat and stop trying"
+      - term: "under the weather"
+        hint: "feeling mildly unwell"
+
+  - name: Set 3
+    words:
+      - term: "speak of the devil"
+        hint: "said when the person being talked about walks in"
+      - term: "once in a blue moon"
+        hint: "hardly ever, at very long intervals"
+      - term: "catch someone red-handed"
+        hint: "to find someone in the very act of doing wrong"
+      - term: "barking up the wrong tree"
+        hint: "to be pursuing a mistaken idea or blaming the wrong person"
+      - term: "jump on the bandwagon"
+        hint: "to join something only once it has become popular"
+      - term: "like two peas in a pod"
+        hint: "so alike as to be hard to tell apart"
+      - term: "ten a penny"
+        hint: "so common as to be worth very little"
+      - term: "go the extra mile"
+        hint: "to do noticeably more than was asked of you"
+      - term: "straight from the horse's mouth"
+        hint: "heard directly from the person who really knows"
+      - term: "take with a pinch of salt"
+        hint: "to treat a claim as only partly believable"
+
+  - name: Set 4
+    words:
+      - term: "feel like a million bucks"
+        hint: "to feel wonderfully well and full of health"
+      - term: "miss the boat"
+        hint: "to let a chance slip by"
+      - term: "a dime a dozen"
+        hint: "ordinary and easy to find anywhere"
+      - term: "in the red"
+        hint: "running at a loss, with more money going out than coming in"
+      - term: "the elephant in the room"
+        hint: "the obvious problem that nobody will mention"
+      - term: "break the bank"
+        hint: "to cost more than someone can afford"
+      - term: "by the skin of your teeth"
+        hint: "only just, with nothing at all to spare"
+      - term: "hit the sack"
+        hint: "to go to bed"
+      - term: "on the ball"
+        hint: "alert, quick, and handling things well"
+      - term: "the last straw"
+        hint: "the small extra thing that finally exhausts someone's patience"
+
+  - name: Set 5
+    words:
+      - term: "to make matters worse"
+        hint: "said when one bad thing is followed by another that deepens it"
+      - term: "don't count your chickens before they hatch"
+        hint: "do not rely on a result before it has actually happened"
+      - term: "comparing apples to oranges"
+        hint: "setting two things side by side that are far too unlike to compare"
+      - term: "the whole nine yards"
+        hint: "the entire thing, with nothing left out"
+      - term: "a storm in a teacup"
+        hint: "a great deal of fuss over something very small"
+      - term: "cut someone some slack"
+        hint: "to judge someone less harshly than usual"
+      - term: "it's not rocket science"
+        hint: "it is far less complicated than it sounds"
+      - term: "you can say that again"
+        hint: "said to agree emphatically with what was just said"
+      - term: "bent out of shape"
+        hint: "annoyed or upset out of all proportion"
+      - term: "a picture is worth a thousand words"
+        hint: "one image explains more than a long description would"
