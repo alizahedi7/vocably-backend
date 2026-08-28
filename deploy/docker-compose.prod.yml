@@ -186,6 +186,16 @@ services:
       # the admin dashboard still starts cleanly. Set this once the DNS
       # record and the vocably-admin container both exist.
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:-}
+      # The marketing site (vocably-landing), the fourth site on this Caddy.
+      # Unset-tolerant for the same reason as ADMIN_DOMAIN above. These two
+      # and the Caddyfile block they feed are shipped from *this* repo on
+      # purpose: CI overwrites /opt/vocably/Caddyfile on every deploy, so a
+      # hand-edit on the VPS does not survive.
+      LANDING_DOMAIN: ${LANDING_DOMAIN:-}
+      # Only once www.vocably.ir has an A record and the redirect block in
+      # the Caddyfile is uncommented; an enabled site for a name that does
+      # not resolve is a failing ACME order retried forever.
+      LANDING_WWW_DOMAIN: ${LANDING_WWW_DOMAIN:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # The PWA (vocably-mobile), published as static files by that repo's
