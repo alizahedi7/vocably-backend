@@ -85,3 +85,60 @@
 {$ADMIN_DOMAIN:admin.invalid} {
 	reverse_proxy admin:3000
 }
+
+# Site blocks for the marketing site, to be appended to the vocably-backend
+# repo's deploy/Caddyfile — that Caddy container already owns ports 80/443 on
+# the VPS, so this is served as another site rather than by a second web
+# server (same arrangement as vocably-admin and the mobile PWA).
+#
+# Like the admin dashboard and unlike the PWA, this is a live Next.js server
+# in its own container: the site rewrites `/` to `/fa` and redirects `/fa` to
+# `/`, and it sets response headers — none of which survives being exported to
+# a folder of files. It is reached by its Compose service name ("landing")
+# over vocably-net, the external network shared between the projects.
+#
+# Defaults to a reserved, never-resolvable hostname (RFC 2606) when
+# LANDING_DOMAIN is unset, so a VPS that has not been set up for the
+# marketing site still starts cleanly — Caddy fails ACME for that one site
+# instead of refusing to start at all.
+{$LANDING_DOMAIN:landing.invalid} {
+	encode gzip zstd
+
+	header {
+		# Caddy already redirects 80→443, but that first plaintext request
+		# still happens once per client. Deliberately without
+		# `includeSubDomains`: this is the apex, and asserting it for every
+		# subdomain would speak for api/app/admin too — for a year of cached
+		# browser state, irreversibly.
+		Strict-Transport-Security "max-age=31536000"
+
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		Content-Security-Policy "frame-ancestors 'none'"
+
+		# Free version disclosure. Nothing legitimate reads it.
+		-Server
+	}
+
+	# Next.js fingerprints everything under /_next/static, so it can be held
+	# forever. The fonts in /fonts and the share cards are served from public/
+	# with stable names, so they revalidate cheaply against their ETag instead.
+	header /_next/static/* Cache-Control "public, max-age=31536000, immutable"
+
+	reverse_proxy landing:3000
+}
+
+# The apex is the canonical host; www would exist only to send people to it.
+#
+# Commented out because `www.vocably.ir` has no A record. Caddy tries to obtain
+# a certificate for every site address at startup, so an enabled block for a
+# name that does not resolve is not inert — it is a failing ACME order retried
+# with backoff, forever, in the logs of a Caddy that also serves three working
+# sites.
+#
+# To turn it on: add the A record, uncomment this, set LANDING_WWW_DOMAIN in
+# /opt/vocably/.env, and redeploy the backend (which is what ships this file).
+# {$LANDING_WWW_DOMAIN:www.landing.invalid} {
+# 	redir https://{$LANDING_DOMAIN:landing.invalid}{uri} permanent
+# }
