@@ -5,6 +5,13 @@ and ``create_all`` can see them.
 """
 
 from app.infrastructure.db.models.ai_lookup import AILookupAliasModel, AILookupEntryModel
+from app.infrastructure.db.models.book import (
+    BookBlockModel,
+    BookChapterModel,
+    BookModel,
+    BookProgressModel,
+    PassageTranslationModel,
+)
 from app.infrastructure.db.models.daily_deck_activity import DailyDeckActivityModel
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.deck_build import DeckBuildItemModel, DeckBuildJobModel
@@ -30,6 +37,10 @@ __all__ = [
     "AIFeedbackModel",
     "AILookupAliasModel",
     "AILookupEntryModel",
+    "BookBlockModel",
+    "BookChapterModel",
+    "BookModel",
+    "BookProgressModel",
     "DailyDeckActivityModel",
     "DeckBuildItemModel",
     "DeckBuildJobModel",
@@ -44,6 +55,7 @@ __all__ = [
     "LexemeSenseModel",
     "LexemeSenseTranslationModel",
     "OtpChallengeModel",
+    "PassageTranslationModel",
     "UserModel",
     "WordModel",
     "WordProgressModel",
