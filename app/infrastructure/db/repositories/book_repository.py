@@ -67,6 +67,20 @@ class SqlAlchemyBookRepository(BookRepository):
         ).scalars()
         return [mappers.book_to_entity(m) for m in rows], int(total)
 
+    async def list_all(self, *, limit: int = 25, offset: int = 0) -> tuple[list[Book], int]:
+        total = (
+            await self._session.execute(select(func.count()).select_from(BookModel))
+        ).scalar_one()
+        rows = (
+            await self._session.execute(
+                select(BookModel)
+                .order_by(BookModel.created_at.desc(), BookModel.title)
+                .limit(limit)
+                .offset(offset)
+            )
+        ).scalars()
+        return [mappers.book_to_entity(m) for m in rows], int(total)
+
     async def get(self, book_id: UUID) -> Book | None:
         # ``populate_existing``: this is also the read-back after a write in the
         # same session, where the identity map holds a row whose server-set

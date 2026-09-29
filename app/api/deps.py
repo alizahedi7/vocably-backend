@@ -24,6 +24,7 @@ from app.application.ports.reader_ai import PassageTranslator, SenseDisambiguato
 from app.application.services.admin_service import AdminService
 from app.application.services.ai_studio_service import AIStudioService
 from app.application.services.auth_service import AuthService
+from app.application.services.book_ingest_service import BookIngestService
 from app.application.services.content_admin_service import ContentAdminService
 from app.application.services.deck_build_service import DeckBuildService
 from app.application.services.deck_discovery_service import DeckDiscoveryService
@@ -457,6 +458,11 @@ def get_reader_service(
     )
 
 
+def get_book_admin_service(session: SessionDep) -> BookIngestService:
+    """Review and publish. No fetcher: the API enqueues ingests, never runs them."""
+    return BookIngestService(SqlAlchemyBookRepository(session))
+
+
 @lru_cache
 def _lemmatizer() -> SimplemmaLemmatizer:
     return SimplemmaLemmatizer()
@@ -523,6 +529,7 @@ DeckBuildServiceDep = Annotated[DeckBuildService, Depends(get_deck_build_service
 StudyServiceDep = Annotated[StudyService, Depends(get_study_service)]
 AIStudioServiceDep = Annotated[AIStudioService, Depends(get_ai_studio_service)]
 ReaderServiceDep = Annotated[ReaderService, Depends(get_reader_service)]
+BookAdminServiceDep = Annotated[BookIngestService, Depends(get_book_admin_service)]
 FeedbackServiceDep = Annotated[FeedbackService, Depends(get_feedback_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
 ContentAdminServiceDep = Annotated[ContentAdminService, Depends(get_content_admin_service)]

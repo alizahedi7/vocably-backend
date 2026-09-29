@@ -25,11 +25,12 @@ from app.application.dto import (
     DailyCount,
 )
 from app.application.services.content_admin_service import BuildJobDetail
+from app.domain.entities.book import Book, BookChapter
 from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob
 from app.domain.entities.feedback import ClientPlatform, FeedbackKind, FeedbackReport
 from app.domain.entities.lexeme import Lexeme, LexemeSense
 from app.domain.entities.word import Word
-from app.domain.enums import AuthMethod, SenseStatus
+from app.domain.enums import AuthMethod, BookSource, SenseStatus
 from app.domain.repositories.feedback_repository import AISenseScore
 from app.domain.repositories.lexicon_repository import LexiconStats
 
@@ -250,6 +251,105 @@ class AdminPublishDeckIn(BaseModel):
     category: str | None = Field(default=None, max_length=32)
     description: str | None = None
     description_fa: str | None = None
+
+
+# ── Books ────────────────────────────────────────────────────
+
+
+class AdminIngestBookIn(BaseModel):
+    """Queue one public-domain book for ingest. It lands unpublished."""
+
+    source: BookSource
+    #: A Gutenberg number, or a Standard Ebooks page URL. Uploads are an
+    #: operator command (``make book-ingest``), not an API call: a file path
+    #: on the API host is not something a dashboard should be able to name.
+    ref: str = Field(min_length=1, max_length=500)
+
+
+class AdminIngestQueuedOut(_CamelModel):
+    task_id: str = Field(serialization_alias="taskId")
+
+
+class AdminPublishBookIn(BaseModel):
+    """Put a book in the library, or take it out. Idempotent both ways."""
+
+    is_public: bool = True
+    #: Required to publish a book that states no rights of its own — an upload.
+    #: Ignored when empty; never cleared by omission.
+    rights: str | None = Field(default=None, max_length=1000)
+
+
+class AdminBookOut(_CamelModel):
+    id: UUID
+    slug: str
+    title: str
+    author: str
+    language: str
+    source: str
+    source_id: str = Field(serialization_alias="sourceId")
+    rights: str
+    total_chapters: int = Field(serialization_alias="totalChapters")
+    total_words: int = Field(serialization_alias="totalWords")
+    is_public: bool = Field(serialization_alias="isPublic")
+    published_at: datetime | None = Field(serialization_alias="publishedAt")
+    created_at: datetime = Field(serialization_alias="createdAt")
+
+    @classmethod
+    def from_entity(cls, book: Book) -> AdminBookOut:
+        return cls(
+            id=book.id,
+            slug=book.slug,
+            title=book.title,
+            author=book.author,
+            language=book.language,
+            source=book.source.value,
+            source_id=book.source_id,
+            rights=book.rights,
+            total_chapters=book.total_chapters,
+            total_words=book.total_words,
+            is_public=book.is_public,
+            published_at=book.published_at,
+            created_at=book.created_at,
+        )
+
+
+class AdminBookPageOut(_CamelModel):
+    items: list[AdminBookOut]
+    total: int
+
+
+class AdminBookChapterOut(_CamelModel):
+    id: UUID
+    index: int
+    title: str
+    part_title: str = Field(serialization_alias="partTitle")
+    word_count: int = Field(serialization_alias="wordCount")
+    block_count: int = Field(serialization_alias="blockCount")
+
+    @classmethod
+    def from_entity(cls, chapter: BookChapter) -> AdminBookChapterOut:
+        return cls(
+            id=chapter.id,
+            index=chapter.index,
+            title=chapter.title,
+            part_title=chapter.part_title,
+            word_count=chapter.word_count,
+            block_count=chapter.block_count,
+        )
+
+
+class AdminBookDetailOut(AdminBookOut):
+    """A book and its table of contents: what a human reads before publishing."""
+
+    chapters: list[AdminBookChapterOut]
+
+    @classmethod
+    def from_book(cls, book: Book) -> AdminBookDetailOut:
+        base = AdminBookOut.from_entity(book)
+        return cls(
+            **base.model_dump(),
+            chapters=[AdminBookChapterOut.from_entity(c) for c in book.chapters],
+        )
 
 
 # ── Content pipeline: builds and the lexicon ─────────────────

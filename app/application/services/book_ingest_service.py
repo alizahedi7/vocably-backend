@@ -1,4 +1,6 @@
-"""Ingest: fetch a public-domain book, parse it, and store it unpublished.
+"""The admin's side of books: ingest, review, and publish.
+
+Ingest fetches a public-domain book, parses it, and stores it unpublished.
 
 The counterpart of ``DeckBuildService`` for books, and much simpler, because no
 token is spent: a book is one download and one CPU-bound parse (0.05-0.15 s
@@ -60,11 +62,15 @@ class IngestOutcome:
 
 
 class BookIngestService:
-    def __init__(self, books: BookRepository, fetcher: EbookFetcher) -> None:
+    def __init__(self, books: BookRepository, fetcher: EbookFetcher | None = None) -> None:
+        # ``None`` for the API, which only reviews and publishes: fetching runs
+        # in the Celery task or the operator's command, never in a request.
         self._books = books
         self._fetcher = fetcher
 
     async def ingest(self, *, source: BookSource, ref: str) -> IngestOutcome:
+        if self._fetcher is None:
+            raise RuntimeError("BookIngestService was built without a fetcher.")
         fetched = await self._fetcher.fetch(source=source, ref=ref)
         try:
             parsed = parse_epub(fetched.data)
@@ -92,6 +98,16 @@ class BookIngestService:
         book.id = existing.id
         book.slug = existing.slug
         return IngestOutcome(await self._books.replace_content(book), "replaced")
+
+    async def list_all(self, *, limit: int, offset: int) -> tuple[list[Book], int]:
+        return await self._books.list_all(limit=limit, offset=offset)
+
+    async def get(self, book_id: UUID) -> Book:
+        """Any book, public or not, with its chapter list — the pre-publish review."""
+        book = await self._books.get(book_id)
+        if book is None:
+            raise NotFoundError("Book not found.")
+        return book
 
     async def publish(self, book_id: UUID, *, is_public: bool, rights: str = "") -> Book:
         """Flip visibility, both ways. A book with no rights line cannot go public."""

@@ -34,6 +34,10 @@ class BookRepository(ABC):
         """The library, newest publication first, without chapters loaded."""
 
     @abstractmethod
+    async def list_all(self, *, limit: int = 25, offset: int = 0) -> tuple[list[Book], int]:
+        """Every book, published or not, most recently ingested first. Admin only."""
+
+    @abstractmethod
     async def get(self, book_id: UUID) -> Book | None:
         """The book with its chapter list (no blocks), public or not.
 

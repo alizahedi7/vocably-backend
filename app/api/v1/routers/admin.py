@@ -14,6 +14,7 @@ from fastapi import APIRouter, Query, status
 
 from app.api.deps import (
     AdminServiceDep,
+    BookAdminServiceDep,
     ContentAdminServiceDep,
     CurrentAdmin,
     DeckDiscoveryServiceDep,
@@ -22,6 +23,9 @@ from app.api.deps import (
 from app.api.v1.schemas.admin import (
     AdminAIFeedbackPageOut,
     AdminAISenseScoreOut,
+    AdminBookDetailOut,
+    AdminBookOut,
+    AdminBookPageOut,
     AdminCacheAliasOut,
     AdminCacheAliasPageOut,
     AdminCacheEntryOut,
@@ -30,6 +34,9 @@ from app.api.v1.schemas.admin import (
     AdminCategoryOut,
     AdminFeedbackPageOut,
     AdminFeedbackReportOut,
+    AdminIngestBookIn,
+    AdminIngestQueuedOut,
+    AdminPublishBookIn,
     AdminPublishDeckIn,
     AdminUserOut,
     AdminWordOut,
@@ -51,7 +58,8 @@ from app.api.v1.schemas.admin import (
     SenseUpdateIn,
     TimeSeriesPointOut,
 )
-from app.domain.enums import DeckBuildItemState, SenseStatus
+from app.core.exceptions import ValidationError
+from app.domain.enums import BookSource, DeckBuildItemState, SenseStatus
 from app.infrastructure.ai.factory import effective_prompt_version
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -154,6 +162,57 @@ async def publish_deck(
         description=payload.description,
         description_fa=payload.description_fa,
     )
+
+
+# ── Books ────────────────────────────────────────────────────
+# Ingest is queued, never run in a request: it is a download of up to tens of
+# megabytes. Publishing is the deliberate act, exactly as it is for decks — see
+# docs/reader-module-design.md §3.4.
+
+
+@router.post(
+    "/books/ingest",
+    response_model=AdminIngestQueuedOut,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def ingest_book(payload: AdminIngestBookIn, _admin: CurrentAdmin) -> AdminIngestQueuedOut:
+    """Queue a public-domain book for ingest. It lands unpublished, for review."""
+    if payload.source is BookSource.UPLOAD:
+        raise ValidationError("Uploads are ingested with make book-ingest, not through the API.")
+    from app.tasks.books import ingest_book as ingest_task
+
+    queued = ingest_task.delay(payload.source.value, payload.ref.strip())
+    return AdminIngestQueuedOut(task_id=str(queued.id))
+
+
+@router.get("/books", response_model=AdminBookPageOut)
+async def books(
+    _admin: CurrentAdmin,
+    books: BookAdminServiceDep,
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> AdminBookPageOut:
+    items, total = await books.list_all(limit=limit, offset=offset)
+    return AdminBookPageOut(items=[AdminBookOut.from_entity(b) for b in items], total=total)
+
+
+@router.get("/books/{book_id}", response_model=AdminBookDetailOut)
+async def book_detail(
+    book_id: UUID, _admin: CurrentAdmin, books: BookAdminServiceDep
+) -> AdminBookDetailOut:
+    return AdminBookDetailOut.from_book(await books.get(book_id))
+
+
+@router.patch("/books/{book_id}/publish", response_model=AdminBookOut)
+async def publish_book(
+    book_id: UUID,
+    payload: AdminPublishBookIn,
+    _admin: CurrentAdmin,
+    books: BookAdminServiceDep,
+) -> AdminBookOut:
+    """Put a book in the library, or take it out. Idempotent both ways."""
+    book = await books.publish(book_id, is_public=payload.is_public, rights=payload.rights or "")
+    return AdminBookOut.from_entity(book)
 
 
 # ── Content pipeline ─────────────────────────────────────────
