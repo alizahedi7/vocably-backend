@@ -34,6 +34,7 @@ from app.application.ports.ai_service import (
     LookupStatus,
     MeaningSuggestion,
 )
+from app.application.ports.reader_ai import Disambiguation, PassageTranslationResult
 from app.core.exceptions import ExternalServiceError
 from app.core.logging import get_logger
 from app.infrastructure.ai.enrichment_prompts import (
@@ -43,7 +44,9 @@ from app.infrastructure.ai.enrichment_prompts import (
     render_stored,
 )
 from app.infrastructure.ai.payloads import (
+    DisambiguationPayload,
     LookupPayload,
+    PassagePayload,
     StoryPayload,
     TranslationsPayload,
 )
@@ -52,6 +55,15 @@ from app.infrastructure.ai.prompts import (
     LOOKUP_SYSTEM_PROMPT,
     STORY_JSON_SCHEMA,
     STORY_SYSTEM_PROMPT,
+)
+from app.infrastructure.ai.reader_adapter_methods import match_layout
+from app.infrastructure.ai.reader_prompts import (
+    DISAMBIGUATE_JSON_SCHEMA,
+    DISAMBIGUATE_SYSTEM_PROMPT,
+    PASSAGE_JSON_SCHEMA,
+    disambiguate_user_prompt,
+    passage_system_prompt,
+    passage_user_prompt,
 )
 from app.infrastructure.ai.translate_prompts import (
     TRANSLATE_JSON_SCHEMA,
@@ -248,6 +260,49 @@ class AnthropicAIService(AIService):
             model_type=LookupPayload,
         )
         return [s.to_dto() for s in payload.senses[:max_new]]
+
+    async def disambiguate_sense(
+        self,
+        term: str,
+        sentence: str,
+        senses: list[MeaningSuggestion],
+        learner: LearnerContext,
+    ) -> Disambiguation:
+        """Which numbered sense ``sentence`` uses; ``-1`` when none fits.
+
+        The same body as ``ReaderAdapterMixin.disambiguate_sense``, against
+        this adapter's transport, whose ``_complete`` takes no schema name.
+        """
+        del learner  # Which sense a sentence uses is a fact about the sentence.
+        payload = await self._complete(
+            system=DISAMBIGUATE_SYSTEM_PROMPT,
+            user=disambiguate_user_prompt(term, sentence, senses),
+            schema=DISAMBIGUATE_JSON_SCHEMA,
+            model_type=DisambiguationPayload,
+        )
+        index = payload.index if -1 <= payload.index < len(senses) else -1
+        return Disambiguation(
+            index=index, confidence=payload.confidence, provider="anthropic", model=self._model
+        )
+
+    async def translate_passage(
+        self,
+        text: str,
+        target_language: str,
+        preceding: str = "",
+        book_title: str = "",
+    ) -> PassageTranslationResult:
+        payload = await self._complete(
+            system=passage_system_prompt(target_language=target_language),
+            user=passage_user_prompt(text, preceding=preceding, book_title=book_title),
+            schema=PASSAGE_JSON_SCHEMA,
+            model_type=PassagePayload,
+        )
+        return PassageTranslationResult(
+            translation=match_layout(text, payload.translation),
+            provider="anthropic",
+            model=self._model,
+        )
 
     async def generate_story(
         self,

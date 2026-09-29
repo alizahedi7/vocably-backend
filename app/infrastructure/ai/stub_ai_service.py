@@ -17,6 +17,7 @@ from app.application.ports.ai_service import (
     LookupStatus,
     MeaningSuggestion,
 )
+from app.application.ports.reader_ai import Disambiguation, PassageTranslationResult
 
 # Human-readable theme phrases per interest topic id, used to flavor stub output the way a
 # real model would weave the learner's interests into examples and stories.
@@ -289,6 +290,28 @@ class StubAIService(AIService):
                 example=f"They {term} the team every week.",
             )
         ]
+
+    async def disambiguate_sense(
+        self,
+        term: str,
+        sentence: str,
+        senses: list[MeaningSuggestion],
+        learner: LearnerContext,
+    ) -> Disambiguation:
+        """The first sense, with full confidence; ``-1`` when there are none."""
+        await self._delay()
+        return Disambiguation(index=0 if senses else -1, confidence=1.0, provider="stub")
+
+    async def translate_passage(
+        self,
+        text: str,
+        target_language: str,
+        preceding: str = "",
+        book_title: str = "",
+    ) -> PassageTranslationResult:
+        """Tag the text with the language, so a test can see a translation happened."""
+        await self._delay()
+        return PassageTranslationResult(f"[{target_language}] {text}", provider="stub")
 
     async def generate_story(
         self,

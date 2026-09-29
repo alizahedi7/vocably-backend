@@ -67,3 +67,14 @@ class TranslationPayload(BaseModel):
 
 class TranslationsPayload(BaseModel):
     translations: list[TranslationPayload]
+
+
+class DisambiguationPayload(BaseModel):
+    """Which numbered sense a sentence uses; ``-1`` when none of them does."""
+
+    index: int = Field(ge=-1)
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class PassagePayload(BaseModel):
+    translation: str = Field(min_length=1)

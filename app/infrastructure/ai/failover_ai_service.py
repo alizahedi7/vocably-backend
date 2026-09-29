@@ -17,10 +17,11 @@ route around both and re-buy the corpus at the moment the app can least afford
 it. It also means the enricher and translator paths — which are handed
 ``raw_ai_provider()`` directly — get failover without knowing about it.
 
-**It delegates five methods, not two.** ``look_up_meanings`` and
+**It delegates seven methods, not two.** ``look_up_meanings`` and
 ``generate_story`` are the port; ``translate_only``, ``translate_senses`` and
 ``enrich_senses`` are the structural protocols that ``GroundedAIService`` and
-``LexiconAIService`` cast this object to. Miss one and grounding silently loses
+``LexiconAIService`` cast this object to; ``disambiguate_sense`` and
+``translate_passage`` are the reader's. Miss one and that path silently loses
 failover at runtime with no type error to catch it.
 
 **It trips on :class:`ExternalServiceError` and nothing else.** The adapters
@@ -44,6 +45,7 @@ from app.application.ports.ai_service import (
     LookupResult,
     MeaningSuggestion,
 )
+from app.application.ports.reader_ai import Disambiguation, PassageTranslationResult
 from app.core.exceptions import AllProvidersUnavailableError, ExternalServiceError
 from app.core.logging import get_logger
 
@@ -195,6 +197,32 @@ class FailoverAIService(AIService):
         return await self._attempt(
             "enrich_senses",
             lambda p: self._delegate(p, "enrich_senses", term, known, wanted, learner, max_new),
+        )
+
+    async def disambiguate_sense(
+        self,
+        term: str,
+        sentence: str,
+        senses: list[MeaningSuggestion],
+        learner: LearnerContext,
+    ) -> Disambiguation:
+        return await self._attempt(
+            "disambiguate_sense",
+            lambda p: self._delegate(p, "disambiguate_sense", term, sentence, senses, learner),
+        )
+
+    async def translate_passage(
+        self,
+        text: str,
+        target_language: str,
+        preceding: str = "",
+        book_title: str = "",
+    ) -> PassageTranslationResult:
+        return await self._attempt(
+            "translate_passage",
+            lambda p: self._delegate(
+                p, "translate_passage", text, target_language, preceding, book_title
+            ),
         )
 
     # ── The loop ──────────────────────────────────────────────

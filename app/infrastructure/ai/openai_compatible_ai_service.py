@@ -53,6 +53,7 @@ from app.infrastructure.ai.prompts import (
     STORY_JSON_SCHEMA,
     STORY_SYSTEM_PROMPT,
 )
+from app.infrastructure.ai.reader_adapter_methods import ReaderAdapterMixin
 from app.infrastructure.ai.translate_prompts import (
     TRANSLATE_JSON_SCHEMA,
     TRANSLATE_ONLY_JSON_SCHEMA,
@@ -113,7 +114,7 @@ def _forced_header_client(
     )
 
 
-class OpenAICompatibleAIService(AIService):
+class OpenAICompatibleAIService(ReaderAdapterMixin, AIService):
     #: Identifies the gateway in logs, in cache/lexicon provenance, and in the
     #: failover chain's configuration. Subclasses set it; see ``providers.py``.
     name: ClassVar[str] = "openai-compatible"
