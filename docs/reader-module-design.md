@@ -1225,10 +1225,6 @@ from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
 
 from app.domain.entities.book import BlockKind
 
-# The lenient HTML parser is the deliberate choice: Gutenberg files span fifty
-# years of hand-made markup, and an XML parser rejects the sloppy ones outright.
-warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
-
 _OPF_NS: Final = {
     "opf": "http://www.idpf.org/2007/opf",
     "dc": "http://purl.org/dc/elements/1.1/",
@@ -1274,10 +1270,10 @@ _GUTENBERG_END = re.compile(r"\*\*\*\s*END OF (THE|THIS) PROJECT GUTENBERG", re.
 _NOTE_MARK = re.compile(r"^\[?\s*(\d{1,4}|[*†‡§])\s*\]?$")
 _SCENE_BREAK = re.compile(r"^[\s*_\-—–·•~.]{1,20}$")
 _WORD = re.compile(r"[^\W_]+", re.UNICODE)
-_ZERO_WIDTH = re.compile("[​‌‍⁠﻿­]")
+_ZERO_WIDTH = re.compile("[\u200b\u200c\u200d\u2060\ufeff\u00ad]")
 #: Stands in for ``<br>`` while text is extracted, so a real line break can be
 #: told apart from the newlines a transcriber's editor wrapped the source at.
-_LINE_BREAK: Final = ""
+_LINE_BREAK: Final = "\u2028"
 #: One entry of a table of contents: a chapter numeral, perhaps labelled.
 _TOC_ENTRY = re.compile(r"^(chapter|part|book|volume)?[\s:.,]*[ivxlcdm\d]+[.,]?$", re.I)
 
@@ -1532,7 +1528,13 @@ def _looks_like_toc(text: str) -> bool:
 
 
 def _parse_section(href: str, html: bytes) -> _Section:
-    soup = BeautifulSoup(html, "lxml")
+    with warnings.catch_warnings():
+        # The lenient HTML parser is the deliberate choice: Gutenberg files span
+        # fifty years of hand-made markup, and an XML parser rejects the sloppy
+        # ones outright. Scoped here, not module-wide, so importing this module
+        # changes no warning filter anyone else relies on.
+        warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+        soup = BeautifulSoup(html, "lxml")
     _strip_noise(soup)
     body = soup.body or soup
     types: set[str] = _epub_types(body) if isinstance(body, Tag) else set()
