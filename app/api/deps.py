@@ -20,6 +20,7 @@ from app.application.ports.feedback_notifier import FeedbackNotifier, NullFeedba
 from app.application.ports.google_verifier import GoogleVerifier
 from app.application.ports.lookup_cache import LookupCacheRepository
 from app.application.ports.otp_sender import OTPSender
+from app.application.ports.reader_ai import PassageTranslator, SenseDisambiguator
 from app.application.services.admin_service import AdminService
 from app.application.services.ai_studio_service import AIStudioService
 from app.application.services.auth_service import AuthService
@@ -32,6 +33,7 @@ from app.application.services.deck_unit_service import DeckUnitService
 from app.application.services.feedback_service import FeedbackService
 from app.application.services.friend_service import FriendService
 from app.application.services.lexicon_service import LexiconService
+from app.application.services.reader_service import ReaderService
 from app.application.services.study_service import StudyService
 from app.application.services.user_service import UserService
 from app.application.services.word_service import WordService
@@ -67,14 +69,22 @@ from app.infrastructure.ai.factory import (
     grounded_ai_provider,
     lookup_chain,
     raw_ai_provider,
+    reader_hot_cache,
 )
 from app.infrastructure.ai.lexicon_ai_service import SenseEnricher
+from app.infrastructure.ai.reader_hot_cache import HotCachingAIService
+from app.infrastructure.ai.reader_prompts import READER_PROMPT_VERSION
 from app.infrastructure.auth.console_otp_sender import ConsoleOTPSender
 from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifier
 from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
 from app.infrastructure.auth.sms_ir_otp_sender import SmsIrOTPSender
 from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
 from app.infrastructure.db.repositories.admin_repository import SqlAlchemyAdminRepository
+from app.infrastructure.db.repositories.book_repository import (
+    SqlAlchemyBookProgressRepository,
+    SqlAlchemyBookRepository,
+    SqlAlchemyPassageTranslationRepository,
+)
 from app.infrastructure.db.repositories.deck_activity_repository import (
     SqlAlchemyDeckActivityRepository,
 )
@@ -119,6 +129,7 @@ from app.infrastructure.db.repositories.word_progress_repository import (
 from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
 from app.infrastructure.db.repositories.xp_repository import SqlAlchemyXpRepository
 from app.infrastructure.dictionary.factory import dictionary_service
+from app.infrastructure.nlp.simplemma_lemmatizer import SimplemmaLemmatizer
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -412,6 +423,45 @@ def get_ai_studio_service(
     return AIStudioService(ai, progress, users, prompt_version=effective_prompt_version())
 
 
+def get_reader_service(
+    session: SessionDep,
+    lexicon: LexiconServiceDep,
+    provider: AIProviderDep,
+) -> ReaderService:
+    """The reader, on the flashcard lookup chain, with Redis in front of it.
+
+    The same chain ``get_ai_service`` builds — which is what makes a word a
+    reader taps free to every flashcard lookup and deck build, and the reverse
+    (docs/adr/0001). ``provider`` is the same dependency, so a test overriding
+    it to count calls counts the reader's too. The two reader-only questions go
+    to the raw provider, cast to their protocols as grounding casts it.
+    """
+    chain: AIService = lookup_chain(session, lexicon, provider=provider)
+    hot = reader_hot_cache()
+    if hot is not None:
+        chain = HotCachingAIService(chain, hot, prompt_version=effective_prompt_version())
+    raw = raw_ai_provider()
+    return ReaderService(
+        books=SqlAlchemyBookRepository(session),
+        progress=SqlAlchemyBookProgressRepository(session),
+        translations=SqlAlchemyPassageTranslationRepository(session),
+        ai=chain,
+        disambiguator=cast(SenseDisambiguator, raw),
+        translator=cast(PassageTranslator, raw),
+        lemmatizer=_lemmatizer(),
+        memo=hot,
+        prompt_version=effective_prompt_version(),
+        reader_prompt_version=READER_PROMPT_VERSION,
+        provider=settings.ai_provider,
+        model=configured_model(),
+    )
+
+
+@lru_cache
+def _lemmatizer() -> SimplemmaLemmatizer:
+    return SimplemmaLemmatizer()
+
+
 def get_feedback_notifier() -> FeedbackNotifier:
     """Nothing is announced today — reports are read from the admin dashboard.
 
@@ -472,6 +522,7 @@ FriendServiceDep = Annotated[FriendService, Depends(get_friend_service)]
 DeckBuildServiceDep = Annotated[DeckBuildService, Depends(get_deck_build_service)]
 StudyServiceDep = Annotated[StudyService, Depends(get_study_service)]
 AIStudioServiceDep = Annotated[AIStudioService, Depends(get_ai_studio_service)]
+ReaderServiceDep = Annotated[ReaderService, Depends(get_reader_service)]
 FeedbackServiceDep = Annotated[FeedbackService, Depends(get_feedback_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
 ContentAdminServiceDep = Annotated[ContentAdminService, Depends(get_content_admin_service)]
@@ -591,6 +642,28 @@ async def enforce_ai_feedback_limit(current_user: CurrentUser) -> None:
         return
     if not await _hourly_shared_limiter().allow(f"ai-feedback:{current_user.id}", limit):
         raise RateLimitedError("Too many ratings just now. Please try again shortly.")
+
+
+async def enforce_reader_lookup_limit(current_user: CurrentUser) -> None:
+    """Cap taps per user. Generous — a reader taps a lot — but bounded, because
+    every miss is a provider call, and a scripted client could otherwise read a
+    dictionary out through this endpoint one word at a time."""
+    limit = settings.reader_lookups_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"reader-lookup:{current_user.id}", limit):
+        raise RateLimitedError("Too many lookups just now. Please try again shortly.")
+
+
+async def enforce_passage_translation_limit(current_user: CurrentUser) -> None:
+    """Cap paragraph translations per user. Tighter than lookups: a paragraph is
+    fifty times the tokens of a word, and a chapter's worth of them is a
+    translation service rather than a reading aid."""
+    limit = settings.passage_translations_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"reader-passage:{current_user.id}", limit):
+        raise RateLimitedError("Too many translations just now. Please try again shortly.")
 
 
 async def enforce_otp_request_ip_limit(request: Request) -> None:

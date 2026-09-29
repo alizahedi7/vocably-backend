@@ -95,12 +95,16 @@ def _fresh_shared_limiters() -> Iterator[None]:
         settings.username_checks_per_user_per_hour,
         settings.feedback_reports_per_user_per_hour,
         settings.ai_feedback_per_user_per_hour,
+        settings.reader_lookups_per_user_per_hour,
+        settings.passage_translations_per_user_per_hour,
     )
     settings.joins_per_ip_per_hour = 0
     settings.joins_per_user_per_hour = 0
     settings.username_checks_per_user_per_hour = 0
     settings.feedback_reports_per_user_per_hour = 0
     settings.ai_feedback_per_user_per_hour = 0
+    settings.reader_lookups_per_user_per_hour = 0
+    settings.passage_translations_per_user_per_hour = 0
     yield
     (
         settings.joins_per_ip_per_hour,
@@ -108,8 +112,27 @@ def _fresh_shared_limiters() -> Iterator[None]:
         settings.username_checks_per_user_per_hour,
         settings.feedback_reports_per_user_per_hour,
         settings.ai_feedback_per_user_per_hour,
+        settings.reader_lookups_per_user_per_hour,
+        settings.passage_translations_per_user_per_hour,
     ) = previous
     deps._hourly_shared_limiter.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_reader_hot_cache(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Keep the reader's Redis tier out of the suite.
+
+    It is process-global and its entries outlive a test — a disambiguation is
+    memoised for thirty days — so with a developer's Redis running, one run's
+    answers would leak into the next. Its own behaviour is covered with a fake
+    in ``tests/unit/test_reader_hot_cache.py``.
+    """
+    from app.infrastructure.ai.factory import reader_hot_cache
+
+    monkeypatch.setattr(settings, "reader_hot_cache_enabled", False)
+    reader_hot_cache.cache_clear()
+    yield
+    reader_hot_cache.cache_clear()
 
 
 @pytest.fixture

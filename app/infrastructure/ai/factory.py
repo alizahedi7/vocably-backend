@@ -28,6 +28,7 @@ from app.infrastructure.ai.grounded_ai_service import GroundedAIService, SenseTr
 from app.infrastructure.ai.lexicon_ai_service import LexiconAIService
 from app.infrastructure.ai.prompts import PROMPT_VERSION
 from app.infrastructure.ai.providers import PROVIDERS
+from app.infrastructure.ai.reader_hot_cache import ReaderHotCache
 from app.infrastructure.ai.single_flight import SingleFlight
 from app.infrastructure.ai.stub_ai_service import StubAIService
 from app.infrastructure.ai.translate_prompts import TRANSLATE_PROMPT_VERSION
@@ -270,6 +271,32 @@ def single_flight() -> SingleFlight | None:
             socket_timeout=1,
             retry_on_error=[],
         )
+    )
+
+
+@lru_cache
+def reader_hot_cache() -> ReaderHotCache | None:
+    """Process-wide, one Redis pool. ``None`` when disabled, which every caller
+    reads as "go straight to Postgres" — what an unreachable Redis produces at
+    runtime anyway, because this layer only ever saves time.
+
+    Registered in ``app.tasks.runtime._POOLED_FACTORIES``: it holds a Redis pool
+    bound to the event loop that opened it.
+    """
+    if not settings.reader_hot_cache_enabled:
+        return None
+    from redis.asyncio import Redis
+
+    return ReaderHotCache(
+        Redis.from_url(
+            settings.reader_redis_url,
+            decode_responses=True,
+            # Fail fast and never retry: a slow cache is worse than none.
+            socket_connect_timeout=1,
+            socket_timeout=1,
+            retry_on_error=[],
+        ),
+        lookup_ttl_seconds=settings.reader_lookup_ttl_seconds,
     )
 
 
