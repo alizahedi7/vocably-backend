@@ -99,11 +99,21 @@ class Book:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
-    def percent_at(self, chapter: BookChapter, block: BookBlock) -> int:
-        """How far through the book a position is, by words read, 0..100."""
+    def percent_at(self, chapter: BookChapter, block: BookBlock, char_offset: int = 0) -> int:
+        """How far through the book a position is, by words read, 0..100.
+
+        Counts the block's own words in proportion to ``char_offset``, so a
+        learner at the end of the last paragraph reads 100 rather than stopping
+        one paragraph short of it.
+        """
         if self.total_words <= 0:
             return 0
-        read = chapter.words_before + block.words_before
+        into_block = 0.0
+        if block.text:
+            into_block = (
+                block.word_count * min(max(char_offset, 0), len(block.text)) / len(block.text)
+            )
+        read = chapter.words_before + block.words_before + into_block
         return max(0, min(100, round(read * 100 / self.total_words)))
 
 

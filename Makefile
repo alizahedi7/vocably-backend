@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install dev run migrate makemigration downgrade test lint format typecheck up down logs seed grant-admin partitions worker beat deck-validate deck-plan deck-build deck-sync-meta
+.PHONY: help install dev run migrate makemigration downgrade test lint format typecheck up down logs seed grant-admin partitions worker beat deck-validate deck-plan deck-build deck-sync-meta book-ingest
 
 # System tools (e.g. a sourced ROS environment) may export PYTHONPATH, which leaks their
 # packages into uv's isolated venv and breaks pytest plugin autoload. Blank it for every
@@ -45,6 +45,9 @@ deck-sync-meta: ## Re-apply a template's name/description/icon to its built deck
 
 deck-build: ## Resolve a planned build (usage: make deck-build job=<id> [queue=1])
 	uv run python -m app.scripts.build_deck build "$(job)" $(if $(queue),--queue,)
+
+book-ingest: ## Ingest a public-domain book, unpublished (usage: make book-ingest source=gutenberg ref=11 [queue=1])
+	uv run python -m app.scripts.ingest_book "$(source)" "$(ref)" $(if $(queue),--queue,)
 
 worker: ## Run a Celery worker (background tasks)
 	uv run celery -A app.tasks worker --loglevel=info -Q default,maintenance,ai

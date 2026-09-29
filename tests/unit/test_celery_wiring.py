@@ -228,3 +228,15 @@ def test_result_backend_is_disabled_by_default() -> None:
 @pytest.mark.parametrize("value", ["", None])
 def test_empty_result_backend_setting_disables_storage(value: Any) -> None:
     assert (value or None) is None
+
+
+# ── book ingest ──────────────────────────────────────────────
+def test_book_ingest_is_registered_and_kept_off_the_ai_and_maintenance_queues() -> None:
+    from app.tasks import books
+    from app.tasks.celery_app import QUEUE_DEFAULT
+
+    # Ingest spends no tokens and is not on a clock, so it must neither wait
+    # behind a deck build nor delay partition maintenance.
+    assert books.__name__ in TASK_MODULES
+    assert "vocably.books.ingest" in celery_app.tasks
+    assert celery_app.amqp.router.route({}, "vocably.books.ingest")["queue"].name == QUEUE_DEFAULT
