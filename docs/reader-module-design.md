@@ -1,5 +1,10 @@
 # The reader: books, lookups in context, and paragraph translation
 
+> **Status, 2026-09-30:** implemented on branch `feat/reader`. The repository
+> is now authoritative; section 12 lists where the implementation departs from
+> this design and what an end-to-end run showed. Appendix A is the design-time
+> code, kept as the record of what was verified before implementation.
+
 Design for the **E-Reader & Vocabulary Discovery** module: ingest public-domain
 books, serve them chapter by chapter, look a tapped word up *in the sentence it
 appears in*, translate a paragraph, and remember where each learner is.
@@ -613,11 +618,72 @@ Draft `CLAUDE.md` section:
   fingerprint log in section 5. A per-user, TTL-only Redis cache follows if the
   measurement asks for it.
 
+## 12. Implementation status, 2026-09-30
+
+Built on `feat/reader` as the commit plan in section 10 describes, plus a
+production-config commit. Every commit passed ruff, `mypy --strict` and the full
+suite. At the end, the suite passed on both SQLite (875) and Postgres 16 (889,
+including the migration and partition tests that SQLite skips).
+
+**Where the implementation departs from Appendix A**, each for a reason found
+while building it:
+
+- **The Redis tier turns itself off after its first failure**, and bounds every
+  command at one second, as `SingleFlight` does. The appendix version treated
+  each failure as a miss. With Redis down that means waiting out a connect
+  timeout on every tap.
+- **A reading position's percentage counts the share of the current block
+  read.** Measured from the block's start alone, finishing the last paragraph
+  could never reach 100.
+- **`translate_passage` takes positional-or-keyword parameters**, so
+  `FailoverAIService._delegate` forwards it like the other six methods. That
+  includes skipping a gateway that lacks it.
+- **`BookSource` and `BlockKind` live in `app/domain/enums.py`, and the book
+  mappers live in `app/infrastructure/db/mappers.py`**, following the codebase's
+  conventions.
+- **The ingest service takes a fetcher protocol, optional for the API**, which
+  only reviews and publishes. Uploads are refused through the API and stay an
+  operator command.
+- **The Anthropic adapter implements both methods directly.** Its `_complete`
+  takes no schema name, so the mixin does not fit it.
+- **The parser's line-break and zero-width constants are ASCII escapes.** The
+  appendix copy had lost them, leaving verse detection splitting on an empty
+  separator. The parser tests caught it on the first run.
+
+**End-to-end run.** A fresh Postgres was migrated from scratch.
+`make book-ingest` fetched Standard Ebooks' *Pride and Prejudice* (61 chapters,
+122,783 words) and Gutenberg's *Alice* (12 chapters, 27,159 words) over the
+network, and a second run reported `unchanged`. The API then served a scripted
+session with the local `.env`, so lookups and translations reached the live
+`avalai` gateway.
+
+| Step | Result |
+|---|---|
+| Library before and after publishing | 0 books, then 2 |
+| Tap "want" in Austen's first sentence | *need* (Requirement): "in want of a wife", correctly not *desire* |
+| Tap "fortune", "acknowledged" | *money*; *accept as true* |
+| Tap "bank" in Alice's first paragraph | the river bank |
+| Translate a paragraph, twice | 3.65 s, then 0.02 s from the shared cache |
+| Sync a position in chapter 31 | 44 % |
+| First tap of a word nobody has looked up | 7-8 s: a fresh lookup, then a disambiguation |
+| A known word in a sentence not yet seen | 3-4 s: the disambiguation only |
+| Same taps again, Redis up | 0.00-0.01 s, identical answers |
+| Same taps again, Redis down | ~3.5 s each: the lookup is cached, but the sense memo is not |
+
+The last row is why `READER_REDIS_URL` is now set for every service in
+`deploy/docker-compose.prod.yml`. Unset, it defaults to localhost, the tier
+switches itself off on the first tap, and every ambiguous tap re-asks the
+model.
+
+**Still not verified:** the schema-fallback paths on `tabitoken` and
+`agentrouter`, which were down during testing; and a deploy. Nothing has been
+pushed.
+
 ---
 
-## Appendix A: complete source
+## Appendix A: design-time source
 
-Every file below passed ruff and `mypy --strict` against the real `app` package, and ran in the smoke test, unless it is marked as a sketch. Paths are where each file goes in the repository.
+Every file below passed ruff and `mypy --strict` against the real `app` package, and ran in the smoke test, unless it is marked as a sketch. It is the design as verified before implementation; the repository is authoritative, and section 12 lists where the two differ.
 
 ### A.1 Domain entities
 

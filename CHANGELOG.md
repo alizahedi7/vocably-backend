@@ -33,6 +33,16 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
 
 ### Added
 
+- **The reader: public-domain books with every word one tap from its meaning.**
+  `GET /books`, `GET /books/{id}` and `GET /books/{id}/chapters/{chapter_id}`
+  serve published books as chapters of blocks. `POST /reader/lookup-word` looks
+  a tapped word up through the flashcard lookup chain by its lemma and marks
+  the sense its sentence uses; `POST /reader/translate-paragraph` translates a
+  paragraph, shared across learners when it is a book's; `POST|GET|DELETE
+  /reader/progress` keeps each learner's place. Books are ingested unpublished
+  from Standard Ebooks, Project Gutenberg or a file (`make book-ingest`), and
+  published through `PATCH /admin/books/{id}/publish`. Needs `READER_REDIS_URL`
+  set to the real Redis in production. See `docs/reader-module-design.md`.
 - **`GET /users/search?q=`** — finds people to share a deck with. Prefix match
   on the **handle only** (never the display name), two characters minimum,
   eight results maximum, shortest first so an exact match leads its
