@@ -429,3 +429,41 @@ async def test_a_position_must_be_in_the_book_it_claims(
     )
     assert wrong_book.status_code == 422
     assert unknown.status_code == 404
+
+
+# ── The app's own stories ─────────────────────────────────────
+# The client also holds stories the server has never seen, with ids of its
+# own, and sends them along with a tap in the same fields. Found on the first
+# production tap: "Input should be a valid UUID" instead of a meaning.
+
+
+async def test_an_id_the_server_does_not_know_is_ignored_not_refused(
+    client: AsyncClient, auth_headers: dict[str, str], provider: CountingProvider
+) -> None:
+    response = await client.post(
+        "/api/v1/reader/lookup-word",
+        headers=auth_headers,
+        json={
+            "word": "stood",
+            "book_id": "bk_late_bus",
+            "block_id": "blk-2",
+            "char_start": 6,
+            "char_end": 11,
+            "sentence_context": "Nadia stood at the stop and counted the people waiting with her.",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["lemma"] == "stand"
+    assert provider.terms == ["stand"]
+
+
+async def test_a_local_paragraph_is_translated_from_its_text(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    response = await client.post(
+        "/api/v1/reader/translate-paragraph",
+        headers=auth_headers,
+        json={"block_id": "blk-2", "paragraph_text": "The bus was late again."},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["translation"].endswith("The bus was late again.")

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.api.v1.schemas.ai import LookupOut
 from app.application.services.reader_service import PassageView, ReaderLookupView
@@ -129,13 +129,32 @@ class ChapterOut(BaseModel):
         )
 
 
+def _uuid_or_none(value: object) -> object:
+    """An id the server cannot parse is no id, not a 422.
+
+    ``book_id`` and ``block_id`` are hints, and a tap must not fail on a hint.
+    The app also holds stories of its own, with its own ids, and sends them
+    along with a tap in exactly the same fields; the first production tap on
+    one of those answered "Input should be a valid UUID" instead of a meaning.
+    Unparseable ids fall back to ``sentence_context``, as offsets that do not
+    fit a block already do.
+    """
+    if value is None or isinstance(value, UUID):
+        return value
+    try:
+        return UUID(str(value))
+    except ValueError:
+        return None
+
+
 class LookupWordIn(BaseModel):
     """A tap. ``word`` is required; everything else sharpens the answer.
 
     Send ``block_id`` with ``char_start``/``char_end`` whenever the tap was in a
     book: the server reads the sentence from the canonical text itself, which is
     what lets one disambiguation serve every reader of that line. Send
-    ``sentence_context`` only for text the server does not hold.
+    ``sentence_context`` for text the server does not hold, such as the app's
+    own stories; any id that is not one of the server's is ignored.
     """
 
     word: str = Field(min_length=1, max_length=120, examples=["bound"])
@@ -146,6 +165,8 @@ class LookupWordIn(BaseModel):
     block_id: UUID | None = None
     char_start: int | None = Field(default=None, ge=0)
     char_end: int | None = Field(default=None, ge=1)
+
+    _lenient_ids = field_validator("book_id", "block_id", mode="before")(_uuid_or_none)
 
 
 class LookupWordOut(BaseModel):
@@ -189,6 +210,10 @@ class TranslateParagraphIn(BaseModel):
     block_id: UUID | None = None
     paragraph_text: str = Field(default="", max_length=1_500)
     target_language: str | None = Field(default=None, max_length=64)
+
+    #: A block id that is not the server's is no block: the text is used. The
+    #: app's own stories carry their own ids, and it sends them here too.
+    _lenient_ids = field_validator("block_id", mode="before")(_uuid_or_none)
 
 
 class TranslateParagraphOut(BaseModel):
