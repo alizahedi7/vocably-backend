@@ -7,7 +7,12 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "sqlalchemy[asyncio]>=2.0.36",
+    # Upper bound deliberate, for the same reason as `anthropic` below: with no
+    # committed lockfile, CI resolved SQLAlchemy 2.1.1 the week it shipped, and
+    # 2.1 retyped `Select` so that 26 places across five untouched modules
+    # failed mypy while the tests still passed. Lift it with the typing
+    # migration, not before.
+    "sqlalchemy[asyncio]>=2.0.36,<2.1",
     "asyncpg>=0.30",
     "alembic>=1.14",
     "pydantic>=2.10",
