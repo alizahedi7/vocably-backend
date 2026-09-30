@@ -122,7 +122,7 @@ def _fresh_shared_limiters() -> Iterator[None]:
 def _no_reader_hot_cache(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Keep the reader's Redis tier out of the suite.
 
-    It is process-global and its entries outlive a test — a disambiguation is
+    It is process-global and its entries outlive a test — a meaning is
     memoised for thirty days — so with a developer's Redis running, one run's
     answers would leak into the next. Its own behaviour is covered with a fake
     in ``tests/unit/test_reader_hot_cache.py``.

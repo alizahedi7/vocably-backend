@@ -23,6 +23,7 @@ from app.domain.entities.book import (
     BookChapter,
     PassageTranslation,
     ReadingPosition,
+    SentenceMeaning,
 )
 
 
@@ -128,3 +129,16 @@ class PassageTranslationRepository(ABC):
     async def put(self, translation: PassageTranslation) -> None:
         """``ON CONFLICT DO NOTHING``: the first translation stored wins, so a
         race between two readers of one paragraph cannot flap the text."""
+
+
+class SentenceMeaningRepository(ABC):
+    """Best-effort, like passage translations: a failure is a miss."""
+
+    @abstractmethod
+    async def get(
+        self, sentence_hash: str, word: str, *, native_language: str, prompt_version: int
+    ) -> SentenceMeaning | None: ...
+
+    @abstractmethod
+    async def put(self, meaning: SentenceMeaning) -> None:
+        """``ON CONFLICT DO NOTHING``: the first answer stored is the one read."""

@@ -24,11 +24,13 @@ from app.domain.entities.book import (
     BookChapter,
     PassageTranslation,
     ReadingPosition,
+    SentenceMeaning,
 )
 from app.domain.repositories.book_repository import (
     BookProgressRepository,
     BookRepository,
     PassageTranslationRepository,
+    SentenceMeaningRepository,
 )
 from app.infrastructure.db import mappers
 from app.infrastructure.db.dialects import upsert_insert
@@ -38,6 +40,7 @@ from app.infrastructure.db.models.book import (
     BookModel,
     BookProgressModel,
     PassageTranslationModel,
+    SentenceMeaningModel,
 )
 
 # ── Books ─────────────────────────────────────────────────────
@@ -380,5 +383,55 @@ class SqlAlchemyPassageTranslationRepository(PassageTranslationRepository):
         await self._session.execute(
             stmt.on_conflict_do_nothing(
                 index_elements=["text_hash", "target_language", "prompt_version"]
+            )
+        )
+
+
+# ── Meanings in context ───────────────────────────────────────
+
+
+class SqlAlchemySentenceMeaningRepository(SentenceMeaningRepository):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get(
+        self, sentence_hash: str, word: str, *, native_language: str, prompt_version: int
+    ) -> SentenceMeaning | None:
+        key = (sentence_hash, word, native_language, prompt_version)
+        model = await self._session.get(SentenceMeaningModel, key)
+        if model is None:
+            return None
+        return SentenceMeaning(
+            sentence_hash=model.sentence_hash,
+            word=model.word,
+            native_language=model.native_language,
+            prompt_version=model.prompt_version,
+            lemma=model.lemma,
+            part_of_speech=model.part_of_speech,
+            context=model.context,
+            definition=model.definition,
+            native_meaning=model.native_meaning,
+            provider=model.provider,
+            model=model.model,
+            created_at=model.created_at,
+        )
+
+    async def put(self, meaning: SentenceMeaning) -> None:
+        stmt = upsert_insert(self._session)(SentenceMeaningModel).values(
+            sentence_hash=meaning.sentence_hash,
+            word=meaning.word[:120],
+            native_language=meaning.native_language[:64],
+            prompt_version=meaning.prompt_version,
+            lemma=meaning.lemma[:120],
+            part_of_speech=meaning.part_of_speech[:32],
+            context=meaning.context[:120],
+            definition=meaning.definition,
+            native_meaning=meaning.native_meaning,
+            provider=meaning.provider[:32],
+            model=meaning.model[:128],
+        )
+        await self._session.execute(
+            stmt.on_conflict_do_nothing(
+                index_elements=["sentence_hash", "word", "native_language", "prompt_version"]
             )
         )

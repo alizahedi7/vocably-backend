@@ -156,3 +156,29 @@ class PassageTranslation:
     model: str = ""
     hit_count: int = 0
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(slots=True)
+class SentenceMeaning:
+    """What one word means in one sentence of a stored book, kept for everyone.
+
+    The durable twin of the Redis memo, and stored under the same rule as a
+    passage translation: only when the sentence is a stored book's, never for
+    text a learner brought. Keyed by the sentence's hash, the word as tapped,
+    the learner's language and the prompt version. Shown to the reader and
+    matched against the lexicon's senses, but never written into the lexicon:
+    it is a fact about a sentence, and senses are facts about words.
+    """
+
+    sentence_hash: str = ""
+    word: str = ""
+    native_language: str = ""
+    prompt_version: int = 0
+    lemma: str = ""
+    part_of_speech: str = ""
+    context: str = ""
+    definition: str = ""
+    native_meaning: str = ""
+    provider: str = ""
+    model: str = ""
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))

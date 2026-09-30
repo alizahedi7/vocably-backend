@@ -11,6 +11,7 @@ from app.infrastructure.db.models.book import (
     BookModel,
     BookProgressModel,
     PassageTranslationModel,
+    SentenceMeaningModel,
 )
 from app.infrastructure.db.models.daily_deck_activity import DailyDeckActivityModel
 from app.infrastructure.db.models.deck import DeckModel
@@ -56,6 +57,7 @@ __all__ = [
     "LexemeSenseTranslationModel",
     "OtpChallengeModel",
     "PassageTranslationModel",
+    "SentenceMeaningModel",
     "UserModel",
     "WordModel",
     "WordProgressModel",
