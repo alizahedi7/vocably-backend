@@ -7,7 +7,12 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "sqlalchemy[asyncio]>=2.0.36",
+    # Upper bound deliberate, for the same reason as `anthropic` below: with no
+    # committed lockfile, CI resolved SQLAlchemy 2.1.1 the week it shipped, and
+    # 2.1 retyped `Select` so that 26 places across five untouched modules
+    # failed mypy while the tests still passed. Lift it with the typing
+    # migration, not before.
+    "sqlalchemy[asyncio]>=2.0.36,<2.1",
     "asyncpg>=0.30",
     "alembic>=1.14",
     "pydantic>=2.10",
@@ -25,6 +30,14 @@ dependencies = [
     "openai>=1.54",
     "celery[redis]>=5.4",
     "pyyaml>=6.0",
+    # The reader's ingest pipeline. BeautifulSoup + lxml parse EPUB XHTML;
+    # ``ebooklib`` is deliberately not used, being AGPL-3.0 (see
+    # docs/reader-module-design.md §3.1).
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    # Offline, dictionary-based lemmatiser (MIT). A tap on "ran" must reach the
+    # lexeme for "run"; see app/infrastructure/nlp/simplemma_lemmatizer.py.
+    "simplemma>=2.0",
 ]
 
 [project.optional-dependencies]

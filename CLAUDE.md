@@ -90,6 +90,9 @@ The read-only admin analytics API backing the standalone **vocably-admin** dashb
   change, not a migration. That one route publishes *and* unpublishes, and
   `GET /admin/builds/{id}` reports where the built deck currently stands as
   `deckIsPublic` — see "Publishing is still a separate, deliberate act".
+  Books are the same act for the library: `POST /admin/books/ingest` queues an
+  ingest, `GET /admin/books` and `GET /admin/books/{id}` are the review, and
+  `PATCH /admin/books/{id}/publish` curates — see "The reader".
 - **Response contract**: schemas in [admin.py](app/api/v1/schemas/admin.py) serialise via
   `serialization_alias` to **camelCase** to match vocably-admin's TypeScript types. Renaming a
   field is a breaking change for that client — keep the aliases in sync with the dashboard.
@@ -164,10 +167,11 @@ a 502 with nothing to catch it.
   one entry and one lexeme serve every learner whichever gateway wrote them.
   It is also why the enricher and translator get failover for free: both are
   handed `raw_ai_provider()` directly.
-- **It delegates five methods, not two** — the port's pair plus `translate_only`,
+- **It delegates seven methods, not two** — the port's pair plus `translate_only`,
   `translate_senses` and `enrich_senses`, the structural protocols
-  `GroundedAIService` and `LexiconAIService` cast it to. Miss one and grounding
-  loses failover at runtime with no type error to catch it.
+  `GroundedAIService` and `LexiconAIService` cast it to, and the reader's
+  `disambiguate_sense` and `translate_passage`. Miss one and that path loses
+  failover at runtime with no type error to catch it.
 - **It trips on `ExternalServiceError` and nothing else.** The adapters already
   funnel every transport error, status code, content filter and schema failure
   into that one type, so it means "this gateway did not answer". A
@@ -1381,3 +1385,87 @@ a refused connection costs real latency on every word (measured at ~11s/word wit
 Redis down), and a command cancelled by its timeout can leave a pooled connection
 that blocks the next caller indefinitely. `pg_advisory_xact_lock` was rejected —
 it would hold a database connection for the whole provider call.
+
+## The reader
+
+Public-domain books, read chapter by chapter, with every word one tap from its
+meaning in the sentence it appears in. `GET /books`, `GET /books/{id}`,
+`GET /books/{id}/chapters/{chapter_id}`, `POST /reader/lookup-word`,
+`POST /reader/translate-paragraph`, `POST|GET|DELETE /reader/progress`. The full
+design, and the live evaluation of its prompts, is in
+[reader-module-design.md](docs/reader-module-design.md); the two decisions that
+are hard to reverse are ADRs [0001](docs/adr/0001-the-reader-reads-the-lexicon.md)
+and [0002](docs/adr/0002-blocks-and-character-offsets.md).
+
+**There is no vocabulary table of the reader's own, and there must never be.**
+A tap goes through the *flashcard* lookup chain — `lookup_chain()`, the same
+cache and lexicon — with the **lemma alone**, so a word tapped in a book is free
+to every flashcard lookup and deck build and the reverse, and the tap's
+`lookup_id` is the one `/ai/lookup` returns and `/ai/feedback` rates. The
+sentence never reaches that chain: shared, impersonal senses are a fact about a
+word, never about one learner's paragraph — the rule that keeps `interests` out
+of the cache key. Lemmatising is offline (simplemma), never a model, and a
+lemma that finds nothing gets one retry with what was tapped.
+
+**Which sense a sentence uses is decided after the chain**, cheapest first
+([contextual_sense.py](app/domain/services/contextual_sense.py)): `only` (one
+sense), `overlap` (the sentence's words clearly name one), `model` (an
+index-only call, memoised per sense deck and sentence), `first` (no sentence, or
+the model is down — never a 502), `none` (the model said no stored sense fits:
+show them all). The model call never writes the lexicon; `none` is the signal a
+sense is missing, for the enricher to act on later.
+
+**Book text is blocks under chapters, and a published book's text is
+immutable.** A tap is `(block_id, char_start, char_end)` against the block's
+canonical text (NFC, invisible characters removed, whitespace collapsed — one
+function, `canonical_text`), so offsets mean the same word forever. Pages are
+the client's, never stored. Re-ingesting a *published* book with different text
+is refused with 409, because reading positions point at its block ids; unpublish
+first, or ingest the new edition separately.
+
+**Ingest never publishes.** `make book-ingest source=… ref=…` (or the admin
+route, which queues `vocably.books.ingest` on the **default** queue — no tokens,
+not on a clock) stores a book private and prints its chapter list; publishing is
+the deliberate act, and is refused while a book states no rights. The Gutenberg
+parser is heuristic (markers, repeated heading level, drop-cap alt text,
+captions), which is exactly why a human reads the chapter list first. Prefer
+Standard Ebooks where an edition exists: semantic markup, no heuristics.
+Uploads are an operator command, never an API call. `ebooklib` is AGPL-3.0 and
+deliberately not used.
+
+**The Redis tier is money and latency, never correctness** —
+[reader_hot_cache.py](app/infrastructure/ai/reader_hot_cache.py), database 4.
+Every command is bounded at one second and **the first failure turns it off for
+the process**, as `SingleFlight` does. Off, it costs a Postgres read per tap for
+lookups but **a model call per ambiguous tap** for the sense memo (measured
+~3 s, against ~0 s with Redis). So `READER_REDIS_URL` must name the real Redis
+in every compose service; unset it defaults to localhost, which in a container
+is nothing. That was found by running the reader end to end, not by a test.
+
+**A paragraph translation is shared only if its text is a stored block.**
+`passage_translations` is keyed by `(text hash, target language,
+READER_PROMPT_VERSION)` and carries no user id. Free text is never stored — it
+might be the learner's own — and is logged only as a fingerprint salted with the
+user id, which is how "do repeats justify a per-user cache?" gets answered.
+Clients should send `block_id`: book text sent as free text still hits the
+cache, but loses the previous paragraph as context. A translation is given the
+source's line layout deterministically (`match_layout`), because one gateway
+added a blank line to verse despite the prompt.
+
+**Bump `READER_PROMPT_VERSION` with any change to either reader prompt**
+([reader_prompts.py](app/infrastructure/ai/reader_prompts.py)). It is part of
+both caches' keys; `PROMPT_VERSION` is untouched, because the reader never
+changes how a word is defined.
+
+**`book_progress` is the module's only user data** — one row per learner and
+book, last writer wins (a learner may go back), cascading with the user.
+`percent` is computed here from stored word counts, including the share of the
+current block read, and never accepted from a client. The shelf hides a book
+taken out of the library.
+
+`tests/infrastructure/test_epub_parser.py` builds synthetic EPUBs
+(`tests/epub_builder.py`) for each parser rule; `tests/api/test_reader.py`,
+`test_reader_service.py`, `test_book_repository.py`, `test_book_ingest.py` and
+`test_admin_books.py` hold the rest. The suite disables the Redis tier
+(`_no_reader_hot_cache`), because its entries outlive a test.
+

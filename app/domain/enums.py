@@ -272,3 +272,25 @@ class SenseSelection(StrEnum):
     def is_confident(self) -> bool:
         """Whether this choice needs no human eye."""
         return self in (SenseSelection.EXPLICIT, SenseSelection.MANUAL, SenseSelection.HINT)
+
+
+class BookSource(StrEnum):
+    """Where a book's text came from. Recorded at ingest, never inferred later."""
+
+    STANDARD_EBOOKS = "standard_ebooks"
+    GUTENBERG = "gutenberg"
+    #: A file an admin handed the ingest command. ``source_id`` is its sha256.
+    UPLOAD = "upload"
+
+
+class BlockKind(StrEnum):
+    """What one block of a book's text is. See ``app.domain.entities.book``."""
+
+    PARAGRAPH = "paragraph"
+    #: A heading *inside* a chapter (a scene title, a dated diary entry). The
+    #: chapter's own title lives on the chapter, not among its blocks.
+    HEADING = "heading"
+    QUOTE = "quote"
+    #: Poetry or a letter: the line breaks inside the text are meaningful and
+    #: the client must render them. Every other kind is one flowing run.
+    VERSE = "verse"

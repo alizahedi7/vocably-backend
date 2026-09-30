@@ -119,8 +119,9 @@ def test_a_failing_close_neither_fails_the_task_nor_keeps_the_stale_pool(
 
 def test_the_real_factories_are_registered() -> None:
     """A new process-wide async client that is not registered fails silently."""
-    from app.infrastructure.ai.factory import single_flight
+    from app.infrastructure.ai.factory import reader_hot_cache, single_flight
     from app.infrastructure.dictionary.factory import dictionary_service
 
     assert dictionary_service in runtime._POOLED_FACTORIES
     assert single_flight in runtime._POOLED_FACTORIES
+    assert reader_hot_cache in runtime._POOLED_FACTORIES

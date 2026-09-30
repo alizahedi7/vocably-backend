@@ -35,7 +35,7 @@ from typing import Any
 
 from app.core.database import engine
 from app.core.logging import get_logger
-from app.infrastructure.ai.factory import reset_provider_cache, single_flight
+from app.infrastructure.ai.factory import reader_hot_cache, reset_provider_cache, single_flight
 from app.infrastructure.dictionary.factory import dictionary_service
 
 logger = get_logger("vocably.tasks.runtime")
@@ -45,7 +45,7 @@ logger = get_logger("vocably.tasks.runtime")
 #: is an ``lru_cache``-wrapped factory whose value holds a connection pool.
 #: Adding a new process-wide async client anywhere means adding it here, or its
 #: second use in a worker fails — quietly, if that client is best-effort.
-_POOLED_FACTORIES: tuple[Any, ...] = (dictionary_service, single_flight)
+_POOLED_FACTORIES: tuple[Any, ...] = (dictionary_service, single_flight, reader_hot_cache)
 
 #: Released the same way, but through a function rather than a cache handle: the
 #: AI gateways are memoized per name, so there is no single ``lru_cache`` entry

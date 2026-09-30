@@ -8,11 +8,13 @@ from app.api.v1.routers import (
     admin,
     ai,
     auth,
+    books,
     deck_sharing,
     deck_units,
     decks,
     discovery,
     feedback,
+    reader,
     study,
     users,
     words,
@@ -33,5 +35,7 @@ api_router.include_router(deck_units.units_router)
 api_router.include_router(words.router)
 api_router.include_router(study.router)
 api_router.include_router(ai.router)
+api_router.include_router(books.router)
+api_router.include_router(reader.router)
 api_router.include_router(feedback.router)
 api_router.include_router(admin.router)

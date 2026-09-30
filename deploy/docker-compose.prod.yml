@@ -69,6 +69,11 @@ services:
       # word. Not a correctness problem (unique constraints handle that), but
       # it is money.
       LEXICON_REDIS_URL: redis://redis:6379/3
+      # The reader's hot cache and its sense-disambiguation memo. Unset, it
+      # defaults to localhost — nothing listens there — and switches itself
+      # off on the first tap, so every ambiguous sentence re-asks the model:
+      # a ~3 s model call per tap instead of a Redis read.
+      READER_REDIS_URL: redis://redis:6379/4
     # This is the only service that migrates; worker and beat deliberately do
     # not, so a deploy never runs two migration attempts concurrently.
     command: >
@@ -104,6 +109,7 @@ services:
       # word. Not a correctness problem (unique constraints handle that), but
       # it is money.
       LEXICON_REDIS_URL: redis://redis:6379/3
+      READER_REDIS_URL: redis://redis:6379/4
     # Memory, not CPU, is the binding constraint on this VPS: a single process
     # running this app measures ~110 MiB, against under 1 GiB of RAM shared
     # with Postgres, Caddy, the API and the admin dashboard. Prefork spawns
@@ -158,6 +164,7 @@ services:
       # word. Not a correctness problem (unique constraints handle that), but
       # it is money.
       LEXICON_REDIS_URL: redis://redis:6379/3
+      READER_REDIS_URL: redis://redis:6379/4
     # /tmp because the image runs as a non-root user that cannot write to the
     # working directory. Losing this file only re-evaluates the schedule.
     command: celery -A app.tasks beat --loglevel=info --schedule=/tmp/celerybeat-schedule

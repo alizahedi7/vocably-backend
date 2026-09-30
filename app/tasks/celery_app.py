@@ -45,6 +45,7 @@ TASK_MODULES = [
     "app.tasks.maintenance",
     "app.tasks.phonetics",
     "app.tasks.deck_build",
+    "app.tasks.books",
 ]
 
 celery_app = Celery("vocably", include=TASK_MODULES)

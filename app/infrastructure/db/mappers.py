@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import RowMapping
 
+from app.domain.entities.book import Book, BookBlock, BookChapter, ReadingPosition
 from app.domain.entities.deck import Deck
 from app.domain.entities.deck_build import DeckBuildItem, DeckBuildJob, SenseHint
 from app.domain.entities.deck_member import DeckMember
@@ -23,6 +24,8 @@ from app.domain.entities.word_progress import WordProgress
 from app.domain.enums import (
     AgeRange,
     AuthMethod,
+    BlockKind,
+    BookSource,
     DeckBuildItemState,
     DeckBuildState,
     DeckRole,
@@ -31,6 +34,12 @@ from app.domain.enums import (
     SenseSelection,
     SenseSource,
     SenseStatus,
+)
+from app.infrastructure.db.models.book import (
+    BookBlockModel,
+    BookChapterModel,
+    BookModel,
+    BookProgressModel,
 )
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.deck_build import DeckBuildItemModel, DeckBuildJobModel
@@ -451,3 +460,72 @@ def hint_to_payload(hint: SenseHint) -> dict[str, str] | None:
         "context": hint.context,
         "gloss": hint.gloss,
     }
+
+
+# ── Books ────────────────────────────────────────────────────
+
+
+def book_to_entity(model: BookModel, chapters: list[BookChapter] | None = None) -> Book:
+    return Book(
+        id=model.id,
+        slug=model.slug,
+        title=model.title,
+        author=model.author,
+        language=model.language,
+        description=model.description,
+        cover_url=model.cover_url,
+        source=BookSource(model.source),
+        source_id=model.source_id,
+        source_url=model.source_url,
+        rights=model.rights,
+        extra=dict(model.extra or {}),
+        content_hash=model.content_hash,
+        total_chapters=model.total_chapters,
+        total_words=model.total_words,
+        is_public=model.is_public,
+        published_at=model.published_at,
+        chapters=chapters or [],
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )
+
+
+def book_chapter_to_entity(
+    model: BookChapterModel, blocks: list[BookBlock] | None = None
+) -> BookChapter:
+    return BookChapter(
+        id=model.id,
+        book_id=model.book_id,
+        index=model.index,
+        title=model.title,
+        part_title=model.part_title,
+        word_count=model.word_count,
+        block_count=model.block_count,
+        words_before=model.words_before,
+        blocks=blocks or [],
+    )
+
+
+def book_block_to_entity(model: BookBlockModel) -> BookBlock:
+    return BookBlock(
+        id=model.id,
+        chapter_id=model.chapter_id,
+        position=model.position,
+        kind=BlockKind(model.kind),
+        text=model.text,
+        text_hash=model.text_hash,
+        word_count=model.word_count,
+        words_before=model.words_before,
+    )
+
+
+def book_progress_to_entity(model: BookProgressModel) -> ReadingPosition:
+    return ReadingPosition(
+        user_id=model.user_id,
+        book_id=model.book_id,
+        chapter_id=model.chapter_id,
+        block_id=model.block_id,
+        char_offset=model.char_offset,
+        percent=model.percent,
+        updated_at=model.updated_at,
+    )

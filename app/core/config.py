@@ -352,6 +352,24 @@ class Settings(BaseSettings):
     #: constraints — so an unreachable Redis degrades to "both generate".
     lexicon_single_flight: bool = True
 
+    # ── Reader ────────────────────────────────────────────────
+    #: Redis in front of the reader's lookups and sense disambiguations. Off
+    #: means every tap costs one indexed Postgres read, which is fine; on lets a
+    #: class reading one chapter share a hot set. Never load-bearing.
+    reader_hot_cache_enabled: bool = True
+    #: Its own logical database, for the reason ``lexicon_redis_url`` gives:
+    #: flushing a disposable cache must never touch a lock or a security limit.
+    reader_redis_url: str = "redis://localhost:6379/4"
+    #: How long a hot lookup lives. Short, because the lexicon is append-only and
+    #: a stale entry is at worst missing a sense enriched an hour ago.
+    reader_lookup_ttl_seconds: int = Field(default=6 * 3600, ge=60)
+    #: Taps per learner per hour through the shared Redis limiter. A miss is a
+    #: provider call, so this is a spend ceiling as much as an abuse one.
+    reader_lookups_per_user_per_hour: int = 600
+    #: Paragraph translations per learner per hour. A paragraph is ~50x the
+    #: tokens of a word, and a chapter's worth is a translation service.
+    passage_translations_per_user_per_hour: int = 120
+
     # ── Deck build pipeline ───────────────────────────────────
     #: Words one ``vocably.ai.build_deck`` run resolves before re-queuing itself.
     #: This times worker concurrency *is* the rate limit on provider calls, which
