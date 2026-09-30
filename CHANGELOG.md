@@ -43,6 +43,12 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
   from Standard Ebooks, Project Gutenberg or a file (`make book-ingest`), and
   published through `PATCH /admin/books/{id}/publish`. Needs `READER_REDIS_URL`
   set to the real Redis in production. See `docs/reader-module-design.md`.
+- **The reader answers "what does this word mean here" alongside the lookup.**
+  `POST /reader/lookup-word` now returns one `meaning`, the sentence's, and
+  asks the model for it in parallel with the lookup rather than after it: a
+  cold word costs one round trip instead of two, and a cached word the
+  sentence decides costs no model call. Publishing a book pre-warms its whole
+  vocabulary in the background (`vocably.ai.warm_book`, `make book-warm`).
 - **`GET /users/search?q=`** — finds people to share a deck with. Prefix match
   on the **handle only** (never the display name), two characters minimum,
   eight results maximum, shortest first so an exact match leads its

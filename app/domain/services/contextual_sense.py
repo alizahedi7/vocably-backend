@@ -98,23 +98,31 @@ def match_meaning(
 ) -> ContextualChoice | None:
     """The stored sense the model's meaning describes, or ``None``.
 
-    Coverage is measured *from the model's definition*: a stored sense that
-    accounts for most of its content words is the same sense. A meaning whose
-    lemma is a longer expression than the looked-up term ("give up" against
-    "give") is an idiom the senses cannot hold, and never matches.
+    Two definitions of one sense are paraphrases of each other, so overlap is
+    measured in both directions — how much of the model's definition the
+    stored sense accounts for, and how much of the stored definition the
+    model's does — and the better direction counts. Words are reduced to a
+    crude stem first, so "games" and "rides" meet "game" and "ride". A meaning
+    whose lemma is a longer expression than the looked-up term ("in want of"
+    against "want") is an idiom the senses cannot hold, and never matches.
     """
     if not senses:
         return None
     lemma = meaning.lemma.strip().casefold()
     if " " in lemma and lemma != term.strip().casefold():
         return None
-    wanted = _content_words(f"{meaning.definition} {meaning.context}")
+    wanted = _stems(f"{meaning.definition} {meaning.context}")
     if not wanted:
         return None
     best: tuple[float, int] | None = None
     for index, sense in enumerate(senses):
-        found = _content_words(f"{sense.context} {sense.definition} {sense.example}")
-        score = len(wanted & found) / len(wanted)
+        own = _stems(f"{sense.context} {sense.definition}")
+        found = own | _stems(sense.example)
+        shared = wanted & found
+        score = max(
+            len(shared) / len(wanted),
+            len(wanted & own) / len(own) if own else 0.0,
+        )
         same_pos = _same_pos(meaning.part_of_speech, sense.part_of_speech)
         floor = MATCH_MIN_SCORE_SAME_POS if same_pos else MATCH_MIN_SCORE
         if score >= floor and (best is None or score > best[0]):
@@ -122,6 +130,20 @@ def match_meaning(
     if best is None:
         return None
     return ContextualChoice(best[1], ContextualSelection.MATCHED, round(best[0], 3))
+
+
+def _stems(text: str) -> set[str]:
+    """Content words with common inflections stripped: "sloping" → "slop",
+    "rides" → "ride". Crude on purpose — it only has to make two spellings of
+    one word collide, never to be right about English."""
+    out: set[str] = set()
+    for word in _content_words(text):
+        for suffix in ("ing", "ed", "es", "s"):
+            if len(word) > len(suffix) + 3 and word.endswith(suffix):
+                word = word[: -len(suffix)]
+                break
+        out.add(word)
+    return out
 
 
 def _same_pos(left: str, right: str) -> bool:

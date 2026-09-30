@@ -145,3 +145,35 @@ def test_an_idiom_never_matches_the_single_words_senses() -> None:
 def test_nothing_to_match_against_is_no_match() -> None:
     meaning = ContextualMeaning("bank", "noun", "Money", "a place for money", "بانک")
     assert match_meaning(meaning, "bank", []) is None
+
+
+def test_a_paraphrased_definition_still_matches() -> None:
+    # Both measured live: the model's wording for a sense the lexicon holds.
+    alice = ContextualMeaning(
+        "bank", "noun", "Geography", "the land alongside or sloping down to a river or lake", "ساحل"
+    )
+    choice = match_meaning(alice, "bank", [FINANCE, RIVER])
+    assert choice is not None and choice.index == 1
+    county = ContextualMeaning(
+        "fair",
+        "noun",
+        "Entertainment",
+        "a large public event where people go to watch shows, play games and buy things",
+        "شهربازی",
+    )
+    event = MeaningSuggestion(
+        "بازارچه",
+        "an outdoor event with rides, games and stalls",
+        "We went to the fair.",
+        "Event",
+        "noun",
+    )
+    justice = MeaningSuggestion(
+        "منصفانه",
+        "treating people equally and reasonably",
+        "It was a fair decision.",
+        "Justice",
+        "adjective",
+    )
+    choice = match_meaning(county, "fair", [justice, event])
+    assert choice is not None and choice.index == 1

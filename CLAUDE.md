@@ -1407,13 +1407,22 @@ word, never about one learner's paragraph — the rule that keeps `interests` ou
 of the cache key. Lemmatising is offline (simplemma), never a model, and a
 lemma that finds nothing gets one retry with what was tapped.
 
-**Which sense a sentence uses is decided after the chain**, cheapest first
-([contextual_sense.py](app/domain/services/contextual_sense.py)): `only` (one
-sense), `overlap` (the sentence's words clearly name one), `model` (an
-index-only call, memoised per sense deck and sentence), `first` (no sentence, or
-the model is down — never a 502), `none` (the model said no stored sense fits:
-show them all). The model call never writes the lexicon; `none` is the signal a
-sense is missing, for the enricher to act on later.
+**What the word means here is asked alongside the lookup, not after it.** The
+model is asked "what does this word mean in this sentence" — a question that
+needs no sense list, so it starts the moment the tap arrives and a cold word
+costs one round trip instead of two. A lookup that answers from cache inside
+`WARM_LOOKUP_WAIT_SECONDS` is waited for first, and then a one-sense word
+(`only`) or a decisive sentence (`overlap`,
+[contextual_sense.py](app/domain/services/contextual_sense.py)) costs no call.
+The answer is matched to a stored sense by definition overlap in both
+directions (`matched`) or shown as itself (`contextual`); `first` means no
+sentence or no model, never a 502. It is memoised per word, sentence and
+language, kept durably in `sentence_meanings` for a book's sentence, and
+**never written into the lexicon**: a fact about one sentence is not a fact
+about the word. The reader shows that one meaning and never lists the other
+senses; they stay in `lookup` for the flashcard features. Publishing a book
+queues `vocably.ai.warm_book`, which looks every lemma of it up in the
+background, so no tap in it waits for a cold lookup.
 
 **Book text is blocks under chapters, and a published book's text is
 immutable.** A tap is `(block_id, char_start, char_end)` against the block's
@@ -1437,7 +1446,7 @@ deliberately not used.
 [reader_hot_cache.py](app/infrastructure/ai/reader_hot_cache.py), database 4.
 Every command is bounded at one second and **the first failure turns it off for
 the process**, as `SingleFlight` does. Off, it costs a Postgres read per tap for
-lookups but **a model call per ambiguous tap** for the sense memo (measured
+lookups but **a model call per new sentence** for the meaning memo (measured
 ~3 s, against ~0 s with Redis). So `READER_REDIS_URL` must name the real Redis
 in every compose service; unset it defaults to localhost, which in a container
 is nothing. That was found by running the reader end to end, not by a test.
