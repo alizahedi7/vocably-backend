@@ -366,6 +366,18 @@ class Settings(BaseSettings):
     #: Taps per learner per hour through the shared Redis limiter. A miss is a
     #: provider call, so this is a spend ceiling as much as an abuse one.
     reader_lookups_per_user_per_hour: int = 600
+    #: Look every word of a book up when it is published, so no tap in it ever
+    #: waits for a fresh lookup. A few thousand lemmas per novel, through the
+    #: request path's gateway, in the background. Off means the first reader of
+    #: each word pays the cold lookup.
+    reader_warm_on_publish: bool = True
+    #: Lemmas one ``vocably.ai.warm_book`` run looks up before re-queuing
+    #: itself; times the concurrency, this is the rate on the gateway.
+    reader_warm_batch_size: int = Field(default=40, ge=1, le=500)
+    reader_warm_concurrency: int = Field(default=3, ge=1, le=10)
+    #: The native language the warmed senses carry a headline in — the
+    #: learners' language, as ``users.native_language`` spells it.
+    reader_warm_native_language: str = "Persian"
     #: Paragraph translations per learner per hour. A paragraph is ~50x the
     #: tokens of a word, and a chapter's worth is a translation service.
     passage_translations_per_user_per_hour: int = 120

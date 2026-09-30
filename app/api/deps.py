@@ -20,7 +20,7 @@ from app.application.ports.feedback_notifier import FeedbackNotifier, NullFeedba
 from app.application.ports.google_verifier import GoogleVerifier
 from app.application.ports.lookup_cache import LookupCacheRepository
 from app.application.ports.otp_sender import OTPSender
-from app.application.ports.reader_ai import PassageTranslator, SenseDisambiguator
+from app.application.ports.reader_ai import ContextualMeaningProvider, PassageTranslator
 from app.application.services.admin_service import AdminService
 from app.application.services.ai_studio_service import AIStudioService
 from app.application.services.auth_service import AuthService
@@ -85,6 +85,7 @@ from app.infrastructure.db.repositories.book_repository import (
     SqlAlchemyBookProgressRepository,
     SqlAlchemyBookRepository,
     SqlAlchemyPassageTranslationRepository,
+    SqlAlchemySentenceMeaningRepository,
 )
 from app.infrastructure.db.repositories.deck_activity_repository import (
     SqlAlchemyDeckActivityRepository,
@@ -446,8 +447,9 @@ def get_reader_service(
         books=SqlAlchemyBookRepository(session),
         progress=SqlAlchemyBookProgressRepository(session),
         translations=SqlAlchemyPassageTranslationRepository(session),
+        meanings=SqlAlchemySentenceMeaningRepository(session),
         ai=chain,
-        disambiguator=cast(SenseDisambiguator, raw),
+        explainer=cast(ContextualMeaningProvider, raw),
         translator=cast(PassageTranslator, raw),
         lemmatizer=_lemmatizer(),
         memo=hot,

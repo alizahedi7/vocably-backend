@@ -8,9 +8,11 @@ winner must defer — a confident wrong pick is worse than asking.
 from __future__ import annotations
 
 from app.application.ports.ai_service import MeaningSuggestion
+from app.application.ports.reader_ai import ContextualMeaning
 from app.domain.services.contextual_sense import (
     ContextualSelection,
     choose_locally,
+    match_meaning,
     sentence_around,
 )
 
@@ -103,3 +105,75 @@ def test_a_page_long_sentence_is_windowed_around_the_tap() -> None:
     start = text.index("bank")
     window = sentence_around(text, start, start + 4, max_chars=100)
     assert "bank" in window and len(window) <= 100
+
+
+# ── Matching the model's meaning to a stored sense ────────────
+
+
+def test_a_meaning_that_describes_a_stored_sense_matches_it() -> None:
+    meaning = ContextualMeaning(
+        "bank", "noun", "Geography", "the ground along the edge of a river", "ساحل"
+    )
+    choice = match_meaning(meaning, "bank", [FINANCE, RIVER])
+    assert choice is not None
+    assert (choice.index, choice.selection) == (1, ContextualSelection.MATCHED)
+    assert choice.selection.is_confident
+
+
+def test_a_meaning_the_lexicon_lacks_matches_nothing() -> None:
+    meaning = ContextualMeaning(
+        "bank", "verb", "Aviation", "to tilt an aircraft sideways while turning", "کج شدن"
+    )
+    assert match_meaning(meaning, "bank", [FINANCE, RIVER]) is None
+
+
+def test_a_part_of_speech_agreement_lowers_the_bar_but_does_not_clear_it_alone() -> None:
+    thin = ContextualMeaning("bank", "noun", "Money", "a place for money", "بانک")
+    choice = match_meaning(thin, "bank", [FINANCE, RIVER])
+    assert choice is not None and choice.index == 0
+    unrelated = ContextualMeaning("bank", "noun", "Snow", "a heap of snow", "توده برف")
+    assert match_meaning(unrelated, "bank", [FINANCE, RIVER]) is None
+
+
+def test_an_idiom_never_matches_the_single_words_senses() -> None:
+    idiom = ContextualMeaning(
+        "bank on", "phrasal verb", "Trust", "to rely on money from an organization", "حساب کردن"
+    )
+    assert match_meaning(idiom, "bank", [FINANCE, RIVER]) is None
+
+
+def test_nothing_to_match_against_is_no_match() -> None:
+    meaning = ContextualMeaning("bank", "noun", "Money", "a place for money", "بانک")
+    assert match_meaning(meaning, "bank", []) is None
+
+
+def test_a_paraphrased_definition_still_matches() -> None:
+    # Both measured live: the model's wording for a sense the lexicon holds.
+    alice = ContextualMeaning(
+        "bank", "noun", "Geography", "the land alongside or sloping down to a river or lake", "ساحل"
+    )
+    choice = match_meaning(alice, "bank", [FINANCE, RIVER])
+    assert choice is not None and choice.index == 1
+    county = ContextualMeaning(
+        "fair",
+        "noun",
+        "Entertainment",
+        "a large public event where people go to watch shows, play games and buy things",
+        "شهربازی",
+    )
+    event = MeaningSuggestion(
+        "بازارچه",
+        "an outdoor event with rides, games and stalls",
+        "We went to the fair.",
+        "Event",
+        "noun",
+    )
+    justice = MeaningSuggestion(
+        "منصفانه",
+        "treating people equally and reasonably",
+        "It was a fair decision.",
+        "Justice",
+        "adjective",
+    )
+    choice = match_meaning(county, "fair", [justice, event])
+    assert choice is not None and choice.index == 1

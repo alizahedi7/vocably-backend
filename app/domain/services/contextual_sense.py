@@ -3,18 +3,19 @@
 The reader's version of :mod:`sense_selection`, with the same two virtues:
 **deterministic** (the same sentence and the same senses always pick the same
 one) and **free** (no token is spent on a word with one sense, or on a sentence
-whose own words say which sense is meant). Only when the local score is
-ambiguous is a model asked, and even then only for an index.
+whose own words say which sense is meant).
 
-The ladder, first match wins. Every rung is reported to the client as
-``selection`` so a screen can hedge ("probably this one") when it should:
+When neither free rung answers, the service asks the model what the word means
+*in this sentence* — a question that needs no sense list, so it can be asked
+alongside the lookup — and :func:`match_meaning` then finds the stored sense
+that answer describes, if any. Every rung is reported to the client as
+``selection``:
 
-``only``     the lexeme holds one sense — nothing to choose
-``overlap``  the sentence's content words cover one sense's definition,
-             example and label clearly better than any other
-``model``    asked, because overlap was silent or tied (done by the service)
-``first``    the fallback: the most common sense, as a flashcard shows it
-``none``     the model said no listed sense fits; show every sense, flagged
+``only``        the lexeme holds one sense — nothing to choose
+``overlap``     the sentence's content words cover one sense clearly best
+``matched``     the model's meaning for this sentence matched a stored sense
+``contextual``  no stored sense matched; the model's meaning itself is shown
+``first``       the fallback: the most common sense, as a flashcard shows it
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from app.application.ports.ai_service import MeaningSuggestion
+from app.application.ports.reader_ai import ContextualMeaning
 from app.domain.services.sense_selection import _content_words
 
 #: A sense must cover this share of the sentence's content words to win
@@ -36,18 +38,26 @@ OVERLAP_MIN_MARGIN = 0.08
 class ContextualSelection(StrEnum):
     ONLY = "only"
     OVERLAP = "overlap"
-    MODEL = "model"
+    MATCHED = "matched"
+    CONTEXTUAL = "contextual"
     FIRST = "first"
-    NONE = "none"
 
     @property
     def is_confident(self) -> bool:
-        return self in (ContextualSelection.ONLY, ContextualSelection.OVERLAP)
+        return self is not ContextualSelection.FIRST
+
+
+#: How much of the model's definition a stored sense must account for to be
+#: the same sense. Lower when the parts of speech agree: that agreement is
+#: corroboration the words alone do not carry.
+MATCH_MIN_SCORE = 0.5
+MATCH_MIN_SCORE_SAME_POS = 0.3
 
 
 @dataclass(frozen=True, slots=True)
 class ContextualChoice:
-    #: Index into the sense list the caller passed, or ``None`` for NONE.
+    #: Index into the sense list the caller passed; ``None`` when the meaning
+    #: shown is the model's own rather than a stored sense.
     index: int | None
     selection: ContextualSelection
     score: float | None = None
@@ -81,6 +91,64 @@ def choose_locally(
     if best >= OVERLAP_MIN_SCORE and best - runner_up >= OVERLAP_MIN_MARGIN:
         return ContextualChoice(best_index, ContextualSelection.OVERLAP, round(best, 3))
     return None
+
+
+def match_meaning(
+    meaning: ContextualMeaning, term: str, senses: list[MeaningSuggestion]
+) -> ContextualChoice | None:
+    """The stored sense the model's meaning describes, or ``None``.
+
+    Two definitions of one sense are paraphrases of each other, so overlap is
+    measured in both directions — how much of the model's definition the
+    stored sense accounts for, and how much of the stored definition the
+    model's does — and the better direction counts. Words are reduced to a
+    crude stem first, so "games" and "rides" meet "game" and "ride". A meaning
+    whose lemma is a longer expression than the looked-up term ("in want of"
+    against "want") is an idiom the senses cannot hold, and never matches.
+    """
+    if not senses:
+        return None
+    lemma = meaning.lemma.strip().casefold()
+    if " " in lemma and lemma != term.strip().casefold():
+        return None
+    wanted = _stems(f"{meaning.definition} {meaning.context}")
+    if not wanted:
+        return None
+    best: tuple[float, int] | None = None
+    for index, sense in enumerate(senses):
+        own = _stems(f"{sense.context} {sense.definition}")
+        found = own | _stems(sense.example)
+        shared = wanted & found
+        score = max(
+            len(shared) / len(wanted),
+            len(wanted & own) / len(own) if own else 0.0,
+        )
+        same_pos = _same_pos(meaning.part_of_speech, sense.part_of_speech)
+        floor = MATCH_MIN_SCORE_SAME_POS if same_pos else MATCH_MIN_SCORE
+        if score >= floor and (best is None or score > best[0]):
+            best = (score, index)
+    if best is None:
+        return None
+    return ContextualChoice(best[1], ContextualSelection.MATCHED, round(best[0], 3))
+
+
+def _stems(text: str) -> set[str]:
+    """Content words with common inflections stripped: "sloping" → "slop",
+    "rides" → "ride". Crude on purpose — it only has to make two spellings of
+    one word collide, never to be right about English."""
+    out: set[str] = set()
+    for word in _content_words(text):
+        for suffix in ("ing", "ed", "es", "s"):
+            if len(word) > len(suffix) + 3 and word.endswith(suffix):
+                word = word[: -len(suffix)]
+                break
+        out.add(word)
+    return out
+
+
+def _same_pos(left: str, right: str) -> bool:
+    a, b = left.strip().casefold(), right.strip().casefold()
+    return bool(a) and a == b
 
 
 def sentence_around(text: str, start: int, end: int, *, max_chars: int = 400) -> str:

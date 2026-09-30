@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.api.v1.schemas.ai import LookupOut
+from app.api.v1.schemas.ai import LookupOut, MeaningSuggestionOut
 from app.application.services.reader_service import PassageView, ReaderLookupView
 from app.domain.entities.book import Book, BookChapter, ReadingPosition
 from app.domain.enums import BlockKind
@@ -170,19 +170,26 @@ class LookupWordIn(BaseModel):
 
 
 class LookupWordOut(BaseModel):
-    """``LookupOut`` — the deck of senses ``POST /ai/lookup`` returns and
-    ``POST /ai/feedback`` rates — plus which one this sentence uses."""
+    """The one meaning the reader is shown, plus the full ``LookupOut`` deck
+    that ``POST /ai/lookup`` returns and ``POST /ai/feedback`` rates.
+
+    The reader renders ``meaning`` and nothing else: the other senses are
+    stored for the flashcard features, and a reader who tapped a word in a
+    sentence has no use for the meanings that sentence does not carry.
+    """
 
     lookup: LookupOut
     surface: str
     lemma: str
-    #: Index into ``lookup.suggestions``, or null when no stored sense fits the
-    #: sentence. Null is a real answer: show every sense and say the context
-    #: may use a meaning the app does not have yet.
+    #: What the word means in this sentence. A stored sense when one fits;
+    #: the model's own answer for this sentence when none does, in which case
+    #: ``contextual_index`` is null and ``example`` is the sentence. Null only
+    #: when there is nothing to show at all.
+    meaning: MeaningSuggestionOut | None
+    #: Index into ``lookup.suggestions`` when ``meaning`` is a stored sense.
     contextual_index: int | None
-    #: How the index was chosen. ``only`` and ``overlap`` are certain enough to
-    #: show one sense first without hedging; ``model`` and ``first`` deserve a
-    #: "probably" with the other senses within reach.
+    #: How ``meaning`` was chosen. ``first`` means no sentence was available or
+    #: the model could not be asked, and deserves a "probably".
     selection: ContextualSelection
     selection_score: float | None
 
@@ -192,6 +199,7 @@ class LookupWordOut(BaseModel):
             lookup=LookupOut.from_dto(view.lookup),
             surface=view.surface,
             lemma=view.lemma,
+            meaning=MeaningSuggestionOut.from_dto(view.meaning) if view.meaning else None,
             contextual_index=view.contextual_index,
             selection=view.selection,
             selection_score=view.selection_score,

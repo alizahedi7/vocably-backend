@@ -19,6 +19,7 @@ from app.application.ports.ai_service import (
     LookupStatus,
     MeaningSuggestion,
 )
+from app.application.ports.reader_ai import ContextualMeaning
 from app.infrastructure.ai.reader_hot_cache import HotCachingAIService, ReaderHotCache
 
 LEARNER = LearnerContext(native_language="Persian")
@@ -74,14 +75,16 @@ async def test_an_unreadable_payload_is_a_miss() -> None:
     assert await ReaderHotCache(redis).get_lookup("d") is None
 
 
-async def test_a_disambiguation_is_memoised_including_none() -> None:
+async def test_a_meaning_is_memoised_per_word_sentence_and_language() -> None:
     cache = ReaderHotCache(FakeRedis())
-    key = cache.disambiguation_key("lookup", "They sat on the Bank.", 1)
-    assert key == cache.disambiguation_key("lookup", "they sat on the bank.", 1)
-    assert key != cache.disambiguation_key("lookup", "they sat on the bank.", 2)
-    assert await cache.get_disambiguation(key) is None
-    await cache.put_disambiguation(key, -1)
-    assert await cache.get_disambiguation(key) == -1
+    key = cache.meaning_key("Bank", "They sat on the Bank.", "Persian", 2)
+    assert key == cache.meaning_key("bank", "they sat on the bank.", "persian", 2)
+    assert key != cache.meaning_key("bank", "they sat on the bank.", "Persian", 3)
+    assert key != cache.meaning_key("bank", "they sat on the bank.", "English", 2)
+    assert await cache.get_meaning(key) is None
+    meaning = ContextualMeaning("bank", "noun", "River", "the land by a river", "ساحل", "p", "m")
+    await cache.put_meaning(key, meaning)
+    assert await cache.get_meaning(key) == meaning
 
 
 async def test_the_first_failure_turns_the_tier_off_for_the_process() -> None:
@@ -90,7 +93,7 @@ async def test_the_first_failure_turns_the_tier_off_for_the_process() -> None:
     assert await cache.get_lookup("d") is None
     assert cache.is_disabled
     await cache.put_lookup("d", RESULT)
-    assert await cache.get_disambiguation("k") is None
+    assert await cache.get_meaning("k") is None
     assert redis.calls == 1  # never asked again
 
 

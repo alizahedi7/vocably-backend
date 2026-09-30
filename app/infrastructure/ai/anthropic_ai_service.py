@@ -34,7 +34,7 @@ from app.application.ports.ai_service import (
     LookupStatus,
     MeaningSuggestion,
 )
-from app.application.ports.reader_ai import Disambiguation, PassageTranslationResult
+from app.application.ports.reader_ai import ContextualMeaning, PassageTranslationResult
 from app.core.exceptions import ExternalServiceError
 from app.core.logging import get_logger
 from app.infrastructure.ai.enrichment_prompts import (
@@ -44,7 +44,7 @@ from app.infrastructure.ai.enrichment_prompts import (
     render_stored,
 )
 from app.infrastructure.ai.payloads import (
-    DisambiguationPayload,
+    ContextualMeaningPayload,
     LookupPayload,
     PassagePayload,
     StoryPayload,
@@ -58,10 +58,10 @@ from app.infrastructure.ai.prompts import (
 )
 from app.infrastructure.ai.reader_adapter_methods import match_layout
 from app.infrastructure.ai.reader_prompts import (
-    DISAMBIGUATE_JSON_SCHEMA,
-    DISAMBIGUATE_SYSTEM_PROMPT,
+    CONTEXTUAL_MEANING_JSON_SCHEMA,
     PASSAGE_JSON_SCHEMA,
-    disambiguate_user_prompt,
+    contextual_meaning_system_prompt,
+    contextual_meaning_user_prompt,
     passage_system_prompt,
     passage_user_prompt,
 )
@@ -261,28 +261,28 @@ class AnthropicAIService(AIService):
         )
         return [s.to_dto() for s in payload.senses[:max_new]]
 
-    async def disambiguate_sense(
+    async def meaning_in_context(
         self,
-        term: str,
+        word: str,
         sentence: str,
-        senses: list[MeaningSuggestion],
         learner: LearnerContext,
-    ) -> Disambiguation:
-        """Which numbered sense ``sentence`` uses; ``-1`` when none fits.
-
-        The same body as ``ReaderAdapterMixin.disambiguate_sense``, against
-        this adapter's transport, whose ``_complete`` takes no schema name.
-        """
-        del learner  # Which sense a sentence uses is a fact about the sentence.
+    ) -> ContextualMeaning:
+        """What ``word`` means in ``sentence`` — the same body as
+        ``ReaderAdapterMixin.meaning_in_context``, against this transport."""
         payload = await self._complete(
-            system=DISAMBIGUATE_SYSTEM_PROMPT,
-            user=disambiguate_user_prompt(term, sentence, senses),
-            schema=DISAMBIGUATE_JSON_SCHEMA,
-            model_type=DisambiguationPayload,
+            system=contextual_meaning_system_prompt(native_language=learner.native_language),
+            user=contextual_meaning_user_prompt(word, sentence),
+            schema=CONTEXTUAL_MEANING_JSON_SCHEMA,
+            model_type=ContextualMeaningPayload,
         )
-        index = payload.index if -1 <= payload.index < len(senses) else -1
-        return Disambiguation(
-            index=index, confidence=payload.confidence, provider="anthropic", model=self._model
+        return ContextualMeaning(
+            lemma=payload.lemma.strip(),
+            part_of_speech=payload.part_of_speech.strip(),
+            context=payload.context.strip(),
+            definition=payload.definition.strip(),
+            native_meaning=payload.native_meaning.strip(),
+            provider="anthropic",
+            model=self._model,
         )
 
     async def translate_passage(

@@ -240,3 +240,10 @@ def test_book_ingest_is_registered_and_kept_off_the_ai_and_maintenance_queues() 
     assert books.__name__ in TASK_MODULES
     assert "vocably.books.ingest" in celery_app.tasks
     assert celery_app.amqp.router.route({}, "vocably.books.ingest")["queue"].name == QUEUE_DEFAULT
+
+
+def test_book_warming_is_ai_work_and_on_the_ai_queue() -> None:
+    # Every cold lemma is a provider call, so a backlog of warming must never
+    # delay partition maintenance.
+    assert "vocably.ai.warm_book" in celery_app.tasks
+    assert celery_app.amqp.router.route({}, "vocably.ai.warm_book")["queue"].name == QUEUE_AI

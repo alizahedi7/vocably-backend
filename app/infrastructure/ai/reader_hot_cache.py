@@ -9,9 +9,9 @@ this week.
 It relies on a TTL rather than invalidation because the lexicon is append-only:
 what goes stale is at worst a sense enriched an hour ago, never a wrong one.
 
-It also holds the disambiguation memo. A sentence in a public-domain book is
-the same sentence for every learner, so "which sense of *bound* does this line
-use" is bought once per (sense deck, sentence) and shared.
+It also holds the meaning-in-context memo. A sentence in a public-domain book
+is the same sentence for every learner, so "what does *bound* mean in this
+line" is bought once per (word, sentence, language) and shared.
 
 **One strike and it is off**, exactly like ``SingleFlight``. Every command is
 bounded by a short timeout, and the first failure disables Redis here for the
@@ -39,6 +39,7 @@ from app.application.ports.ai_service import (
     MeaningSuggestion,
 )
 from app.application.ports.lookup_cache import build_lookup_cache_key
+from app.application.ports.reader_ai import ContextualMeaning
 from app.core.logging import get_logger
 
 logger = get_logger("vocably.reader.hotcache")
@@ -58,12 +59,12 @@ class ReaderHotCache:
         redis: AsyncRedisLike,
         *,
         lookup_ttl_seconds: int = 6 * 3600,
-        disambiguation_ttl_seconds: int = 30 * 24 * 3600,
+        meaning_ttl_seconds: int = 30 * 24 * 3600,
         op_timeout_seconds: float = OP_TIMEOUT_SECONDS,
     ) -> None:
         self._redis = redis
         self._lookup_ttl = lookup_ttl_seconds
-        self._disambiguation_ttl = disambiguation_ttl_seconds
+        self._meaning_ttl = meaning_ttl_seconds
         self._op_timeout = op_timeout_seconds
         #: Flipped permanently by the first failure. See :meth:`_give_up`.
         self._disabled = False
@@ -110,21 +111,34 @@ class ReaderHotCache:
             self._redis.set(f"reader:lookup:{digest}", json.dumps(payload), ex=self._lookup_ttl)
         )
 
-    # ── Disambiguations ───────────────────────────────────────
+    # ── Meanings in context ───────────────────────────────────
 
-    def disambiguation_key(self, lookup_id: str, sentence: str, prompt_version: int) -> str:
-        sentence_digest = hashlib.sha256(sentence.casefold().encode()).hexdigest()
-        return f"reader:sense:{prompt_version}:{lookup_id}:{sentence_digest}"
+    def meaning_key(self, word: str, sentence: str, native_language: str, version: int) -> str:
+        digest = hashlib.sha256(
+            f"{word.casefold()}\x1f{sentence.casefold()}\x1f{native_language.casefold()}".encode()
+        ).hexdigest()
+        return f"reader:meaning:{version}:{digest}"
 
-    async def get_disambiguation(self, key: str) -> int | None:
+    async def get_meaning(self, key: str) -> ContextualMeaning | None:
         raw = await self._call(self._redis.get(key))
+        if not raw:
+            return None
         try:
-            return int(raw) if raw is not None else None
-        except (TypeError, ValueError):
+            data = json.loads(raw)
+            return ContextualMeaning(
+                lemma=str(data["lemma"]),
+                part_of_speech=str(data.get("part_of_speech", "")),
+                context=str(data.get("context", "")),
+                definition=str(data["definition"]),
+                native_meaning=str(data["native_meaning"]),
+                provider=str(data.get("provider", "")),
+                model=str(data.get("model", "")),
+            )
+        except (ValueError, KeyError, TypeError):
             return None
 
-    async def put_disambiguation(self, key: str, index: int) -> None:
-        await self._call(self._redis.set(key, str(index), ex=self._disambiguation_ttl))
+    async def put_meaning(self, key: str, meaning: ContextualMeaning) -> None:
+        await self._call(self._redis.set(key, json.dumps(asdict(meaning)), ex=self._meaning_ttl))
 
     # ── Plumbing ──────────────────────────────────────────────
 

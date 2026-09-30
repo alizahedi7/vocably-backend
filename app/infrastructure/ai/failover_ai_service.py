@@ -20,7 +20,7 @@ it. It also means the enricher and translator paths — which are handed
 **It delegates seven methods, not two.** ``look_up_meanings`` and
 ``generate_story`` are the port; ``translate_only``, ``translate_senses`` and
 ``enrich_senses`` are the structural protocols that ``GroundedAIService`` and
-``LexiconAIService`` cast this object to; ``disambiguate_sense`` and
+``LexiconAIService`` cast this object to; ``meaning_in_context`` and
 ``translate_passage`` are the reader's. Miss one and that path silently loses
 failover at runtime with no type error to catch it.
 
@@ -45,7 +45,7 @@ from app.application.ports.ai_service import (
     LookupResult,
     MeaningSuggestion,
 )
-from app.application.ports.reader_ai import Disambiguation, PassageTranslationResult
+from app.application.ports.reader_ai import ContextualMeaning, PassageTranslationResult
 from app.core.exceptions import AllProvidersUnavailableError, ExternalServiceError
 from app.core.logging import get_logger
 
@@ -199,16 +199,15 @@ class FailoverAIService(AIService):
             lambda p: self._delegate(p, "enrich_senses", term, known, wanted, learner, max_new),
         )
 
-    async def disambiguate_sense(
+    async def meaning_in_context(
         self,
-        term: str,
+        word: str,
         sentence: str,
-        senses: list[MeaningSuggestion],
         learner: LearnerContext,
-    ) -> Disambiguation:
+    ) -> ContextualMeaning:
         return await self._attempt(
-            "disambiguate_sense",
-            lambda p: self._delegate(p, "disambiguate_sense", term, sentence, senses, learner),
+            "meaning_in_context",
+            lambda p: self._delegate(p, "meaning_in_context", word, sentence, learner),
         )
 
     async def translate_passage(

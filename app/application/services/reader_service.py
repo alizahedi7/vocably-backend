@@ -1,32 +1,36 @@
 """The reader's use cases: open a book, look a word up in context, translate a
 paragraph, and remember where the learner is.
 
-The word lookup is the spec's "multi-tiered dictionary cache manager", and most
+The word lookup is the design's "multi-tiered dictionary cache manager", and most
 of it is *not here*, on purpose. A tap goes through the very chain a flashcard
 lookup goes through — ``HotCachingAIService`` (Redis) → ``CachingAIService``
 (``ai_lookup_entries``) → ``LexiconAIService`` (``lexemes``) → grounded →
 failover → provider — so a word a reader taps is a word the deck builder never
 pays for, and a word looked up on a flashcard is free to every reader. What
-this service adds is exactly the two things the flashcard path does not know:
+this service adds is the two things the flashcard path does not know:
 
 1. **The lemma.** The reader sees inflected text; the lexicon is keyed by
    dictionary form. Lemmatisation is offline and happens before the chain.
-2. **The context.** Of the senses the chain returns, which one this sentence
-   uses — decided locally when the sentence says so, by a cheap index-only
-   model call when it does not, and memoised per (sense deck, sentence)
-   because a public-domain sentence is the same sentence for every reader.
+2. **The meaning here.** Which of the word's senses this sentence uses — or,
+   when the lexicon holds none for this use, what the word means here. Decided
+   free when one sense exists or the sentence's own words say so; otherwise
+   by asking the model what the word means *in this sentence*, a question that
+   needs no sense list and so runs **alongside** the lookup rather than after
+   it. A cold word costs one round trip, not two. The answer is matched to a
+   stored sense when one fits, and shown as it is when none does. It is
+   memoised per (word, sentence, language), and kept durably when the sentence
+   is a stored book's.
 
 The **sentence never reaches the lexicon**. The chain is called with the lemma
 alone, so the shared, impersonal senses it writes are a fact about the word and
 not about one learner's paragraph — the same rule that keeps ``interests`` out
-of the lookup cache key. That is why a cold, ambiguous word costs two calls
-rather than one prompt returning "every sense plus the contextual one": the
-first call is paid once per word, ever, and the second once per sentence, for
-the whole platform.
+of the lookup cache key. The contextual meaning is shown and remembered, never
+written into the lexicon.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import unicodedata
 from dataclasses import dataclass
@@ -34,13 +38,19 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from app.application.dto import LookupView
-from app.application.ports.ai_service import AIService, LearnerContext, LookupResult
+from app.application.ports.ai_service import (
+    AIService,
+    LearnerContext,
+    LookupResult,
+    MeaningSuggestion,
+)
 from app.application.ports.lemmatizer import Lemmatizer
 from app.application.ports.lookup_cache import build_lookup_cache_key, normalize_lookup_input
 from app.application.ports.reader_ai import (
-    DisambiguationMemo,
+    ContextualMeaning,
+    ContextualMeaningMemo,
+    ContextualMeaningProvider,
     PassageTranslator,
-    SenseDisambiguator,
 )
 from app.core.exceptions import ExternalServiceError, NotFoundError, ValidationError
 from app.core.logging import get_logger
@@ -50,17 +60,20 @@ from app.domain.entities.book import (
     BookChapter,
     PassageTranslation,
     ReadingPosition,
+    SentenceMeaning,
 )
 from app.domain.entities.user import User
 from app.domain.repositories.book_repository import (
     BookProgressRepository,
     BookRepository,
     PassageTranslationRepository,
+    SentenceMeaningRepository,
 )
 from app.domain.services.contextual_sense import (
     ContextualChoice,
     ContextualSelection,
     choose_locally,
+    match_meaning,
     sentence_around,
 )
 
@@ -74,20 +87,27 @@ MAX_SENTENCE_CHARS = 600
 #: Longest free-text paragraph accepted for translation. A book block is
 #: whatever length its author wrote, and is trusted; free text is not.
 MAX_FREE_TEXT_CHARS = 1_500
-#: Below this, the model's own confidence is treated as "none of these".
-MIN_MODEL_CONFIDENCE = 0.4
+#: How long to give the lookup before asking the model what the word means
+#: here. A cached or lexicon-held word answers well inside this, and a
+#: one-sense word or a decisive sentence then needs no call at all; a cold word
+#: does not answer in time, and the two calls run side by side.
+WARM_LOOKUP_WAIT_SECONDS = 0.15
 
 
 @dataclass(frozen=True, slots=True)
 class ReaderLookupView:
-    """A flashcard lookup plus the reader's two extra facts."""
+    """A flashcard lookup plus the one meaning the reader is shown."""
 
     lookup: LookupView
     #: What was tapped, normalised, and the dictionary form it resolved to.
     surface: str
     lemma: str
-    #: Index into ``lookup.result.suggestions`` of the sense this sentence
-    #: uses, or ``None`` when no stored sense fits.
+    #: The meaning this sentence uses — a stored sense, or the model's own
+    #: answer for this sentence when no stored sense fits. ``None`` only when
+    #: there is nothing at all to show.
+    meaning: MeaningSuggestion | None
+    #: Index into ``lookup.result.suggestions`` when ``meaning`` is a stored
+    #: sense; ``None`` when it is the model's own.
     contextual_index: int | None
     selection: ContextualSelection
     selection_score: float | None = None
@@ -107,11 +127,12 @@ class ReaderService:
         books: BookRepository,
         progress: BookProgressRepository,
         translations: PassageTranslationRepository,
+        meanings: SentenceMeaningRepository,
         ai: AIService,
-        disambiguator: SenseDisambiguator,
+        explainer: ContextualMeaningProvider,
         translator: PassageTranslator,
         lemmatizer: Lemmatizer,
-        memo: DisambiguationMemo | None,
+        memo: ContextualMeaningMemo | None,
         prompt_version: int,
         reader_prompt_version: int,
         provider: str = "",
@@ -120,8 +141,9 @@ class ReaderService:
         self._books = books
         self._progress = progress
         self._translations = translations
+        self._meanings = meanings
         self._ai = ai
-        self._disambiguator = disambiguator
+        self._explainer = explainer
         self._translator = translator
         self._lemmatizer = lemmatizer
         self._memo = memo
@@ -179,60 +201,175 @@ class ReaderService:
         if len(surface) > MAX_WORD_CHARS:
             raise ValidationError("Select a word or a short phrase, not a whole sentence.")
 
-        sentence = await self._resolve_sentence(user, sentence, block_id, char_start, char_end)
+        sentence, from_book = await self._resolve_sentence(
+            user, sentence, block_id, char_start, char_end
+        )
         learner = _learner_context(user)
         lemma = self._lemmatizer.lemma(surface, language="en") or surface
 
+        # The lookup starts first and runs whatever happens below.
+        lookup = asyncio.create_task(self._look_up_term(lemma, surface, learner))
+        meaning: ContextualMeaning | None = None
+        asking: asyncio.Task[ContextualMeaning | None] | None = None
+        try:
+            if sentence:
+                meaning = await self._remembered_meaning(surface, sentence, learner, from_book)
+                if meaning is None:
+                    # A warm lookup answers inside the wait, and then a one-sense
+                    # word or a decisive sentence costs no call. A cold one does
+                    # not, and the model is asked alongside it.
+                    done, _ = await asyncio.wait({lookup}, timeout=WARM_LOOKUP_WAIT_SECONDS)
+                    if lookup in done:
+                        result = lookup.result()
+                        local = choose_locally(result.term, sentence, result.suggestions)
+                        if local is not None:
+                            return self._view(result, learner, surface, lemma, sentence, local)
+                    asking = asyncio.create_task(
+                        self._ask_meaning(surface, sentence, learner, from_book)
+                    )
+            result = await lookup
+            if asking is not None:
+                meaning = await asking
+        except BaseException:
+            for task in (lookup, asking):
+                if task is not None and not task.done():
+                    task.cancel()
+            raise
+
+        choice = self._choose(result, sentence, meaning)
+        return self._view(result, learner, surface, lemma, sentence, choice, meaning)
+
+    async def _look_up_term(
+        self, lemma: str, surface: str, learner: LearnerContext
+    ) -> LookupResult:
         result = await self._ai.look_up_meanings(lemma, learner)
         if not result.suggestions and lemma != surface:
             # The lemmatiser can be wrong ("saw" → "see" in a sentence about a
             # tool). One retry with what was actually tapped; still one word.
             result = await self._ai.look_up_meanings(surface, learner)
+        return result
 
-        lookup_id = self._lookup_id(result.term, learner)
-        choice = await self._choose(result, lookup_id, sentence, learner)
+    def _choose(
+        self, result: LookupResult, sentence: str, meaning: ContextualMeaning | None
+    ) -> ContextualChoice:
+        senses = result.suggestions
+        if sentence:
+            local = choose_locally(result.term, sentence, senses)
+            if local is not None:
+                return local
+        if meaning is not None:
+            matched = match_meaning(meaning, result.term, senses)
+            if matched is not None:
+                return matched
+            return ContextualChoice(None, ContextualSelection.CONTEXTUAL)
+        # No sentence, or the model could not be asked: the most common sense,
+        # exactly what a flashcard would show. Never an error.
+        return ContextualChoice(0 if senses else None, ContextualSelection.FIRST)
+
+    def _view(
+        self,
+        result: LookupResult,
+        learner: LearnerContext,
+        surface: str,
+        lemma: str,
+        sentence: str,
+        choice: ContextualChoice,
+        meaning: ContextualMeaning | None = None,
+    ) -> ReaderLookupView:
+        shown: MeaningSuggestion | None = None
+        if choice.index is not None and choice.index < len(result.suggestions):
+            shown = result.suggestions[choice.index]
+        elif choice.selection is ContextualSelection.CONTEXTUAL and meaning is not None:
+            # The model's own answer for this sentence. Its example is the
+            # sentence itself, which is also what the client saves as one.
+            shown = MeaningSuggestion(
+                native_meaning=meaning.native_meaning,
+                definition=meaning.definition,
+                example=sentence,
+                context=meaning.context,
+                part_of_speech=meaning.part_of_speech,
+            )
         return ReaderLookupView(
-            lookup=LookupView(result=result, lookup_id=lookup_id),
+            lookup=LookupView(result=result, lookup_id=self._lookup_id(result.term, learner)),
             surface=surface,
             lemma=lemma,
-            contextual_index=choice.index,
+            meaning=shown,
+            contextual_index=choice.index if shown is not None else None,
             selection=choice.selection,
             selection_score=choice.score,
         )
 
-    async def _choose(
-        self, result: LookupResult, lookup_id: str, sentence: str, learner: LearnerContext
-    ) -> ContextualChoice:
-        senses = result.suggestions
-        if not senses:
-            return ContextualChoice(None, ContextualSelection.NONE)
-        local = choose_locally(result.term, sentence, senses)
-        if local is not None:
-            return local
-        if not sentence:
-            return ContextualChoice(0, ContextualSelection.FIRST)
+    # ── The meaning here ──────────────────────────────────────
 
-        key = ""
+    async def _remembered_meaning(
+        self, surface: str, sentence: str, learner: LearnerContext, from_book: bool
+    ) -> ContextualMeaning | None:
+        """A meaning already paid for: the durable store for a book's sentence,
+        then the memo. Either may fail, and a failure is a miss."""
+        if from_book:
+            try:
+                kept = await self._meanings.get(
+                    _sha256(sentence),
+                    surface,
+                    native_language=learner.native_language,
+                    prompt_version=self._reader_prompt_version,
+                )
+            except Exception:  # noqa: BLE001 — a cache fault is a miss
+                logger.warning("sentence meaning read failed", exc_info=True)
+                kept = None
+            if kept is not None:
+                return ContextualMeaning(
+                    lemma=kept.lemma,
+                    part_of_speech=kept.part_of_speech,
+                    context=kept.context,
+                    definition=kept.definition,
+                    native_meaning=kept.native_meaning,
+                    provider=kept.provider,
+                    model=kept.model,
+                )
         if self._memo is not None:
-            key = self._memo.disambiguation_key(lookup_id, sentence, self._reader_prompt_version)
-            cached = await self._memo.get_disambiguation(key)
-            if cached is not None:
-                return _from_index(cached, len(senses))
-
-        try:
-            answer = await self._disambiguator.disambiguate_sense(
-                result.term, sentence, senses, learner
+            key = self._memo.meaning_key(
+                surface, sentence, learner.native_language, self._reader_prompt_version
             )
-        except ExternalServiceError:
-            # Money, never correctness: an outage degrades to the most common
-            # sense, which is exactly what a flashcard would have shown.
-            logger.warning("disambiguation unavailable; falling back to the first sense")
-            return ContextualChoice(0, ContextualSelection.FIRST)
+            return await self._memo.get_meaning(key)
+        return None
 
-        index = answer.index if answer.confidence >= MIN_MODEL_CONFIDENCE else -1
+    async def _ask_meaning(
+        self, surface: str, sentence: str, learner: LearnerContext, from_book: bool
+    ) -> ContextualMeaning | None:
+        """Ask the model, and remember the answer. ``None`` on an outage: money
+        and latency, never correctness, so the caller falls back to the most
+        common sense rather than to an error."""
+        try:
+            meaning = await self._explainer.meaning_in_context(surface, sentence, learner)
+        except ExternalServiceError:
+            logger.warning("meaning in context unavailable; showing the first sense")
+            return None
         if self._memo is not None:
-            await self._memo.put_disambiguation(key, index)
-        return _from_index(index, len(senses), answer.confidence)
+            key = self._memo.meaning_key(
+                surface, sentence, learner.native_language, self._reader_prompt_version
+            )
+            await self._memo.put_meaning(key, meaning)
+        if from_book:
+            try:
+                await self._meanings.put(
+                    SentenceMeaning(
+                        sentence_hash=_sha256(sentence),
+                        word=surface,
+                        native_language=learner.native_language,
+                        prompt_version=self._reader_prompt_version,
+                        lemma=meaning.lemma,
+                        part_of_speech=meaning.part_of_speech,
+                        context=meaning.context,
+                        definition=meaning.definition,
+                        native_meaning=meaning.native_meaning,
+                        provider=meaning.provider or self._provider,
+                        model=meaning.model or self._model,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("sentence meaning write failed; served unstored", exc_info=True)
+        return meaning
 
     async def _resolve_sentence(
         self,
@@ -241,13 +378,14 @@ class ReaderService:
         block_id: UUID | None,
         char_start: int | None,
         char_end: int | None,
-    ) -> str:
-        """Prefer the sentence the *server* can derive from the block.
+    ) -> tuple[str, bool]:
+        """The sentence, and whether it is a stored book's.
 
-        It is trustworthy, it is canonical — so the disambiguation memo is
-        shared by every learner who taps the same line — and it costs one
-        indexed read. The client's own sentence is used only when there is no
-        block to read it from, or the offsets do not fit the block.
+        Prefer the sentence the *server* can derive from the block. It is
+        trustworthy, it is canonical — so the meaning memo is shared by every
+        learner who taps the same line — and it costs one indexed read. The
+        client's own sentence is used only when there is no block to read it
+        from, or the offsets do not fit the block, and is never stored durably.
         """
         if block_id is not None and char_start is not None and char_end is not None:
             found = await self._books.get_block(block_id)
@@ -255,8 +393,8 @@ class ReaderService:
                 book, _, block = found
                 readable = book.is_public or user.is_admin
                 if readable and 0 <= char_start < char_end <= len(block.text):
-                    return sentence_around(block.text, char_start, char_end)
-        return " ".join(claimed.split())[:MAX_SENTENCE_CHARS]
+                    return sentence_around(block.text, char_start, char_end), True
+        return " ".join(claimed.split())[:MAX_SENTENCE_CHARS], False
 
     def _lookup_id(self, resolved_term: str, learner: LearnerContext) -> str:
         """Identical to ``AIStudioService._lookup_id``: the same deck of senses
@@ -387,14 +525,6 @@ class ReaderService:
     async def remove_from_shelf(self, user: User, book_id: UUID) -> None:
         if not await self._progress.delete(user.id, book_id):
             raise NotFoundError("That book is not on your shelf.")
-
-
-def _from_index(index: int, count: int, score: float | None = None) -> ContextualChoice:
-    if 0 <= index < count:
-        return ContextualChoice(index, ContextualSelection.MODEL, score)
-    # -1 from the model, or an index outside the list it was shown: the
-    # lexicon lacks this sense. Say so honestly rather than guess.
-    return ContextualChoice(None, ContextualSelection.NONE, score)
 
 
 def _learner_context(user: User) -> LearnerContext:

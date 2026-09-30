@@ -221,6 +221,9 @@ async def test_a_tap_looks_up_the_lemma_and_marks_the_sense_its_sentence_uses(
     assert len(body["lookup"]["suggestions"]) == 2
     # "salary cheque … money" is the finance sense, decided without a model.
     assert (body["contextual_index"], body["selection"]) == (0, "overlap")
+    # The one thing the reader renders: the meaning this sentence uses.
+    assert body["meaning"]["context"] == "Finance"
+    assert body["meaning"]["native_meaning"] == "بانک"
 
 
 async def test_a_tap_shares_the_flashcard_cache_and_lookup_id(

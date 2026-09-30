@@ -18,6 +18,8 @@ the access pattern, not normalisation for its own sake:
     A shared, impersonal cache of translated paragraphs, keyed by text hash.
     Postgres rather than Redis-only because a translation costs real money
     and a novel is read for years.
+``sentence_meanings``
+    The same, for what one word means in one sentence of a book.
 """
 
 from __future__ import annotations
@@ -197,6 +199,39 @@ class PassageTranslationModel(Base):
     #: Incremented in SQL on every hit. Says which paragraphs are actually
     #: read, which decides whether pre-translating a book is worth it.
     hit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), server_default=func.now(), nullable=False
+    )
+
+
+class SentenceMeaningModel(Base):
+    """One word's meaning in one sentence of a stored book. Impersonal, like
+    ``passage_translations``, and keyed the same way plus the word."""
+
+    __tablename__ = "sentence_meanings"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "sentence_hash",
+            "word",
+            "native_language",
+            "prompt_version",
+            name="pk_sentence_meanings",
+        ),
+    )
+
+    sentence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: The word as tapped, case-folded — "stood", not "stand": the lemma is
+    #: part of the answer, not the question.
+    word: Mapped[str] = mapped_column(String(120), nullable=False)
+    native_language: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    lemma: Mapped[str] = mapped_column(String(120), nullable=False)
+    part_of_speech: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    context: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    native_meaning: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    model: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(), server_default=func.now(), nullable=False
     )

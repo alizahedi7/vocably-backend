@@ -2,7 +2,7 @@
 
 A mixin over the adapters' existing ``_complete`` transport, so
 ``OpenAICompatibleAIService`` — and therefore all four gateways — gains
-``disambiguate_sense`` and ``translate_passage`` by inheriting it. The Anthropic
+``meaning_in_context`` and ``translate_passage`` by inheriting it. The Anthropic
 adapter's ``_complete`` takes no ``schema_name``; it gets the same two bodies
 minus that argument. Every failure leaves as :class:`ExternalServiceError`,
 which is what ``FailoverAIService`` reads to try the next gateway.
@@ -14,14 +14,14 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
-from app.application.ports.ai_service import LearnerContext, MeaningSuggestion
-from app.application.ports.reader_ai import Disambiguation, PassageTranslationResult
-from app.infrastructure.ai.payloads import DisambiguationPayload, PassagePayload
+from app.application.ports.ai_service import LearnerContext
+from app.application.ports.reader_ai import ContextualMeaning, PassageTranslationResult
+from app.infrastructure.ai.payloads import ContextualMeaningPayload, PassagePayload
 from app.infrastructure.ai.reader_prompts import (
-    DISAMBIGUATE_JSON_SCHEMA,
-    DISAMBIGUATE_SYSTEM_PROMPT,
+    CONTEXTUAL_MEANING_JSON_SCHEMA,
     PASSAGE_JSON_SCHEMA,
-    disambiguate_user_prompt,
+    contextual_meaning_system_prompt,
+    contextual_meaning_user_prompt,
     passage_system_prompt,
     passage_user_prompt,
 )
@@ -46,26 +46,27 @@ class _Completes(Protocol):
 
 
 class ReaderAdapterMixin:
-    async def disambiguate_sense(
+    async def meaning_in_context(
         self: _Completes,
-        term: str,
+        word: str,
         sentence: str,
-        senses: list[MeaningSuggestion],
         learner: LearnerContext,
-    ) -> Disambiguation:
-        del learner  # Which sense a sentence uses is a fact about the sentence.
+    ) -> ContextualMeaning:
         payload = await self._complete(
-            DISAMBIGUATE_SYSTEM_PROMPT,
-            disambiguate_user_prompt(term, sentence, senses),
-            DISAMBIGUATE_JSON_SCHEMA,
-            "sense_disambiguation",
-            DisambiguationPayload,
+            contextual_meaning_system_prompt(native_language=learner.native_language),
+            contextual_meaning_user_prompt(word, sentence),
+            CONTEXTUAL_MEANING_JSON_SCHEMA,
+            "contextual_meaning",
+            ContextualMeaningPayload,
         )
-        # An index the model was never shown is "none", not a clamp: pairing a
-        # sentence with the wrong sense is worse than showing all of them.
-        index = payload.index if -1 <= payload.index < len(senses) else -1
-        return Disambiguation(
-            index=index, confidence=payload.confidence, provider=self.name, model=self.model
+        return ContextualMeaning(
+            lemma=payload.lemma.strip(),
+            part_of_speech=payload.part_of_speech.strip(),
+            context=payload.context.strip(),
+            definition=payload.definition.strip(),
+            native_meaning=payload.native_meaning.strip(),
+            provider=self.name,
+            model=self.model,
         )
 
     async def translate_passage(

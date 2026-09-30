@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.deps import _lemmatizer
 from app.api.errors import register_exception_handlers
 from app.api.v1.router import api_router
 from app.core.config import settings
@@ -20,6 +21,9 @@ logger = get_logger("vocably")
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     logger.info("Starting %s (%s)", settings.project_name, settings.environment)
+    # The lemmatiser loads its word list on first use, about a second that
+    # would otherwise land on the first tap after every deploy.
+    _lemmatizer().lemma("warm", language="en")
     yield
     logger.info("Shutting down %s", settings.project_name)
 

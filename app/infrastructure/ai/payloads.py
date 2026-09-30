@@ -69,11 +69,14 @@ class TranslationsPayload(BaseModel):
     translations: list[TranslationPayload]
 
 
-class DisambiguationPayload(BaseModel):
-    """Which numbered sense a sentence uses; ``-1`` when none of them does."""
+class ContextualMeaningPayload(BaseModel):
+    """One word's meaning in one sentence."""
 
-    index: int = Field(ge=-1)
-    confidence: float = Field(ge=0.0, le=1.0)
+    lemma: str = Field(min_length=1)
+    part_of_speech: str = ""
+    context: str = ""
+    definition: str = Field(min_length=1)
+    native_meaning: str = Field(min_length=1)
 
 
 class PassagePayload(BaseModel):

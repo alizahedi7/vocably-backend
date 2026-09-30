@@ -17,7 +17,7 @@ from app.application.ports.ai_service import (
     LookupStatus,
     MeaningSuggestion,
 )
-from app.application.ports.reader_ai import Disambiguation, PassageTranslationResult
+from app.application.ports.reader_ai import ContextualMeaning, PassageTranslationResult
 
 # Human-readable theme phrases per interest topic id, used to flavor stub output the way a
 # real model would weave the learner's interests into examples and stories.
@@ -291,16 +291,27 @@ class StubAIService(AIService):
             )
         ]
 
-    async def disambiguate_sense(
+    async def meaning_in_context(
         self,
-        term: str,
+        word: str,
         sentence: str,
-        senses: list[MeaningSuggestion],
         learner: LearnerContext,
-    ) -> Disambiguation:
-        """The first sense, with full confidence; ``-1`` when there are none."""
+    ) -> ContextualMeaning:
+        """A meaning that visibly comes from the sentence, offline.
+
+        Echoes the word and the sentence's first few words so a test can tell
+        the answer was about this sentence, and lemmatises nothing: the service
+        under test decides what to do with a lemma that differs from the tap.
+        """
         await self._delay()
-        return Disambiguation(index=0 if senses else -1, confidence=1.0, provider="stub")
+        return ContextualMeaning(
+            lemma=word.strip().casefold(),
+            part_of_speech="noun",
+            context="Reading",
+            definition=f"what “{word}” means in “{' '.join(sentence.split()[:4])}…”",
+            native_meaning=f"{word} in {learner.native_language}",
+            provider="stub",
+        )
 
     async def translate_passage(
         self,
