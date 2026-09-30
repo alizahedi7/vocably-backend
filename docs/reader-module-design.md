@@ -675,9 +675,23 @@ The last row is why `READER_REDIS_URL` is now set for every service in
 switches itself off on the first tap, and every ambiguous tap re-asks the
 model.
 
+**Later the same day, after the first production taps:** the index-picking
+disambiguation of section 4.2 was replaced. Asking the model which *numbered*
+sense a sentence uses meant the lookup had to finish first, so a cold word cost
+two calls in a row. The model is now asked what the word means *in this
+sentence*, a question that needs no sense list, so it runs alongside the
+lookup; the answer is matched to a stored sense by definition overlap in both
+directions, or shown as itself. A warm lookup is given 150 ms first, so a
+one-sense word or a decisive sentence still costs nothing. Sentences of stored
+books keep their meaning durably in `sentence_meanings`. Publishing a book now
+pre-warms its vocabulary (`vocably.ai.warm_book`). The reader shows the one
+meaning and never lists the other senses. Evaluated live on both request-path
+gateways from the production host: every meaning correct across 24 cases,
+median 1.3 s per call. The client's word sheet also gained *Translate
+sentence* and *Translate paragraph*, because a hold selects nothing on the web.
+
 **Still not verified:** the schema-fallback paths on `tabitoken` and
-`agentrouter`, which were down during testing; and a deploy. Nothing has been
-pushed.
+`agentrouter`, which were down during testing.
 
 ---
 
