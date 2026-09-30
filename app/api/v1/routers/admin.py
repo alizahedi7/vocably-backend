@@ -58,6 +58,7 @@ from app.api.v1.schemas.admin import (
     SenseUpdateIn,
     TimeSeriesPointOut,
 )
+from app.core.config import settings
 from app.core.exceptions import ValidationError
 from app.domain.enums import BookSource, DeckBuildItemState, SenseStatus
 from app.infrastructure.ai.factory import effective_prompt_version
@@ -210,8 +211,18 @@ async def publish_book(
     _admin: CurrentAdmin,
     books: BookAdminServiceDep,
 ) -> AdminBookOut:
-    """Put a book in the library, or take it out. Idempotent both ways."""
+    """Put a book in the library, or take it out. Idempotent both ways.
+
+    Publishing also queues the book's vocabulary for pre-warming, so that no
+    tap in it waits for a cold lookup. Re-publishing a live book queues it
+    again, which costs an indexed read per word already known — cheap, and
+    the way to warm a book after the reader's prompt version moves.
+    """
     book = await books.publish(book_id, is_public=payload.is_public, rights=payload.rights or "")
+    if payload.is_public and settings.reader_warm_on_publish:
+        from app.tasks.books import warm_book
+
+        warm_book.delay(str(book.id))
     return AdminBookOut.from_entity(book)
 
 

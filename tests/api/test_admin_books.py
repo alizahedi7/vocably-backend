@@ -112,11 +112,30 @@ async def test_admins_see_private_books_with_their_chapters(
     assert detail["chapters"][0]["wordCount"] > 0
 
 
+@pytest.fixture
+def warm_queue(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Records the books queued for pre-warming instead of reaching a broker."""
+    from app.tasks import books
+
+    queued: list[str] = []
+
+    class Result:
+        id = "warm-1"
+
+    def record(book_id: str) -> Result:
+        queued.append(book_id)
+        return Result()
+
+    monkeypatch.setattr(books.warm_book, "delay", record)
+    return queued
+
+
 async def test_publishing_needs_a_rights_statement_and_goes_both_ways(
     client: AsyncClient,
     admin_headers: dict[str, str],
     auth_headers: dict[str, str],
     session_factory: Sessions,
+    warm_queue: list[str],
 ) -> None:
     book = await seed(session_factory)
     url = f"/api/v1/admin/books/{book.id}/publish"
@@ -136,6 +155,8 @@ async def test_publishing_needs_a_rights_statement_and_goes_both_ways(
     hidden = await client.patch(url, headers=admin_headers, json={"is_public": False})
     assert hidden.json()["isPublic"] is False and hidden.json()["publishedAt"] is None
     assert (await client.get("/api/v1/books", headers=auth_headers)).json()["total"] == 0
+    # Publishing queued the book's vocabulary for pre-warming; unpublishing did not.
+    assert warm_queue == [str(book.id)]
 
 
 async def test_an_unknown_book_is_a_404(client: AsyncClient, admin_headers: dict[str, str]) -> None:
