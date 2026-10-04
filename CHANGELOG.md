@@ -33,6 +33,18 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
 
 ### Added
 
+- **A phone and an email on one account.** `POST /auth/link/request-otp` sends
+  a code to a phone number (SMS) or an email (LetterMint), `POST
+  /auth/link/verify-otp` attaches it, and `DELETE /auth/link/{email|phone}`
+  removes one — refused with `last_sign_in_method` when it would leave no way
+  in. Signing in with either afterwards opens the same account: a phone that a
+  Google account linked signs in by SMS, and Google sign-in now finds an
+  account by an email its owner verified. An identifier another account has
+  verified is refused with `identifier_already_in_use`; accounts are never
+  merged. `UserOut` gains `is_phone_verified` and `is_email_verified`. Needs
+  `EMAIL_SENDER=lettermint`, `LETTERMINT_API_TOKEN` and `EMAIL_FROM` in
+  production — until then email linking answers 502 and nothing else changes.
+
 - **The reader: public-domain books with every word one tap from its meaning.**
   `GET /books`, `GET /books/{id}` and `GET /books/{id}/chapters/{chapter_id}`
   serve published books as chapters of blocks. `POST /reader/lookup-word` looks
@@ -93,6 +105,11 @@ Version bumps are derived from [Conventional Commits](https://www.conventionalco
   covering auth, users, decks, words, study, and AI lookup.
 
 ### Changed
+
+- **Google sign-in trusts an email only where Google is authoritative for it**
+  — an `@gmail.com` address, or `email_verified` with a Workspace `hd`. Emails
+  from Google are stored lowercased, and `users.email` is now unique among
+  *verified* addresses.
 
 - **BREAKING:** `age_range` values now use the app's display strings
   (`Under 13`, `13–17`, …, `65+`, `Prefer not to share`) instead of hyphenated
