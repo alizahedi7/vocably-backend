@@ -6,8 +6,24 @@ from enum import IntEnum, StrEnum
 
 
 class AuthMethod(StrEnum):
+    """How an account was *created* — history, and nothing else.
+
+    It feeds the admin breakdown. It is never consulted to decide how someone
+    may sign in: an account made by phone can hold an email and a Google
+    identity too, and the reverse. Reading it as "how this person logs in" is
+    the bug.
+    """
+
     PHONE = "phone"
     GOOGLE = "google"
+
+
+class IdentifierType(StrEnum):
+    """The two things an account can be found by. The wire value of ``type``
+    on the ``/auth/link`` endpoints."""
+
+    EMAIL = "email"
+    PHONE = "phone"
 
 
 class DeckRole(StrEnum):
