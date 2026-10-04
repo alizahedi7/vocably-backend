@@ -9,6 +9,8 @@ some hosting regions while tokeninfo (oauth2.googleapis.com) is not.
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 
 from app.application.ports.google_verifier import GoogleIdentity, GoogleVerifier
@@ -65,4 +67,25 @@ class GoogleIdTokenVerifier(GoogleVerifier):
             sub=str(sub),
             email=payload.get("email"),
             name=payload.get("name"),
+            email_verified=_is_authoritative_for_email(payload),
         )
+
+
+def _is_authoritative_for_email(payload: dict[str, Any]) -> bool:
+    """Whether Google *hosts* the address, per its own guidance on id_tokens.
+
+    Two cases, and only two: a ``@gmail.com`` address, or ``email_verified``
+    together with ``hd`` (a Workspace domain). ``email_verified`` alone is not
+    enough — for a third-party address it records a check made when the Google
+    account was created, and that mailbox may belong to someone else by now.
+    Treating it as proof would hand a Vocably account to whoever *used to* own
+    the inbox its real owner has just verified.
+
+    tokeninfo returns every claim as a string, so ``"true"`` is compared as one.
+    """
+    email = str(payload.get("email") or "").lower()
+    if not email:
+        return False
+    if email.endswith("@gmail.com"):
+        return True
+    return str(payload.get("email_verified")).lower() == "true" and bool(payload.get("hd"))

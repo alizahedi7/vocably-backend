@@ -97,3 +97,28 @@ async def test_malformed_response_is_rejected() -> None:
     verifier = make_verifier(handler)
     with pytest.raises(AuthenticationError):
         await verifier.verify("token")
+
+
+@pytest.mark.parametrize(
+    ("claims", "vouched"),
+    [
+        # Gmail: Google hosts it, whatever else the token says.
+        ({"email": "ali@gmail.com"}, True),
+        ({"email": "Ali@Gmail.com", "email_verified": "false"}, True),
+        # Workspace: verified *and* a hosted domain.
+        ({"email": "ali@corp.example", "email_verified": "true", "hd": "corp.example"}, True),
+        # ``email_verified`` alone records a check made when the Google account
+        # was created; the mailbox may have changed hands since.
+        ({"email": "ali@yahoo.example", "email_verified": "true"}, False),
+        ({"email": "ali@corp.example", "email_verified": "false", "hd": "corp.example"}, False),
+        ({"email": "ali@corp.example", "hd": "corp.example"}, False),
+        ({"email": "ali@notgmail.com", "email_verified": "true"}, False),
+        ({"email": None, "email_verified": "true", "hd": "corp.example"}, False),
+    ],
+)
+async def test_an_email_is_vouched_for_only_where_google_is_authoritative(
+    claims: dict[str, Any], vouched: bool
+) -> None:
+    verifier = make_verifier(tokeninfo_handler(make_claims(**claims)))
+    identity = await verifier.verify("token")
+    assert identity.email_verified is vouched
