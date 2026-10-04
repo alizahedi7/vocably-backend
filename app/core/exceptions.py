@@ -41,6 +41,41 @@ class ConflictError(AppError):
     code = "conflict"
 
 
+class IdentifierInUseError(AlreadyExistsError):
+    """A phone number or email that another account has already proven is theirs.
+
+    A subclass, so the ``isinstance`` walk in ``app.api.errors`` still answers
+    409, with a code of its own because the client's next step is specific:
+    the way out is to sign in to the *other* account, not to retry.
+    """
+
+    code = "identifier_already_in_use"
+    message = "That is already used by another Vocably account."
+
+
+class LastSignInMethodError(ConflictError):
+    """Removing this would leave the account with no way to sign in."""
+
+    code = "last_sign_in_method"
+    message = "That is the only way to sign in to this account."
+
+
+class InvalidLinkCodeError(AppError):
+    """The code for linking a phone or email is wrong, spent or expired.
+
+    Deliberately **not** an :class:`AuthenticationError`, though it shares
+    ``invalid_otp`` with the sign-in code so a client handles both in one
+    branch. That family answers 401, and on an endpoint that already carries a
+    bearer token a 401 says "your session is dead": a client would refresh and
+    retry — spending a second attempt on the same wrong code — and then sign
+    the user out. A mistyped code is a bad request from someone who is still
+    signed in, so this falls through to 400.
+    """
+
+    code = "invalid_otp"
+    message = "That code is no longer valid. Please request a new one."
+
+
 class ValidationError(AppError):
     code = "validation_error"
     message = "The request was invalid."

@@ -27,6 +27,7 @@ from app.infrastructure.db.models.lexicon import (
     LexemeSenseModel,
     LexemeSenseTranslationModel,
 )
+from app.infrastructure.db.models.link_challenge import LinkChallengeModel
 from app.infrastructure.db.models.otp_challenge import OtpChallengeModel
 from app.infrastructure.db.models.user import UserModel
 from app.infrastructure.db.models.word import WordModel
@@ -55,6 +56,7 @@ __all__ = [
     "LexemeModel",
     "LexemeSenseModel",
     "LexemeSenseTranslationModel",
+    "LinkChallengeModel",
     "OtpChallengeModel",
     "PassageTranslationModel",
     "SentenceMeaningModel",

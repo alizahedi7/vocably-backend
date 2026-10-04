@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, Integer, String
+from sqlalchemy import JSON, Boolean, CheckConstraint, Date, Index, Integer, String, false, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,10 +15,36 @@ from app.infrastructure.db.types import UTCDateTime
 
 class UserModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # One account per *proven* email, and only proven ones. Unique across
+        # every row would let an address a Google token merely claimed block
+        # its real owner from linking it; the predicate is what makes "already
+        # in use" mean "somebody else verified it".
+        Index(
+            "uq_users_verified_email",
+            "email",
+            unique=True,
+            postgresql_where=text("is_email_verified"),
+            sqlite_where=text("is_email_verified"),
+        ),
+        # The flag cannot outlive the address it is about.
+        CheckConstraint(
+            "NOT is_email_verified OR email IS NOT NULL",
+            name="ck_users_verified_email_present",
+        ),
+    )
 
+    #: How the account was created. History for the admin breakdown — never a
+    #: statement about how someone may sign in today.
     auth_method: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: E.164, and only ever written once a texted code has proven it — which is
+    #: why there is no ``is_phone_verified`` column beside it.
     phone: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)
+    #: Lowercased. Proven only when ``is_email_verified`` says so.
     email: Mapped[str | None] = mapped_column(String(320), index=True)
+    is_email_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
     google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, index=True)
 
     name: Mapped[str] = mapped_column(String(120), default="", nullable=False)

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
-from app.domain.enums import AgeRange, AuthMethod
+from app.domain.enums import AgeRange, AuthMethod, IdentifierType
 from app.domain.services.streak import Streak
 
 
@@ -14,10 +14,20 @@ from app.domain.services.streak import Streak
 class User:
     id: UUID = field(default_factory=uuid4)
 
-    # Identity — at least one of phone / google_sub is set depending on auth method.
+    # Identity. ``auth_method`` is how the account was created and nothing more;
+    # the ways *in* are ``phone`` (a texted code) and ``google_sub`` (Google
+    # sign-in), and an account may hold both. At least one is always set.
     auth_method: AuthMethod = AuthMethod.PHONE
+    #: Only ever stored once a texted code has proven it — see
+    #: :attr:`is_phone_verified`.
     phone: str | None = None
     email: str | None = None
+    #: Whether ``email`` has been proven: by a code sent to it, or by Google
+    #: vouching for an address it is authoritative for. False for an address
+    #: merely *claimed* by a Google token, which is shown on the profile and
+    #: trusted for nothing — in particular it never finds an account at sign-in
+    #: and never blocks its real owner from linking it.
+    is_email_verified: bool = False
     google_sub: str | None = None
 
     # Profile
@@ -65,6 +75,22 @@ class User:
     @property
     def display_name(self) -> str:
         return self.name.strip() or "there"
+
+    @property
+    def is_phone_verified(self) -> bool:
+        """Derived, not stored: nothing writes ``phone`` without a code.
+
+        A column that always equals ``phone IS NOT NULL`` is a column that can
+        only ever be wrong, and every seed, script and fixture that creates a
+        user would have to remember to set it.
+        """
+        return self.phone is not None
+
+    def holds(self, kind: IdentifierType, value: str) -> bool:
+        """Whether ``value`` is already this account's own, proven identifier."""
+        if kind is IdentifierType.PHONE:
+            return self.phone == value
+        return self.is_email_verified and self.email == value
 
     @property
     def streak_state(self) -> Streak:

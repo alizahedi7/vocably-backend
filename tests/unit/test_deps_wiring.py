@@ -12,6 +12,7 @@ import pytest
 from app.api.deps import (
     _google_id_token_verifier,
     get_ai_provider,
+    get_email_otp_sender,
     get_google_verifier,
     get_otp_sender,
 )
@@ -25,6 +26,11 @@ from app.infrastructure.auth.google_id_token_verifier import GoogleIdTokenVerifi
 from app.infrastructure.auth.kavenegar_otp_sender import KavenegarOTPSender
 from app.infrastructure.auth.sms_ir_otp_sender import SmsIrOTPSender
 from app.infrastructure.auth.stub_google_verifier import StubGoogleVerifier
+from app.infrastructure.email.console_email_otp_sender import (
+    ConsoleEmailOTPSender,
+    UnconfiguredEmailOTPSender,
+)
+from app.infrastructure.email.lettermint_email_otp_sender import LetterMintEmailOTPSender
 
 
 def test_console_sender_is_the_default() -> None:
@@ -159,3 +165,32 @@ def test_google_verifier_without_client_id_fails_fast(monkeypatch: pytest.Monkey
 
     with pytest.raises(RuntimeError, match="GOOGLE_CLIENT_ID"):
         get_google_verifier()
+
+
+def test_console_email_sender_is_the_default() -> None:
+    assert isinstance(get_email_otp_sender(), ConsoleEmailOTPSender)
+
+
+def test_lettermint_sender_is_selected_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "email_sender", "lettermint")
+    monkeypatch.setattr(settings, "lettermint_api_token", "lm_token")
+    monkeypatch.setattr(settings, "email_from", "Vocably <no-reply@vocably.test>")
+
+    assert isinstance(get_email_otp_sender(), LetterMintEmailOTPSender)
+
+
+def test_lettermint_without_credentials_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "email_sender", "lettermint")
+    monkeypatch.setattr(settings, "lettermint_api_token", "")
+    monkeypatch.setattr(settings, "email_from", "")
+
+    with pytest.raises(RuntimeError, match="LETTERMINT_API_TOKEN"):
+        get_email_otp_sender()
+
+
+def test_production_never_gets_the_console_email_sender(monkeypatch: pytest.MonkeyPatch) -> None:
+    # It would log the code, deliver nothing, and let the endpoint say "sent".
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "email_sender", "console")
+
+    assert isinstance(get_email_otp_sender(), UnconfiguredEmailOTPSender)

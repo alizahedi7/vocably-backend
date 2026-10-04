@@ -21,6 +21,60 @@ class UserRepository(ABC):
     async def get_by_google_sub(self, google_sub: str) -> User | None: ...
 
     @abstractmethod
+    async def get_by_verified_email(self, email: str) -> User | None:
+        """The one account that has *proven* ``email``, already normalised.
+
+        Verified only, on purpose. An address a Google token merely claimed may
+        sit on any number of rows; matching those would sign someone in to an
+        account on the strength of a string nobody checked.
+        """
+
+    @abstractmethod
+    async def reload(self, user_id: UUID) -> User | None:
+        """Read the row again, past whatever this unit of work already holds.
+
+        For the moment after losing a race, when the copy read at the start of
+        the request is the one thing known to be out of date.
+        """
+
+    @abstractmethod
+    async def link_phone(self, user_id: UUID, phone: str) -> User:
+        """Attach a proven phone, replacing any the account had.
+
+        One narrow statement, and the unique index is what decides: two
+        accounts verifying one number in the same instant both pass the check
+        before it, and the loser gets ``IdentifierInUseError``.
+        """
+
+    @abstractmethod
+    async def link_email(self, user_id: UUID, email: str) -> User:
+        """Attach a proven email and mark it verified, replacing any it had.
+
+        The Google identity is left alone — changing an address must not
+        remove a way in. Raises ``IdentifierInUseError`` at the unique index,
+        as :meth:`link_phone` does.
+        """
+
+    @abstractmethod
+    async def unlink_phone(self, user_id: UUID) -> User | None:
+        """Remove the phone, or return ``None`` if that would lock the account.
+
+        Guarded in the statement itself — it matches only while a Google
+        identity remains — so removing the phone on one device and the email on
+        another in the same second cannot both succeed.
+        """
+
+    @abstractmethod
+    async def unlink_email(self, user_id: UUID) -> User | None:
+        """Remove the email **and the Google identity**, or return ``None`` if
+        that would lock the account.
+
+        Both, because Google sign-in is how an email signs in: leaving the
+        identity behind would let the Google account back in to an account
+        whose owner had just removed it. Matches only while a phone remains.
+        """
+
+    @abstractmethod
     async def list_by_ids(self, user_ids: Sequence[UUID]) -> dict[UUID, User]:
         """Fetch several users at once, keyed by id.
 

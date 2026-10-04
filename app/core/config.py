@@ -170,6 +170,36 @@ class Settings(BaseSettings):
     #: slow response should fail fast rather than hang the request.
     google_tokeninfo_timeout_seconds: float = 5.0
 
+    # ── Account linking ───────────────────────────────────────
+    #: Adding a second identifier — an email to a phone account, a phone to a
+    #: Google one. The code length is ``otp_length``, shared with sign-in.
+    link_otp_ttl_seconds: int = 300
+    #: Wrong guesses before a code is dead. Three, not sign-in's five: with the
+    #: hourly cap below that is fifteen guesses an hour at a six-digit code.
+    link_otp_max_attempts: int = 3
+    #: Seconds between codes for one account and one kind of identifier, and
+    #: codes per hour for the same. Both go through the shared Redis limiter:
+    #: each request can answer "that number already has an account", so the
+    #: budget is what stops the endpoint being walked as an enumeration oracle
+    #: — the same reason the handle check is capped. ``<= 0`` disables either.
+    link_otp_cooldown_seconds: int = 60
+    link_otp_requests_per_hour: int = 5
+    #: Codes per hour to one phone or address, whoever asks. Without it, enough
+    #: accounts could each spend their own budget texting one stranger's number.
+    link_otp_requests_per_target_per_hour: int = 5
+    #: ``console`` logs the code and sends nothing — dev only, and refused in
+    #: production, where it would answer "sent" for mail that never left.
+    email_sender: Literal["console", "lettermint"] = "console"
+    #: LetterMint *project* token (``lm_…``). Never commit a value; set it in
+    #: the environment. Rotate immediately if it leaks.
+    lettermint_api_token: str = ""
+    #: The From header, e.g. ``Vocably <no-reply@vocably.ir>``. Its domain must
+    #: be verified in the LetterMint project or every send is refused.
+    email_from: str = ""
+    #: A LetterMint route slug. Empty uses the project's default route.
+    lettermint_route: str = ""
+    lettermint_timeout_seconds: float = 10.0
+
     # ── AI services ───────────────────────────────────────────
     #: The gateway tried first. ``stub`` is offline canned data and what the
     #: tests run against.

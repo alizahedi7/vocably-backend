@@ -64,6 +64,7 @@ def user_to_entity(m: UserModel) -> User:
         auth_method=AuthMethod(m.auth_method),
         phone=m.phone,
         email=m.email,
+        is_email_verified=m.is_email_verified,
         google_sub=m.google_sub,
         name=m.name,
         username=m.username,
@@ -93,6 +94,7 @@ def apply_user(entity: User, m: UserModel) -> None:
     m.auth_method = entity.auth_method.value
     m.phone = entity.phone
     m.email = entity.email
+    m.is_email_verified = entity.is_email_verified
     m.google_sub = entity.google_sub
     m.name = entity.name
     m.username = entity.username

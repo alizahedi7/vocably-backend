@@ -16,11 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.admin_repository import AdminRepository
 from app.application.ports.ai_service import AIService
+from app.application.ports.email_otp_sender import EmailOTPSender
 from app.application.ports.feedback_notifier import FeedbackNotifier, NullFeedbackNotifier
 from app.application.ports.google_verifier import GoogleVerifier
 from app.application.ports.lookup_cache import LookupCacheRepository
 from app.application.ports.otp_sender import OTPSender
 from app.application.ports.reader_ai import ContextualMeaningProvider, PassageTranslator
+from app.application.services.account_link_service import AccountLinkService
 from app.application.services.admin_service import AdminService
 from app.application.services.ai_studio_service import AIStudioService
 from app.application.services.auth_service import AuthService
@@ -58,6 +60,7 @@ from app.domain.repositories.deck_unit_repository import DeckUnitRepository
 from app.domain.repositories.feedback_repository import FeedbackRepository
 from app.domain.repositories.friend_repository import FriendRepository
 from app.domain.repositories.lexicon_repository import LexiconRepository
+from app.domain.repositories.link_challenge_repository import LinkChallengeRepository
 from app.domain.repositories.otp_repository import OTPChallengeRepository
 from app.domain.repositories.review_event_repository import ReviewEventRepository
 from app.domain.repositories.user_repository import UserRepository
@@ -115,6 +118,9 @@ from app.infrastructure.db.repositories.friend_repository import (
 from app.infrastructure.db.repositories.lexicon_repository import (
     SqlAlchemyLexiconRepository,
 )
+from app.infrastructure.db.repositories.link_challenge_repository import (
+    SqlAlchemyLinkChallengeRepository,
+)
 from app.infrastructure.db.repositories.lookup_cache_repository import (
     SqlAlchemyLookupCacheRepository,
 )
@@ -131,6 +137,11 @@ from app.infrastructure.db.repositories.word_progress_repository import (
 from app.infrastructure.db.repositories.word_repository import SqlAlchemyWordRepository
 from app.infrastructure.db.repositories.xp_repository import SqlAlchemyXpRepository
 from app.infrastructure.dictionary.factory import dictionary_service
+from app.infrastructure.email.console_email_otp_sender import (
+    ConsoleEmailOTPSender,
+    UnconfiguredEmailOTPSender,
+)
+from app.infrastructure.email.lettermint_email_otp_sender import LetterMintEmailOTPSender
 from app.infrastructure.nlp.simplemma_lemmatizer import SimplemmaLemmatizer
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -185,6 +196,10 @@ def get_otp_repository(session: SessionDep) -> OTPChallengeRepository:
     return SqlAlchemyOTPChallengeRepository(session)
 
 
+def get_link_challenge_repository(session: SessionDep) -> LinkChallengeRepository:
+    return SqlAlchemyLinkChallengeRepository(session)
+
+
 def get_admin_repository(session: SessionDep) -> AdminRepository:
     return SqlAlchemyAdminRepository(session)
 
@@ -221,6 +236,7 @@ DeckDiscoveryRepoDep = Annotated[DeckDiscoveryRepository, Depends(get_deck_disco
 FriendRepoDep = Annotated[FriendRepository, Depends(get_friend_repository)]
 XpRepoDep = Annotated[XpRepository, Depends(get_xp_repository)]
 OTPRepoDep = Annotated[OTPChallengeRepository, Depends(get_otp_repository)]
+LinkChallengeRepoDep = Annotated[LinkChallengeRepository, Depends(get_link_challenge_repository)]
 AdminRepoDep = Annotated[AdminRepository, Depends(get_admin_repository)]
 FeedbackRepoDep = Annotated[FeedbackRepository, Depends(get_feedback_repository)]
 LookupCacheRepoDep = Annotated[LookupCacheRepository, Depends(get_lookup_cache_repository)]
@@ -256,6 +272,26 @@ def get_otp_sender() -> OTPSender:
             template_id=settings.sms_ir_template_id,
         )
     return ConsoleOTPSender()
+
+
+def get_email_otp_sender() -> EmailOTPSender:
+    if settings.email_sender == "lettermint":
+        if not settings.lettermint_api_token or not settings.email_from:
+            raise RuntimeError(
+                "EMAIL_SENDER=lettermint requires LETTERMINT_API_TOKEN and EMAIL_FROM."
+            )
+        return LetterMintEmailOTPSender(
+            api_token=settings.lettermint_api_token,
+            sender=settings.email_from,
+            ttl_minutes=max(settings.link_otp_ttl_seconds // 60, 1),
+            route=settings.lettermint_route,
+            timeout_seconds=settings.lettermint_timeout_seconds,
+        )
+    if settings.is_production:
+        # Not the console sender: it would log the code, deliver nothing, and
+        # let the endpoint answer "sent".
+        return UnconfiguredEmailOTPSender()
+    return ConsoleEmailOTPSender()
 
 
 @lru_cache
@@ -307,6 +343,7 @@ def get_ai_service(
 
 AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
 OTPSenderDep = Annotated[OTPSender, Depends(get_otp_sender)]
+EmailOTPSenderDep = Annotated[EmailOTPSender, Depends(get_email_otp_sender)]
 GoogleVerifierDep = Annotated[GoogleVerifier, Depends(get_google_verifier)]
 
 
@@ -318,6 +355,22 @@ def get_auth_service(
     google: GoogleVerifierDep,
 ) -> AuthService:
     return AuthService(users, otp_repo, otp_sender, google)
+
+
+def get_account_link_service(
+    users: UserRepoDep,
+    challenges: LinkChallengeRepoDep,
+    otp_sender: OTPSenderDep,
+    email_sender: EmailOTPSenderDep,
+) -> AccountLinkService:
+    return AccountLinkService(
+        users,
+        challenges,
+        sms_sender=otp_sender,
+        email_sender=email_sender,
+        cooldown=_link_cooldown_limiter(),
+        hourly=_hourly_shared_limiter(),
+    )
 
 
 def get_user_service(
@@ -520,6 +573,7 @@ def get_content_admin_service(
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+AccountLinkServiceDep = Annotated[AccountLinkService, Depends(get_account_link_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 DeckServiceDep = Annotated[DeckService, Depends(get_deck_service)]
 WordServiceDep = Annotated[WordService, Depends(get_word_service)]
@@ -557,6 +611,25 @@ def _hourly_shared_limiter() -> RedisFixedWindowRateLimiter:
         Redis.from_url(settings.rate_limit_redis_url, decode_responses=True),
         window_seconds=3600,
         fallback=_shared_limit_fallback,
+    )
+
+
+@lru_cache
+def _link_cooldown_limiter() -> RedisFixedWindowRateLimiter:
+    """The wait between two linking codes, on the same Redis as the hourly limits.
+
+    A limiter of its own because the window is the limit: one event per
+    ``LINK_OTP_COOLDOWN_SECONDS``. The fixed window opens at the request that
+    was allowed, so it is exactly a cooldown. Its fallback is built here rather
+    than shared, since a sliding window is only ever as long as it was made.
+    """
+    from redis.asyncio import Redis
+
+    window = max(settings.link_otp_cooldown_seconds, 1)
+    return RedisFixedWindowRateLimiter(
+        Redis.from_url(settings.rate_limit_redis_url, decode_responses=True),
+        window_seconds=window,
+        fallback=SlidingWindowRateLimiter(window_seconds=float(window)),
     )
 
 

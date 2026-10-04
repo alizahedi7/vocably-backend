@@ -20,9 +20,16 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    #: How the account was created. Not how it may be signed in to — an
+    #: account can hold a phone and an email whichever came first.
     auth_method: AuthMethod
     phone: str | None
     email: str | None
+    #: Additive, like every field here: a build that predates linking ignores
+    #: both. ``is_email_verified`` can be false with an email present — an
+    #: address Google supplied but could not vouch for.
+    is_phone_verified: bool
+    is_email_verified: bool
     name: str
     username: str | None
     age_range: AgeRange | None
