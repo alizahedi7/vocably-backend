@@ -25,6 +25,7 @@ from app.domain.entities.user import User
 from app.domain.enums import AuthMethod
 from app.domain.repositories.otp_repository import OTPChallengeRepository
 from app.domain.repositories.user_repository import UserRepository
+from app.domain.services import identifiers
 
 logger = get_logger(__name__)
 
@@ -90,20 +91,44 @@ class AuthService:
 
     # ── Google ────────────────────────────────────────────────
     async def sign_in_with_google(self, id_token: str) -> AuthResult:
+        """Sign in with Google, landing on the account that holds this identity.
+
+        Found by ``sub`` first — the one thing about a Google account that
+        never changes. Failing that, by an email its owner has *verified* here,
+        and only when Google is authoritative for that address: this is what
+        makes an email linked to a phone account open the same account. An
+        address Google merely repeats is never used to find anyone.
+        """
         now = datetime.now(UTC)
         identity = await self._google.verify(id_token)
+        email = identifiers.normalize_email(identity.email or "")
+        vouched = email if identity.email_verified else None
+
         user = await self._users.get_by_google_sub(identity.sub)
+        owner = await self._users.get_by_verified_email(vouched) if vouched else None
+        if user is None and owner is not None:
+            # Rebinds even over an older Google identity: the address is the
+            # credential, and Google says this is the account that holds it now.
+            owner.google_sub = identity.sub
+            user = owner
         if user is None:
             user = await self._users.add(
                 User(
                     auth_method=AuthMethod.GOOGLE,
                     google_sub=identity.sub,
-                    email=identity.email,
+                    email=email,
+                    is_email_verified=vouched is not None,
                     name=identity.name or "",
                     last_login_at=now,
                 )
             )
             return self._issue(user, is_new=True)
+        if vouched and owner is None and not user.is_email_verified:
+            # An account from before verification was tracked, or one whose
+            # address Google could not vouch for until now. Nobody else has
+            # proven it, so it becomes this account's.
+            user.email = vouched
+            user.is_email_verified = True
         return await self._sign_in_existing(user, now)
 
     # ── Tokens ────────────────────────────────────────────────

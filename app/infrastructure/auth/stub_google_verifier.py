@@ -2,7 +2,8 @@
 
 Accepts either:
   * a plain string used directly as the Google subject, or
-  * a ``sub:email:name`` triple to control the returned identity in tests.
+  * a ``sub:email:name`` triple to control the returned identity in tests,
+    optionally followed by ``:unverified``.
 
 In production swap for an adapter that validates the id_token against Google's JWKS and
 checks the audience (``GOOGLE_CLIENT_ID``).
@@ -38,4 +39,7 @@ class StubGoogleVerifier(GoogleVerifier):
         sub = parts[0]
         email = parts[1] if len(parts) > 1 else f"{sub}@example.com"
         name = parts[2] if len(parts) > 2 else "Google User"
-        return GoogleIdentity(sub=f"google-{sub}", email=email, name=name)
+        # A fourth segment of ``unverified`` stands in for an address Google is
+        # not authoritative for; anything else is vouched for, as Gmail is.
+        vouched = not (len(parts) > 3 and parts[3] == "unverified")
+        return GoogleIdentity(sub=f"google-{sub}", email=email, name=name, email_verified=vouched)

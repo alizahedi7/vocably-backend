@@ -14,7 +14,7 @@ from app.application.ports.ai_service import LookupResult
 from app.domain.entities.deck import Deck
 from app.domain.entities.user import User
 from app.domain.entities.word import Word
-from app.domain.enums import AuthMethod, DeckRole, LeitnerBox
+from app.domain.enums import AuthMethod, DeckRole, IdentifierType, LeitnerBox
 from app.domain.services.streak import DayState
 
 
@@ -32,6 +32,20 @@ class AuthResult:
     user: User
     tokens: TokenPair
     is_new_user: bool
+
+
+@dataclass(frozen=True, slots=True)
+class LinkCodeIssued:
+    """A linking code is on its way.
+
+    ``target`` is the normalised form it was sent to — what the client should
+    show ("we sent a code to …") and send back when it verifies.
+    """
+
+    kind: IdentifierType
+    target: str
+    expires_in_seconds: int
+    resend_after_seconds: int
 
 
 @dataclass(frozen=True, slots=True)

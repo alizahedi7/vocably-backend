@@ -27,7 +27,8 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from app.api.deps import _otp_ip_limiter, get_otp_sender
+from app.api.deps import _otp_ip_limiter, get_email_otp_sender, get_otp_sender
+from app.application.ports.email_otp_sender import EmailOTPSender
 from app.application.ports.otp_sender import OTPSender
 from app.core.config import settings
 from app.core.database import Base, get_session
@@ -56,6 +57,21 @@ class RecordingOTPSender(OTPSender):
         return codes[-1]
 
 
+class RecordingEmailOTPSender(EmailOTPSender):
+    """The email twin of :class:`RecordingOTPSender`."""
+
+    def __init__(self) -> None:
+        self.outbox: list[tuple[str, str]] = []
+
+    async def send(self, email: str, code: str) -> None:
+        self.outbox.append((email, code))
+
+    def last_code_for(self, email: str) -> str:
+        codes = [code for to, code in self.outbox if to == email]
+        assert codes, f"no OTP was emailed to {email}"
+        return codes[-1]
+
+
 @pytest.fixture(autouse=True)
 def _no_otp_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
     """Disable the resend cooldown so flow tests can request codes back to back.
@@ -63,6 +79,12 @@ def _no_otp_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
     The cooldown itself is exercised explicitly in ``test_auth_otp``.
     """
     monkeypatch.setattr(settings, "otp_resend_cooldown_seconds", 0)
+    # The same for linking codes, exercised in ``test_account_linking``. The
+    # per-target cap goes too: its key is the phone or address itself, which a
+    # test spells the same on every run, so a developer's Redis would carry
+    # one run's budget into the next.
+    monkeypatch.setattr(settings, "link_otp_cooldown_seconds", 0)
+    monkeypatch.setattr(settings, "link_otp_requests_per_target_per_hour", 0)
 
 
 @pytest.fixture(autouse=True)
@@ -85,6 +107,7 @@ def _fresh_shared_limiters() -> Iterator[None]:
     from app.api import deps
 
     deps._hourly_shared_limiter.cache_clear()
+    deps._link_cooldown_limiter.cache_clear()
     deps._shared_limit_fallback.reset()
     # A developer with Redis running would otherwise share one budget across
     # every run of the suite, so which test fails would depend on how many
@@ -116,6 +139,7 @@ def _fresh_shared_limiters() -> Iterator[None]:
         settings.passage_translations_per_user_per_hour,
     ) = previous
     deps._hourly_shared_limiter.cache_clear()
+    deps._link_cooldown_limiter.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -176,9 +200,15 @@ def otp_sender() -> RecordingOTPSender:
 
 
 @pytest.fixture
+def email_sender() -> RecordingEmailOTPSender:
+    return RecordingEmailOTPSender()
+
+
+@pytest.fixture
 async def client(
     session_factory: async_sessionmaker[AsyncSession],
     otp_sender: RecordingOTPSender,
+    email_sender: RecordingEmailOTPSender,
 ) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_session() -> AsyncGenerator[AsyncSession, None]:
         # Mirrors app.core.database.get_session: commit on success, rollback on error.
@@ -192,6 +222,7 @@ async def client(
 
     app.dependency_overrides[get_session] = override_get_session
     app.dependency_overrides[get_otp_sender] = lambda: otp_sender
+    app.dependency_overrides[get_email_otp_sender] = lambda: email_sender
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http:
         yield http

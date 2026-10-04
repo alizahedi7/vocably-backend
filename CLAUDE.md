@@ -102,6 +102,103 @@ The read-only admin analytics API backing the standalone **vocably-admin** dashb
   the "Last Login" column and the active-users metric. `NULL` means never signed in since the
   column was added.
 
+## One account, two ways in
+
+A phone and an email can sit on one account, whichever it was created with.
+`POST /auth/link/request-otp` sends a code to the new one, `POST
+/auth/link/verify-otp` attaches it, `DELETE /auth/link/{email|phone}` takes one
+off. All three need a session and answer the account as it now stands; tokens
+are never reissued, because the user id is the one thing linking cannot change.
+
+- **`auth_method` is history, never policy.** It records how the account was
+  *created* and feeds the admin breakdown. An account made by phone may hold an
+  email and a Google identity too. Branching on it to decide how someone may
+  sign in is the bug.
+- **A way in is a phone or a Google identity. A verified email alone is not
+  one.** There is no email-code sign-in: an email signs in *through Google*, so
+  until Google has actually signed in with it (`google_sub` is set) nothing can.
+  That is the whole lockout rule — the phone comes off only while `google_sub`
+  remains, the email only while `phone` does — and it is why a phone account
+  that links a non-Google address can never remove its phone. Counting the
+  verified email as a way in would let that account lock itself out for good.
+- **Only a *proven* email is unique.** `uq_users_verified_email` is a partial
+  index over `is_email_verified`. `users.email` used to be whatever a Google
+  token said, checked by nobody; unique across every row would let an address
+  somebody merely claimed block its real owner from linking it. The predicate
+  is what makes `identifier_already_in_use` mean "another account verified it".
+- **There is no `is_phone_verified` column, and that is deliberate.**
+  `users.phone` is only ever written after a texted code, so the flag would
+  always equal `phone IS NOT NULL` — a column that can only be wrong, and one
+  every seed, script and fixture would have to remember to set. It is a derived
+  property on `User` and on the wire (`UserOut.is_phone_verified`).
+- **Google is believed about an email only where it is authoritative**: an
+  `@gmail.com` address, or `email_verified` *with* `hd` (Workspace) — Google's
+  own guidance. `email_verified` alone records a check made when the Google
+  account was created, and a third-party mailbox may have changed hands since.
+  `GoogleIdentity.email_verified` carries that judgement, not the raw claim.
+- **Google sign-in finds an account by `sub`, then by verified email, then
+  creates one.** The second step is what makes an email linked to a phone
+  account open *that* account, and it rebinds `google_sub` even over an older
+  one: the address is the credential, with the limits any email-based recovery
+  has — the account follows the mailbox. An address Google cannot vouch for
+  never finds anybody. An older account is marked verified the next time Google vouches for
+  it, unless another account already proved the address — that one keeps it.
+- **Changing the email keeps the Google identity; removing it does not.**
+  Replacing an address must not remove a way in, or a Google-only account would
+  lock itself out by changing to an address that is not a Google account.
+  `DELETE /auth/link/email` clears `email`, the flag **and** `google_sub`:
+  leaving the identity behind would let the Google account back in to an
+  account whose owner had just removed it.
+- **Unlinking is one guarded statement** (`unlink_phone` / `unlink_email`), the
+  `bank_day` pattern. Removing the phone on one device and the email on another
+  in the same second cannot both succeed. It belongs under "Writes that two
+  requests can reach at once".
+- **Linking codes live in Postgres, not Redis** — `account_link_challenges`,
+  one row per `(user, kind)`, replaced on each request so it needs no sweeper.
+  Consuming the code and writing the identifier are one transaction, which is
+  the only way "invalidate the code and update the user atomically" is true;
+  and Redis is never load-bearing in this codebase. It is a separate table from
+  `otp_challenges` because that one signs in whoever holds a phone, while this
+  one belongs to a signed-in user and is **bound to its target** — a code that
+  proved one address cannot attach another.
+- **The throttle runs before the "already in use" check, and that order is the
+  control.** A 409 tells the caller that a phone or address has an account, so
+  every question must cost a slot (one a minute, five an hour, per account and
+  kind, through the shared Redis limiter). Checked the other way round the
+  refusals are free and this is an account-enumeration oracle.
+  `test_asking_whether_a_number_is_taken_costs_a_slot` fails if they are swapped.
+- **A wrong linking code is 400 `invalid_otp`, never 401.** On a route that
+  carries a bearer token a 401 reads as a dead session: a client refreshes,
+  retries — a second attempt spent on the same wrong code — and signs the user
+  out. `InvalidLinkCodeError` is therefore not an `AuthenticationError`, though
+  it shares the sign-in code's `code`. The router commits on it, as
+  `/auth/otp/verify` does, or the three-attempt cap never engages.
+- **There is no merge.** An identifier another account verified is refused, and
+  the copy says what does work: sign in to the other account and remove it, or
+  delete that account. Merging two accounts means choosing between two streaks,
+  two XP ledgers, two handles and two boxes for every shared card — none of it
+  mechanical, all of it irreversible, and the obvious takeover vector.
+- **[identifiers.py](app/domain/services/identifiers.py) is the only place a
+  phone or email is normalised.** E.164 with separators and Persian/Arabic
+  digits folded; email trimmed and lowercased, nothing cleverer. A unique index
+  compares bytes, so a second normaliser is how one phone gets two accounts. A
+  national number (`0912…`) is refused rather than completed.
+- **Email is LetterMint's HTTP API** (`EMAIL_SENDER=lettermint`,
+  `LETTERMINT_API_TOKEN`, `EMAIL_FROM` on a verified domain). In production the
+  console sender is **refused at send time, not at startup** — unlike the
+  guards in `config.py`, a missing mail provider must cost the one feature that
+  needs it, not the deploy that introduced it. The email's wording is in
+  [templates.py](app/infrastructure/email/templates.py); like the prompts, it
+  is copy a learner reads.
+- **The backfill is narrow** (migration `e5b7a2c94d18`): only `@gmail.com`
+  addresses on Google accounts are marked verified, and only where no other row
+  shares the address. Everything else waits for its next Google sign-in or a
+  code. Marking them all would bless claims nobody checked.
+
+`tests/api/test_account_linking.py` holds the flow, `test_auth_google.py` the
+sign-in resolution, and `test_account_link_migration.py` runs the real
+migration over production-shaped rows (Postgres only).
+
 ## AI surface
 
 `POST /api/v1/ai/lookup` backs the "AI Card Magic" deck; `POST /api/v1/ai/story`

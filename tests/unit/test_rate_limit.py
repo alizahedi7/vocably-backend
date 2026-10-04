@@ -73,7 +73,7 @@ class _DeadRedis:
 
 
 class _CountingRedis:
-    """The smallest thing that behaves like INCR/EXPIRE."""
+    """The smallest thing that behaves like INCR/EXPIRE/TTL."""
 
     def __init__(self) -> None:
         self.counts: dict[str, int] = {}
@@ -87,6 +87,10 @@ class _CountingRedis:
         self.expires[key] = seconds
         return True
 
+    async def ttl(self, key: str) -> int:
+        # Redis answers -1 for a key that exists and will never expire.
+        return self.expires.get(key, -1)
+
 
 async def test_redis_limiter_enforces_the_budget_and_sets_a_ttl() -> None:
     redis = _CountingRedis()
@@ -98,6 +102,20 @@ async def test_redis_limiter_enforces_the_budget_and_sets_a_ttl() -> None:
     # Expiry is set once, on the call that created the key — resetting it on
     # every hit would make a busy key immortal and the window meaningless.
     assert redis.expires == {"k": 3600}
+
+
+async def test_a_key_left_without_an_expiry_is_repaired_rather_than_refusing_forever() -> None:
+    # What a crash between INCR and EXPIRE leaves behind: a count, no TTL.
+    # With a budget of one — a cooldown — that is one person locked out for
+    # good, unless the refusal notices and gives the key the expiry it missed.
+    redis = _CountingRedis()
+    redis.counts["k"] = 1
+    limiter = RedisFixedWindowRateLimiter(
+        redis, window_seconds=60, fallback=SlidingWindowRateLimiter(window_seconds=60.0)
+    )
+
+    assert await limiter.allow("k", 1) is False
+    assert redis.expires == {"k": 60}
 
 
 async def test_an_unreachable_redis_degrades_and_never_fails_open() -> None:

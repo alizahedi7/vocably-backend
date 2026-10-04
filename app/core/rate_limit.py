@@ -97,6 +97,13 @@ class RedisFixedWindowRateLimiter:
             count = await self._redis.incr(key)
             if count == 1:
                 await self._redis.expire(key, self._window)
+            elif count > max_events and await self._redis.ttl(key) == -1:
+                # INCR and EXPIRE are two commands, and a process can die
+                # between them. The key then never expires, and every later
+                # refusal is permanent — a nuisance at sixty an hour, a lockout
+                # for a budget of one. Checked only on the way to a refusal, so
+                # an allowed request still costs a single command.
+                await self._redis.expire(key, self._window)
         except Exception as exc:  # noqa: BLE001 — any Redis failure degrades, never opens
             # One line, no traceback: an outage means *every* request takes this
             # path, and a stack trace per request buries the incident it is

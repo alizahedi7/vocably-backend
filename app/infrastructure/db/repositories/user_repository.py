@@ -11,7 +11,7 @@ from sqlalchemy import CursorResult, and_, case, delete, func, or_, select, upda
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import AlreadyExistsError
+from app.core.exceptions import AlreadyExistsError, IdentifierInUseError
 from app.domain.entities.user import User
 from app.domain.repositories.user_repository import UserRepository
 from app.infrastructure.db import mappers
@@ -35,6 +35,67 @@ class SqlAlchemyUserRepository(UserRepository):
         stmt = select(UserModel).where(UserModel.google_sub == google_sub)
         model = (await self._session.execute(stmt)).scalar_one_or_none()
         return mappers.user_to_entity(model) if model else None
+
+    async def get_by_verified_email(self, email: str) -> User | None:
+        stmt = select(UserModel).where(
+            UserModel.email == email,
+            UserModel.is_email_verified.is_(True),
+        )
+        model = (await self._session.execute(stmt)).scalar_one_or_none()
+        return mappers.user_to_entity(model) if model else None
+
+    async def reload(self, user_id: UUID) -> User | None:
+        # ``populate_existing`` because ``get`` alone answers from the identity
+        # map — the very copy the caller is asking to see past.
+        model = await self._session.get(UserModel, user_id, populate_existing=True)
+        return mappers.user_to_entity(model) if model else None
+
+    async def link_phone(self, user_id: UUID, phone: str) -> User:
+        return await self._link(user_id, {"phone": phone})
+
+    async def link_email(self, user_id: UUID, email: str) -> User:
+        return await self._link(user_id, {"email": email, "is_email_verified": True})
+
+    async def _link(self, user_id: UUID, values: dict[str, Any]) -> User:
+        try:
+            await self._session.execute(
+                update(UserModel).where(UserModel.id == user_id).values(**values)
+            )
+        except IntegrityError as exc:
+            # The statement sets one identifier and nothing else, so the only
+            # constraint it can break is that identifier's unique index — no
+            # matching on the message, which here would contain a string the
+            # caller chose.
+            raise IdentifierInUseError() from exc
+        user = await self.reload(user_id)
+        if user is None:
+            raise ValueError(f"User {user_id} does not exist")
+        return user
+
+    async def unlink_phone(self, user_id: UUID) -> User | None:
+        stmt = (
+            update(UserModel)
+            # The lockout rule and its race guard in one predicate, as in
+            # ``bank_day``: a request removing the email at the same moment
+            # clears ``google_sub`` first, and this then matches nothing.
+            .where(UserModel.id == user_id, UserModel.google_sub.is_not(None))
+            .values(phone=None)
+        )
+        return await self._unlinked(user_id, stmt)
+
+    async def unlink_email(self, user_id: UUID) -> User | None:
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user_id, UserModel.phone.is_not(None))
+            .values(email=None, is_email_verified=False, google_sub=None)
+        )
+        return await self._unlinked(user_id, stmt)
+
+    async def _unlinked(self, user_id: UUID, stmt: Any) -> User | None:
+        result = await self._session.execute(stmt)
+        if not cast("CursorResult[Any]", result).rowcount:
+            return None
+        return await self.reload(user_id)
 
     async def list_by_ids(self, user_ids: Sequence[UUID]) -> dict[UUID, User]:
         if not user_ids:
