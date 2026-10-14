@@ -66,6 +66,11 @@ class StudyOverviewOut(BaseModel):
     total_count: int
     learned_count: int
     mastered_count: int
+    #: Words answered at least once, ever. Additive, and read by the Practice
+    #: tab's shuffle card — which asks only about words the learner has
+    #: actually met, so counting the rest would put a number on a card that
+    #: opens onto an empty exercise.
+    reviewed_count: int
     reviewed_today: int
     due_deck_count: int
     estimated_minutes: int
@@ -84,6 +89,7 @@ class StudyOverviewOut(BaseModel):
             total_count=dto.total_count,
             learned_count=dto.learned_count,
             mastered_count=dto.mastered_count,
+            reviewed_count=dto.reviewed_count,
             reviewed_today=dto.reviewed_today,
             due_deck_count=dto.due_deck_count,
             estimated_minutes=dto.estimated_minutes,

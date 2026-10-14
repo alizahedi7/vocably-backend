@@ -30,6 +30,15 @@ class DeckBoxTally:
     started: bool
     word_count: int
     due_count: int
+    #: How many of ``word_count`` this learner has actually answered at least
+    #: once. Never more than ``word_count``, and 0 for an unstarted cell.
+    #:
+    #: A box is not an answer to "have they met this card?": a started card
+    #: nobody has answered sits in box 1 looking exactly like one they answered
+    #: and got wrong, and box 1 is where both live. The counter is the only
+    #: thing that tells the two apart, which is what the shuffle exercise
+    #: selects on.
+    reviewed_count: int
 
 
 class WordProgressRepository(ABC):

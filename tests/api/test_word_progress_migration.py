@@ -84,6 +84,9 @@ EXPECTED_OVERVIEW_ALI: dict[str, Any] = {
     # numbers that existed before are unchanged — which is what this file is
     # here to prove.
     "mastered_count": 2,
+    # The three words with a non-zero review_count: the counter survives the
+    # split, so a learner's history counts on the morning after deploy.
+    "reviewed_count": 3,
     "reviewed_today": 0,
     "due_deck_count": 2,
     "estimated_minutes": 2,
