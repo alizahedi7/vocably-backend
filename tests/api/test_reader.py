@@ -470,3 +470,18 @@ async def test_a_local_paragraph_is_translated_from_its_text(
     )
     assert response.status_code == 200, response.text
     assert response.json()["translation"].endswith("The bus was late again.")
+
+
+async def test_a_local_id_without_its_text_has_nothing_to_translate(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """The server cannot recover a paragraph it never held, so the client must
+    send the text beside a local id. It once sent the id alone, and every
+    translation in the app's own stories read "Couldn't translate that"."""
+    response = await client.post(
+        "/api/v1/reader/translate-paragraph",
+        headers=auth_headers,
+        json={"block_id": "blk-2"},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "There is nothing to translate."
