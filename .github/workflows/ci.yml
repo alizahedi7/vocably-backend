@@ -152,6 +152,22 @@ jobs:
           printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
           docker compose -f docker-compose.prod.yml pull
           docker compose -f docker-compose.prod.yml up -d
+          # Caddy parses its Caddyfile once, at start, and has it mounted
+          # read-only. `up -d` only recreates a container whose image or compose
+          # definition changed — neither of which a config-only edit touches — so
+          # a Caddyfile copied by the step above sits on disk unread while the
+          # previous one goes on being served.
+          #
+          # `reload` rather than `restart`: it swaps the config with no dropped
+          # connections and no gap on 80/443, and it loads the new config before
+          # committing to it, so a broken Caddyfile fails this step loudly and
+          # leaves the running site untouched rather than taking it down.
+          #
+          # `< /dev/null` is load-bearing: this script reaches the VPS on
+          # `bash -s`'s stdin, and `exec -T` reads stdin — without it, the
+          # reload swallows every line below, `docker logout` included.
+          docker compose -f docker-compose.prod.yml exec -T caddy \
+            caddy reload --config /etc/caddy/Caddyfile < /dev/null
           docker logout ghcr.io
           docker image prune -f
           docker compose -f docker-compose.prod.yml ps
