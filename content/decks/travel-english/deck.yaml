@@ -1,0 +1,44 @@
+slug: travel-english
+version: "1.0.0"
+name: Travel English
+name_fa: انگلیسی سفر
+category: travel
+# One line, and it must stay one line: the Explore card is a fixed height, so
+# a longer description is silently truncated rather than given more room.
+description: The words you need from the airport to the hotel bar.
+description_fa: واژه‌هایی که از فرودگاه تا هتل به کارتان می‌آید.
+official: true
+# Sky blue, so the card is told apart from the business deck's teal and the
+# 504 deck's violet at a glance.
+hue: 210
+# Drawn in place of the deck's initial by clients that ship the asset. A client
+# with no asset for this slug draws the initial instead, which is not an error.
+icon: travel
+
+# No source: the list was compiled by Vocably. The ten situations follow the
+# order of a trip — booking, airport, flight, arrival, hotel, getting around,
+# eating out, shopping, sightseeing, trouble — so a learner can study the unit
+# they need next.
+
+structure:
+  # Asserted, not derived: a word list that silently loses an entry is otherwise
+  # invisible until a learner notices a unit is short.
+  words_per_unit: 10
+  expected_units: 10
+  expected_words: 100
+
+generation:
+  native_language: Persian
+  register: adult
+  # The full ladder. The `travel` prior does most of the work on words like
+  # "board", "gate" and "platform", whose commonest sense is not the one a
+  # traveller needs; hints cover the ones the prior cannot.
+  sense_selection: [explicit, hint, category, first]
+  enrichment: allowed
+  max_senses: 4
+
+publication:
+  # Never automatic. A build finishing is not a reason for a hundred unreviewed
+  # cards to appear in Explore.
+  review_required: true
+  publish: manual
