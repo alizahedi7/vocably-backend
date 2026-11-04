@@ -49,8 +49,11 @@ OP_TIMEOUT_SECONDS = 1.0
 
 
 class AsyncRedisLike(Protocol):
-    async def get(self, name: str) -> Any: ...
-    async def set(self, name: str, value: str, *, ex: int = ...) -> Any: ...
+    # ``def … -> Awaitable``, not ``async def``: redis 8 types its async client's
+    # methods as returning ``Awaitable``, which an ``async def`` protocol
+    # (``Coroutine``) rejects. A coroutine still satisfies this.
+    def get(self, name: str) -> Awaitable[Any]: ...
+    def set(self, name: str, value: str, *, ex: int = ...) -> Awaitable[Any]: ...
 
 
 class ReaderHotCache:

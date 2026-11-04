@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Awaitable
 from typing import Any, Protocol
 
 from app.core.logging import get_logger
@@ -47,8 +48,11 @@ OP_TIMEOUT_SECONDS = 1.0
 
 
 class AsyncRedisLike(Protocol):
-    async def set(self, name: str, value: str, *, nx: bool = ..., ex: int = ...) -> Any: ...
-    async def delete(self, *names: str) -> Any: ...
+    # ``def … -> Awaitable``, not ``async def``: redis 8 types its async client's
+    # methods as returning ``Awaitable``, which an ``async def`` protocol
+    # (``Coroutine``) rejects. A coroutine still satisfies this.
+    def set(self, name: str, value: str, *, nx: bool = ..., ex: int = ...) -> Awaitable[Any]: ...
+    def delete(self, *names: str) -> Awaitable[Any]: ...
 
 
 class SingleFlight:
