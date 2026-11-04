@@ -1,0 +1,48 @@
+slug: 100-essential-phrasal-verbs
+version: "1.0.0"
+name: 100 Essential Phrasal Verbs
+name_fa: ۱۰۰ فعل عبارتی ضروری
+category: general
+# One line, and it must stay one line: the Explore card is a fixed height, so
+# a longer description is silently truncated rather than given more room.
+description: The two-word verbs that fill everyday English.
+description_fa: فعل‌های دوکلمه‌ای که انگلیسی روزمره پر از آن‌هاست.
+official: true
+# Gold, so the card is told apart from the 1100 deck's amber and the idioms
+# deck's magenta at a glance.
+hue: 48
+# Drawn in place of the deck's initial by clients that ship the asset. A client
+# with no asset for this slug draws the initial instead, which is not an error.
+icon: phrasal
+
+# No source: the list was compiled by Vocably from the phrasal verbs a learner
+# meets most often in speech, grouped by the particle so that the pattern of
+# each one is learned alongside its meaning.
+
+structure:
+  # Asserted, not derived: a word list that silently loses an entry is otherwise
+  # invisible until a learner notices a set has nine cards.
+  words_per_unit: 10
+  expected_units: 10
+  expected_words: 100
+
+generation:
+  native_language: Persian
+  register: adult
+  # No `category`: the `general` prior is empty, so that rung could never fire
+  # and would only add a strategy to read past.
+  #
+  # `hint` is the load-bearing rung for this deck. Nearly every phrasal verb has
+  # several meanings ("take off" is a plane, a coat and a day), and the hint says
+  # which one the deck teaches.
+  sense_selection: [explicit, hint, first]
+  # On, and it will fire often: the taught sense of a phrasal verb is frequently
+  # missing from the lexicon entirely, which is the case enrichment exists for.
+  enrichment: allowed
+  max_senses: 4
+
+publication:
+  # Never automatic. A build finishing is not a reason for a hundred unreviewed
+  # cards to appear in Explore.
+  review_required: true
+  publish: manual
