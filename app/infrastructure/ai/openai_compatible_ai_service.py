@@ -394,7 +394,11 @@ class OpenAICompatibleAIService(ReaderAdapterMixin, AIService):
             except (ValueError, ValidationError) as exc:
                 # Never log `raw` — it embeds learner input.
                 last_error = type(exc).__name__
-                if self._structured_output:
+                # An empty body is not evidence about schema enforcement: a
+                # reasoning model that spent its whole output budget thinking
+                # answers nothing at all. Only a non-empty body that fails to
+                # validate says the schema was ignored.
+                if self._structured_output and raw.strip():
                     # We asked for a schema, got a 200, and the body does not
                     # match it — so the endpoint is not enforcing the schema even
                     # though it accepted the parameter. Stop relying on it and

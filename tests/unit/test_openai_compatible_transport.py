@@ -91,3 +91,5 @@ async def test_a_budget_spent_on_reasoning_is_retried_once_then_fails_closed() -
         await provider.look_up_meanings("gullible", LearnerContext(native_language="Persian"))
 
     assert len(client.calls) == 2
+    # An empty answer is not an off-schema answer: the retry still asks for the schema.
+    assert all("text" in kwargs for _, kwargs in client.calls)
