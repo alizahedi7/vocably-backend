@@ -78,21 +78,21 @@ class TabiTokenProvider(OpenAICompatibleAIService):
 
 
 class AgentRouterProvider(OpenAICompatibleAIService):
-    """agentrouter (https://agentrouter.org), likewise a Claude proxy.
+    """agentrouter (https://agentrouter.org), once a Claude proxy.
 
-    Speaks both protocols; this drives the OpenAI one, since that is where the
-    provider fleet and its failover live. ``ANTHROPIC_BASE_URL`` can still point
-    the Anthropic adapter at the same host for the request path.
+    Since 2026-11 its catalogue is three GPT reasoning models (``gpt-5.6-sol``,
+    ``gpt-6-astra``, ``gpt-6.1-sol``) and every Claude name answers "no
+    available channel". Those models **refuse Chat Completions** with a 400
+    that says to use ``/v1/responses`` instead, hence ``uses_responses_api``.
 
-    It **rejects ``response_format``** outright with a 400, which the SDK raises
-    as ``BadRequestError`` — the other latch in ``_request``, which falls back to
-    prompt-enforced JSON and retries once.
+    On that API it honours a strict JSON schema (measured), so structured
+    output is on; the latch in ``_complete`` still catches a regression.
     """
 
     name = "agentrouter"
     default_base_url = "https://agentrouter.org/v1"
     default_extra_headers = _CLAUDE_CLI_UA
-    supports_structured_output = False
+    uses_responses_api = True
 
 
 #: Name → class, the only mapping between configuration and code. A name absent

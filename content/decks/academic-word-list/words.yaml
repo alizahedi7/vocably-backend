@@ -1,0 +1,638 @@
+# The ordered headword list. Order is the product: the sublists run from the
+# most frequent academic word families to the least, so Sublist 1 is the one
+# to learn first, and nothing in the pipeline may reorder it. Within a sublist
+# the headwords are alphabetical, as the source publishes them.
+#
+# Headwords are given in American spelling (analyze, labor, license, minimize),
+# which is what the other decks here teach; the list itself is published in
+# British spelling. Nothing else is changed.
+#
+# A bare string is a word with no sense preference - the ordinary case.
+# A mapping may add:
+#   sense: {pos: verb, context: Research}     # an exact pin; needs BOTH keys
+#   hint: "to start an organization"          # free text, scored against senses
+#
+# There is deliberately nowhere to put a definition or an example. Those are
+# generated; copying them from a source is the one thing this format forbids.
+
+units:
+  - name: Sublist 1
+    words:
+      - analyze
+      - approach
+      - area
+      - assess
+      - assume
+      - authority
+      - available
+      - benefit
+      - concept
+      - consist
+      - constitute
+      - context
+      - contract
+      - create
+      - data
+      - define
+      - derive
+      - distribute
+      - economy
+      - environment
+      - establish
+      - estimate
+      - evident
+      - export
+      - factor
+      - finance
+      - formula
+      - function
+      - identify
+      - income
+      - indicate
+      - individual
+      - interpret
+      - involve
+      - issue
+      - labor
+      - legal
+      - legislate
+      - term: major
+        hint: "greater in size, number or importance than others"
+      - method
+      - occur
+      - percent
+      - period
+      - policy
+      - principle
+      - proceed
+      - process
+      - require
+      - research
+      - respond
+      - role
+      - section
+      - sector
+      - significant
+      - similar
+      - source
+      - specific
+      - structure
+      - theory
+      - vary
+
+  - name: Sublist 2
+    words:
+      - achieve
+      - acquire
+      - administrate
+      - affect
+      - appropriate
+      - aspect
+      - assist
+      - category
+      - chapter
+      - commission
+      - community
+      - complex
+      - compute
+      - conclude
+      - conduct
+      - consequent
+      - construct
+      - consume
+      - credit
+      - culture
+      - design
+      - distinct
+      - element
+      - equate
+      - evaluate
+      - feature
+      - final
+      - focus
+      - impact
+      - injure
+      - institute
+      - invest
+      - item
+      - journal
+      - maintain
+      - normal
+      - obtain
+      - participate
+      - perceive
+      - positive
+      - potential
+      - previous
+      - primary
+      - purchase
+      - range
+      - region
+      - regulate
+      - relevant
+      - reside
+      - resource
+      - restrict
+      - secure
+      - seek
+      - select
+      - site
+      - strategy
+      - survey
+      - text
+      - tradition
+      - transfer
+
+  - name: Sublist 3
+    words:
+      - alternative
+      - circumstance
+      - comment
+      - compensate
+      - component
+      - consent
+      - considerable
+      - constant
+      - constrain
+      - contribute
+      - convene
+      - coordinate
+      - core
+      - corporate
+      - correspond
+      - criteria
+      - deduce
+      - demonstrate
+      - document
+      - dominate
+      - emphasis
+      - ensure
+      - exclude
+      - framework
+      - fund
+      - illustrate
+      - immigrate
+      - imply
+      - initial
+      - instance
+      - interact
+      - justify
+      - layer
+      - link
+      - locate
+      - maximize
+      - minor
+      - negate
+      - outcome
+      - partner
+      - philosophy
+      - physical
+      - proportion
+      - publish
+      - react
+      - register
+      - rely
+      - remove
+      - scheme
+      - sequence
+      - term: sex
+        hint: "whether a person or animal is male or female"
+      - shift
+      - specify
+      - sufficient
+      - task
+      - technical
+      - technique
+      - technology
+      - valid
+      - term: volume
+        hint: "the amount of space something fills, or the total amount of something"
+
+  - name: Sublist 4
+    words:
+      - access
+      - adequate
+      - annual
+      - apparent
+      - approximate
+      - attitude
+      - attribute
+      - civil
+      - code
+      - commit
+      - communicate
+      - concentrate
+      - confer
+      - contrast
+      - cycle
+      - debate
+      - despite
+      - dimension
+      - domestic
+      - emerge
+      - error
+      - ethnic
+      - goal
+      - grant
+      - hence
+      - hypothesis
+      - implement
+      - implicate
+      - impose
+      - integrate
+      - internal
+      - investigate
+      - job
+      - label
+      - mechanism
+      - obvious
+      - occupy
+      - option
+      - output
+      - overall
+      - parallel
+      - parameter
+      - phase
+      - predict
+      - term: principal
+        hint: "most important; main"
+      - prior
+      - professional
+      - project
+      - promote
+      - regime
+      - resolve
+      - retain
+      - series
+      - statistic
+      - status
+      - stress
+      - subsequent
+      - sum
+      - summary
+      - undertake
+
+  - name: Sublist 5
+    words:
+      - academy
+      - adjust
+      - alter
+      - amend
+      - aware
+      - capacity
+      - challenge
+      - clause
+      - compound
+      - conflict
+      - consult
+      - contact
+      - decline
+      - discrete
+      - term: draft
+        hint: "a first version of a piece of writing, to be improved later"
+      - enable
+      - energy
+      - enforce
+      - entity
+      - equivalent
+      - evolve
+      - expand
+      - expose
+      - external
+      - facilitate
+      - fundamental
+      - generate
+      - generation
+      - image
+      - liberal
+      - license
+      - logic
+      - term: margin
+        hint: "the empty space at the edge of a page, or the amount by which something is won or lost"
+      - medical
+      - mental
+      - modify
+      - term: monitor
+        hint: "to watch and check something carefully over a period of time"
+      - network
+      - notion
+      - objective
+      - orient
+      - perspective
+      - precise
+      - term: prime
+        hint: "most important or main"
+      - psychology
+      - pursue
+      - ratio
+      - reject
+      - revenue
+      - term: stable
+        hint: "steady and not likely to change, fall or fail"
+      - style
+      - substitute
+      - sustain
+      - symbol
+      - target
+      - transit
+      - trend
+      - version
+      - welfare
+      - whereas
+
+  - name: Sublist 6
+    words:
+      - abstract
+      - accurate
+      - acknowledge
+      - aggregate
+      - allocate
+      - assign
+      - attach
+      - author
+      - bond
+      - brief
+      - capable
+      - cite
+      - cooperate
+      - discriminate
+      - display
+      - diverse
+      - domain
+      - edit
+      - enhance
+      - estate
+      - exceed
+      - expert
+      - explicit
+      - federal
+      - fee
+      - flexible
+      - furthermore
+      - gender
+      - ignorant
+      - incentive
+      - incidence
+      - incorporate
+      - index
+      - inhibit
+      - initiate
+      - input
+      - instruct
+      - intelligent
+      - interval
+      - lecture
+      - migrate
+      - minimum
+      - ministry
+      - motive
+      - neutral
+      - nevertheless
+      - overseas
+      - precede
+      - presume
+      - rational
+      - recover
+      - reveal
+      - scope
+      - subsidy
+      - tape
+      - trace
+      - transform
+      - transport
+      - underlie
+      - utilize
+
+  - name: Sublist 7
+    words:
+      - adapt
+      - adult
+      - advocate
+      - aid
+      - channel
+      - chemical
+      - classic
+      - comprehensive
+      - comprise
+      - confirm
+      - contrary
+      - convert
+      - couple
+      - decade
+      - definite
+      - deny
+      - differentiate
+      - dispose
+      - dynamic
+      - eliminate
+      - empirical
+      - equip
+      - extract
+      - file
+      - finite
+      - foundation
+      - globe
+      - grade
+      - guarantee
+      - hierarchy
+      - identical
+      - ideology
+      - infer
+      - innovate
+      - insert
+      - intervene
+      - isolate
+      - media
+      - mode
+      - paradigm
+      - phenomenon
+      - priority
+      - prohibit
+      - publication
+      - quote
+      - release
+      - reverse
+      - simulate
+      - term: sole
+        hint: "being the only one"
+      - somewhat
+      - submit
+      - successor
+      - survive
+      - thesis
+      - topic
+      - transmit
+      - ultimate
+      - unique
+      - visible
+      - voluntary
+
+  - name: Sublist 8
+    words:
+      - abandon
+      - accompany
+      - accumulate
+      - ambiguous
+      - append
+      - appreciate
+      - arbitrary
+      - automate
+      - bias
+      - chart
+      - clarify
+      - commodity
+      - complement
+      - conform
+      - contemporary
+      - contradict
+      - crucial
+      - currency
+      - denote
+      - detect
+      - deviate
+      - displace
+      - drama
+      - eventual
+      - exhibit
+      - exploit
+      - fluctuate
+      - guideline
+      - highlight
+      - implicit
+      - induce
+      - inevitable
+      - infrastructure
+      - inspect
+      - intense
+      - manipulate
+      - minimize
+      - nuclear
+      - offset
+      - paragraph
+      - plus
+      - practitioner
+      - predominant
+      - prospect
+      - radical
+      - random
+      - reinforce
+      - restore
+      - revise
+      - schedule
+      - term: tense
+        hint: "nervous and unable to relax, or a situation that feels that way"
+      - terminate
+      - theme
+      - thereby
+      - term: uniform
+        hint: "the same in every part or at every time"
+      - vehicle
+      - via
+      - virtual
+      - visual
+      - widespread
+
+  - name: Sublist 9
+    words:
+      - accommodate
+      - analogy
+      - anticipate
+      - assure
+      - attain
+      - behalf
+      - bulk
+      - cease
+      - coherent
+      - coincide
+      - commence
+      - compatible
+      - concurrent
+      - confine
+      - controversy
+      - term: converse
+        hint: "the opposite of a statement or situation"
+      - device
+      - devote
+      - diminish
+      - distort
+      - duration
+      - erode
+      - ethic
+      - format
+      - term: found
+        hint: "to start an organization, such as a company or a university"
+      - inherent
+      - insight
+      - integral
+      - intermediate
+      - manual
+      - mature
+      - mediate
+      - term: medium
+        hint: "a way of communicating information, such as television or the internet"
+      - military
+      - minimal
+      - mutual
+      - norm
+      - overlap
+      - passive
+      - portion
+      - preliminary
+      - protocol
+      - qualitative
+      - refine
+      - relax
+      - restrain
+      - revolution
+      - rigid
+      - route
+      - scenario
+      - term: sphere
+        hint: "an area of interest, activity or influence"
+      - subordinate
+      - supplement
+      - suspend
+      - team
+      - temporary
+      - term: trigger
+        hint: "to cause an event or reaction to start"
+      - unify
+      - violate
+      - vision
+
+  - name: Sublist 10
+    words:
+      - adjacent
+      - albeit
+      - assemble
+      - collapse
+      - colleague
+      - compile
+      - conceive
+      - convince
+      - depress
+      - encounter
+      - enormous
+      - forthcoming
+      - term: incline
+        hint: "to tend to think or behave in a particular way"
+      - integrity
+      - intrinsic
+      - invoke
+      - levy
+      - likewise
+      - nonetheless
+      - notwithstanding
+      - term: odd
+        hint: "strange or unusual"
+      - ongoing
+      - term: panel
+        hint: "a small group of people chosen to discuss or decide something"
+      - persist
+      - term: pose
+        hint: "to cause a problem or raise a question"
+      - reluctance
+      - so-called
+      - straightforward
+      - undergo
+      - whereby

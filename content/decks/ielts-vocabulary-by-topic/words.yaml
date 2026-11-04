@@ -1,0 +1,263 @@
+# The ordered word list. Order is the product: this is the sequence the deck
+# teaches, and nothing in the pipeline may reorder it. Each unit is one essay
+# topic, so the deck can be studied a topic at a time.
+#
+# Compiled by Vocably; nothing here is copied from any coursebook or word list.
+#
+# A bare string is a word with no sense preference - the ordinary case.
+# A mapping may add:
+#   sense: {pos: noun, context: Law}            # an exact pin; needs BOTH keys
+#   hint: "the punishment a court gives"       # free text, scored against senses
+#
+# There is deliberately nowhere to put a definition or an example. Those are
+# generated; copying them from a source is the one thing this format forbids.
+
+units:
+  - name: Education
+    words:
+      - curriculum
+      - tuition
+      - literacy
+      - scholarship
+      - vocational
+      - term: discipline
+        hint: "the practice of training people to obey rules and behave well"
+      - compulsory
+      - peer
+      - enroll
+      - undergraduate
+      - assessment
+      - plagiarism
+      - mentor
+      - syllabus
+      - dropout
+      - term: rote
+        hint: "learning something by repeating it until you remember it, without understanding"
+      - extracurricular
+      - numeracy
+      - tutor
+      - term: lifelong
+        hint: "lasting through the whole of a person's life"
+
+  - name: Environment
+    words:
+      - pollution
+      - emission
+      - deforestation
+      - biodiversity
+      - renewable
+      - sustainable
+      - habitat
+      - extinction
+      - contaminate
+      - conservation
+      - drought
+      - fossil fuel
+      - greenhouse effect
+      - landfill
+      - recycle
+      - carbon footprint
+      - ecosystem
+      - endangered
+      - erosion
+      - term: waste
+        hint: "material that is no longer wanted and is thrown away"
+
+  - name: Technology
+    words:
+      - innovation
+      - automation
+      - artificial intelligence
+      - breakthrough
+      - cutting-edge
+      - obsolete
+      - gadget
+      - digital
+      - surveillance
+      - cybersecurity
+      - algorithm
+      - virtual reality
+      - privacy
+      - term: dependence
+        hint: "the state of needing something so much that you cannot manage without it"
+      - outdated
+      - user-friendly
+      - prototype
+      - bandwidth
+      - term: hack
+        hint: "to get into someone else's computer system without permission"
+      - connectivity
+
+  - name: Health
+    words:
+      - obesity
+      - sedentary
+      - nutrition
+      - epidemic
+      - vaccination
+      - chronic
+      - diagnose
+      - prescription
+      - wellbeing
+      - immune
+      - addiction
+      - preventive
+      - symptom
+      - therapy
+      - outbreak
+      - life expectancy
+      - hygiene
+      - term: stress
+        hint: "pressure or worry caused by a difficult situation"
+      - balanced diet
+      - mental health
+
+  - name: Work and careers
+    words:
+      - workforce
+      - unemployment
+      - term: redundancy
+        hint: "losing a job because the employer no longer needs that position"
+      - term: promotion
+        hint: "a move to a more important job in the same organization"
+      - salary
+      - flexible hours
+      - remote work
+      - colleague
+      - retirement
+      - internship
+      - productivity
+      - burnout
+      - commute
+      - recruit
+      - qualification
+      - overtime
+      - job satisfaction
+      - workload
+      - entrepreneur
+      - self-employed
+
+  - name: Cities and transport
+    words:
+      - urbanization
+      - congestion
+      - infrastructure
+      - suburb
+      - commuter
+      - pedestrian
+      - overcrowded
+      - public transport
+      - rural
+      - affordable housing
+      - slum
+      - skyscraper
+      - bike lane
+      - term: toll
+        hint: "money paid to use a road or bridge"
+      - carpool
+      - metropolitan
+      - high-rise
+      - green space
+      - traffic jam
+      - term: sprawl
+        hint: "the spread of a city over a wide area, often without planning"
+
+  - name: Media and communication
+    words:
+      - journalism
+      - censorship
+      - bias
+      - broadcast
+      - tabloid
+      - misinformation
+      - social media
+      - influencer
+      - headline
+      - term: coverage
+        hint: "the reporting of an event by newspapers, television or websites"
+      - sensationalism
+      - advertisement
+      - term: press
+        hint: "newspapers and magazines, and the journalists who write for them"
+      - propaganda
+      - term: viral
+        hint: "spreading very quickly from person to person on the internet"
+      - freedom of speech
+      - mass media
+      - documentary
+      - audience
+      - credibility
+
+  - name: Crime and law
+    words:
+      - offender
+      - deterrent
+      - rehabilitation
+      - term: sentence
+        hint: "the punishment a court gives to someone found guilty"
+      - penalty
+      - juvenile
+      - vandalism
+      - burglary
+      - fraud
+      - witness
+      - legislation
+      - enforce
+      - term: fine
+        hint: "a sum of money paid as a punishment for breaking a law"
+      - capital punishment
+      - community service
+      - probation
+      - reoffend
+      - prosecute
+      - verdict
+      - imprisonment
+
+  - name: Culture and society
+    words:
+      - heritage
+      - tradition
+      - multicultural
+      - generation gap
+      - assimilate
+      - ritual
+      - identity
+      - diversity
+      - festival
+      - ancestor
+      - term: custom
+        hint: "a traditional way of behaving that is shared by a society"
+      - elderly
+      - nuclear family
+      - extended family
+      - inequality
+      - immigrant
+      - integration
+      - stereotype
+      - etiquette
+      - minority
+
+  - name: Economy and globalization
+    words:
+      - globalization
+      - inflation
+      - recession
+      - consumerism
+      - poverty
+      - welfare
+      - tariff
+      - outsourcing
+      - multinational
+      - term: trade
+        hint: "the buying and selling of goods and services between countries"
+      - subsidy
+      - standard of living
+      - income gap
+      - developing country
+      - term: export
+        hint: "to send goods to another country to be sold"
+      - gross domestic product
+      - austerity
+      - sweatshop
+      - monopoly
+      - disposable income

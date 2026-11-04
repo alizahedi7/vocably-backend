@@ -1,8 +1,10 @@
-"""Adapter for any gateway that speaks the OpenAI Chat Completions protocol.
+"""Adapter for any gateway that speaks the OpenAI protocol.
 
-AvalAI, GapGPT, tabitoken and agentrouter are all the same wire format — Chat Completions,
+AvalAI, GapGPT, tabitoken and agentrouter are all the same wire format — OpenAI's,
 not the Anthropic Messages API — so one adapter drives all of them through the
-``openai`` SDK pointed at a configurable ``base_url``. The concrete providers in
+``openai`` SDK pointed at a configurable ``base_url``. Chat Completions by
+default, the Responses API where a gateway's catalogue demands it
+(``uses_responses_api``). The concrete providers in
 :mod:`app.infrastructure.ai.providers` are this class plus a name and a default
 URL; nothing else differs, and a guardrail fixed here is fixed for every gateway
 at once.
@@ -129,6 +131,11 @@ class OpenAICompatibleAIService(ReaderAdapterMixin, AIService):
     #: paid once per gateway per worker. The latch still runs, so a gateway that
     #: regresses is still caught; this only skips a question we know the answer to.
     supports_structured_output: ClassVar[bool] = True
+    #: Drive the gateway through ``/v1/responses`` instead of
+    #: ``/v1/chat/completions``. Same key, same base URL, same guardrails; only
+    #: the call and the answer's shape differ. For a gateway whose catalogue
+    #: refuses Chat Completions outright (agentrouter, measured 2026-11-04).
+    uses_responses_api: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -429,18 +436,13 @@ class OpenAICompatibleAIService(ReaderAdapterMixin, AIService):
     async def _request(
         self, system: str, user: str, schema: dict[str, object], schema_name: str
     ) -> str:
+        if not self._structured_output:
+            system = system + self._json_instruction(schema)
         kwargs: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self._max_tokens,
             "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        system
-                        if self._structured_output
-                        else system + self._json_instruction(schema)
-                    ),
-                },
+                {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         }
@@ -451,6 +453,8 @@ class OpenAICompatibleAIService(ReaderAdapterMixin, AIService):
             }
 
         try:
+            if self.uses_responses_api:
+                return await self._responses_request(system, user, schema, schema_name)
             response = await self._client.chat.completions.create(**kwargs)
         except openai.BadRequestError:
             if not self._structured_output:
@@ -490,6 +494,38 @@ class OpenAICompatibleAIService(ReaderAdapterMixin, AIService):
             raise ExternalServiceError("The AI service could not answer that request.")
 
         return choice.message.content or ""
+
+    async def _responses_request(
+        self, system: str, user: str, schema: dict[str, object], schema_name: str
+    ) -> str:
+        """The ``/v1/responses`` form of the call above; ``_request`` handles errors."""
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_output_tokens": self._max_tokens,
+            "instructions": system,
+            "input": user,
+            # Every model behind this protocol so far reasons before answering,
+            # and at the default effort one spent its whole output budget
+            # thinking and returned no text at all. Low still writes a good card.
+            "reasoning": {"effort": "low"},
+        }
+        if self._structured_output:
+            kwargs["text"] = {
+                "format": {
+                    "type": "json_schema",
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": schema,
+                }
+            }
+        response = await self._client.responses.create(**kwargs)
+        if response.status == "incomplete":
+            reason = response.incomplete_details.reason if response.incomplete_details else None
+            self._log.warning("%s stopped early: %s", self.name, reason)
+            if reason == "content_filter":
+                raise ExternalServiceError("The AI service could not answer that request.")
+        # Empty when the budget ran out mid-reasoning; ``_complete`` then retries once.
+        return response.output_text or ""
 
     @staticmethod
     def _extract_json(raw: str) -> object:

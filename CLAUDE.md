@@ -216,10 +216,21 @@ backs practice stories.
   class plus a name, a default URL and any header it gates on. A gateway-specific
   quirk goes in the subclass — never a fork of the transport, or the next
   schema-fallback fix lands in one of four places.
-- **Both schema fallbacks are live, not theoretical.** `agentrouter` *rejects*
-  `response_format` with a 400; `tabitoken` *accepts it and answers off-schema*.
-  Those are precisely the two latches in `_request`/`_complete`, and each gateway
-  exercises one — which is why neither may be removed as dead code.
+- **Both schema fallbacks are live, not theoretical.** A gateway can *reject*
+  `response_format` with a 400 (`agentrouter` did, as a Claude proxy) or
+  *accept it and answer off-schema* (`tabitoken` does). Those are precisely the
+  two latches in `_request`/`_complete` — which is why neither may be removed
+  as dead code.
+- **`agentrouter` speaks the Responses API now, not Chat Completions.** Since
+  2026-11 its catalogue is three GPT reasoning models (`gpt-5.6-sol`,
+  `gpt-6-astra`, `gpt-6.1-sol`), every Claude name answers "no available
+  channel", and those models refuse `/v1/chat/completions` outright. The
+  subclass sets `uses_responses_api`, and `_responses_request` is the one other
+  shape the transport has: same key, same guardrails, `reasoning.effort=low`
+  because at the default effort a 6.x model spent its whole output budget
+  thinking and returned nothing. `gpt-5.6-sol` answers in ~5 s with no
+  reasoning tokens; the 6.x models take 20–40 s and ~500 reasoning tokens per
+  card, so it is the build model to prefer there.
 - **`default_headers` does not override the user-agent** in the `openai` SDK any
   more than in the Anthropic one; the SDK appends to its own. Both Claude proxies
   gate on an exact `claude-cli` string and answer `401 unauthorized client

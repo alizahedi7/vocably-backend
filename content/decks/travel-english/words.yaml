@@ -1,0 +1,231 @@
+# The ordered word list. Order is the product: this is the sequence the deck
+# teaches, and nothing in the pipeline may reorder it. The units follow a trip
+# from booking to coming home, so each one is a situation rather than a theme.
+#
+# Compiled by Vocably; nothing here is copied from any phrasebook.
+#
+# A bare string is a word with no sense preference - the ordinary case.
+# A mapping may add:
+#   sense: {pos: verb, context: Travel}       # an exact pin; needs BOTH keys
+#   hint: "to get on a plane, train or ship"  # free text, scored against senses
+#
+# There is deliberately nowhere to put a definition or an example. Those are
+# generated; copying them from a source is the one thing this format forbids.
+
+units:
+  - name: Booking a trip
+    words:
+      - term: book
+        hint: "to reserve a seat, room or ticket ahead of time"
+      - reservation
+      - itinerary
+      - term: fare
+        hint: "the price you pay to travel on a bus, train or plane"
+      - term: return
+        hint: "a ticket that takes you to a place and back again"
+      - one-way
+      - destination
+      - accommodation
+      - visa
+      - passport
+
+  - name: At the airport
+    words:
+      - term: check in
+        hint: "to show your ticket and hand over your bags before a flight"
+      - term: boarding pass
+        hint: "the card that lets you get on the plane"
+      - term: gate
+        hint: "the numbered door at an airport where you get on your plane"
+      - term: departure
+        hint: "the act of leaving, or the part of an airport for flights going out"
+      - arrival
+      - term: delay
+        hint: "a period of waiting because something is late"
+      - luggage
+      - term: carry-on
+        hint: "a small bag you keep with you on the plane"
+      - customs
+      - term: security
+        hint: "the airport check where your bags and body are searched"
+
+  - name: On the plane
+    words:
+      - term: board
+        hint: "to get on a plane, train or ship"
+      - term: aisle
+        hint: "the narrow passage between the rows of seats"
+      - term: window seat
+        hint: "a seat on a plane or train next to the window"
+      - overhead compartment
+      - term: seatbelt
+        hint: "the strap that holds you in your seat"
+      - turbulence
+      - term: cabin
+        hint: "the part of a plane where the passengers sit"
+      - term: crew
+        hint: "the people who work on a plane or ship"
+      - term: landing
+        hint: "the moment a plane comes down onto the ground"
+      - term: layover
+        hint: "a stop between two flights on one journey"
+
+  - name: Arriving
+    words:
+      - term: baggage claim
+        hint: "the place in an airport where you collect your suitcases"
+      - term: carousel
+        hint: "the moving belt that brings suitcases out at the airport"
+      - term: exchange
+        hint: "to change money from one currency into another"
+      - currency
+      - term: declare
+        hint: "to tell customs officers about goods you are bringing into a country"
+      - term: shuttle
+        hint: "a bus or train that goes back and forth between two places"
+      - term: taxi rank
+        hint: "the place where taxis wait in a line for passengers"
+      - term: meter
+        hint: "the device in a taxi that shows how much the ride costs"
+      - term: tip
+        hint: "a small extra amount of money given to a driver or waiter"
+      - term: jet lag
+        hint: "tiredness after flying across time zones"
+
+  - name: At the hotel
+    words:
+      - term: check out
+        hint: "to pay your bill and leave a hotel"
+      - term: reception
+        hint: "the desk in a hotel where you arrive and ask for help"
+      - term: lobby
+        hint: "the large entrance hall of a hotel"
+      - term: suite
+        hint: "a set of connected rooms in a hotel"
+      - term: double room
+        hint: "a hotel room for two people with one large bed"
+      - term: vacancy
+        hint: "a room that is free for guests to stay in"
+      - term: amenities
+        hint: "the useful or pleasant things a hotel offers, like a pool or wifi"
+      - term: housekeeping
+        hint: "the hotel staff who clean the rooms"
+      - term: deposit
+        hint: "money you pay in advance, returned if nothing is damaged"
+      - term: wake-up call
+        hint: "a phone call from the hotel to wake you at a set time"
+
+  - name: Getting around
+    words:
+      - term: platform
+        hint: "the raised area at a station where you get on the train"
+      - term: timetable
+        hint: "a list of the times trains or buses leave and arrive"
+      - term: transfer
+        hint: "to change from one train, bus or plane to another"
+      - term: connection
+        hint: "a train, bus or plane that leaves soon after yours arrives so you can continue"
+      - term: rush hour
+        hint: "the busy time of day when people travel to and from work"
+      - term: detour
+        hint: "a longer way round because the direct road is closed"
+      - term: landmark
+        hint: "a famous building or place that helps you find your way"
+      - term: crossing
+        hint: "a place where people may walk across a road"
+      - term: roundabout
+        hint: "a circular junction where traffic goes round a central island"
+      - term: rental
+        hint: "the act of paying to use a car or bike for a short time"
+
+  - name: Eating out
+    words:
+      - term: menu
+        hint: "the list of dishes a restaurant serves"
+      - term: order
+        hint: "to ask a waiter for the food or drink you want"
+      - term: starter
+        hint: "a small dish eaten before the main course"
+      - term: main course
+        hint: "the largest and most important dish of a meal"
+      - term: bill
+        hint: "a piece of paper showing how much you must pay in a restaurant"
+      - term: waiter
+        hint: "a person who serves food and drink in a restaurant"
+      - term: vegetarian
+        hint: "a person or dish without meat or fish"
+      - term: allergy
+        hint: "a bad reaction of the body to a food or substance"
+      - term: takeaway
+        hint: "food you buy from a restaurant and eat somewhere else"
+      - term: service charge
+        hint: "an amount added to a restaurant bill to pay the staff"
+
+  - name: Shopping
+    words:
+      - term: receipt
+        hint: "the slip of paper that proves you paid for something"
+      - term: refund
+        hint: "money given back to you when you return something"
+      - term: souvenir
+        hint: "a thing you buy to remember a place you visited"
+      - term: bargain
+        hint: "something bought for much less than its usual price"
+      - term: haggle
+        hint: "to argue with a seller to get a lower price"
+      - term: fitting room
+        hint: "the small room in a shop where you try on clothes"
+      - term: cashier
+        hint: "the person who takes your money in a shop"
+      - term: duty-free
+        hint: "goods sold at an airport without the usual taxes"
+      - term: size
+        hint: "how big or small a piece of clothing is"
+      - term: discount
+        hint: "an amount taken off the usual price"
+
+  - name: Sightseeing
+    words:
+      - term: guide
+        hint: "a person whose job is to show visitors around a place"
+      - term: tour
+        hint: "a short trip around a place to see it"
+      - term: admission
+        hint: "the price you pay to enter a museum or attraction"
+      - term: brochure
+        hint: "a small printed booklet advertising a place or service"
+      - term: attraction
+        hint: "a place that many people visit because it is interesting"
+      - term: scenery
+        hint: "the natural landscape you look at, like hills and sea"
+      - term: monument
+        hint: "a building or statue that honours a person or event"
+      - term: viewpoint
+        hint: "a high place from which you can see the landscape"
+      - term: queue
+        hint: "a line of people waiting for something"
+      - term: audio guide
+        hint: "a recorded commentary you listen to while walking around a museum"
+
+  - name: When things go wrong
+    words:
+      - term: lost property
+        hint: "the place or office that keeps things people have lost"
+      - term: pickpocket
+        hint: "a thief who steals from people's pockets or bags"
+      - term: embassy
+        hint: "the office of your own country's government in a foreign city"
+      - term: insurance
+        hint: "a contract that pays you money if something goes wrong on a trip"
+      - term: pharmacy
+        hint: "a shop that sells medicines"
+      - term: emergency
+        hint: "a sudden serious situation needing immediate action"
+      - term: cancel
+        hint: "to decide that a flight or booking will not happen"
+      - term: overbooked
+        hint: "with more tickets sold than there are seats or rooms"
+      - term: complaint
+        hint: "a statement that something is wrong or unsatisfactory"
+      - term: compensation
+        hint: "money given to make up for a loss or problem"
