@@ -69,6 +69,12 @@ def test_a_part_of_speech_that_is_a_sentence_is_rejected() -> None:
     assert outcome.rejected[0].code == "invalid_part_of_speech"
 
 
+def test_a_phrase_type_is_a_grammatical_name() -> None:
+    """A model labelling "flexible hours" a noun phrase is right, not explaining itself."""
+    outcome = validator().validate([sense(part_of_speech="Noun phrase")])
+    assert not outcome.rejected and outcome.accepted
+
+
 def test_a_context_that_reads_as_a_definition_is_rejected() -> None:
     """`context` is a chip on the card back, not a second definition."""
     outcome = validator().validate([sense(context="when you move quickly on foot for exercise")])

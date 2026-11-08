@@ -45,6 +45,12 @@ VALID_PARTS_OF_SPEECH = frozenset(
         "interjection",
         "determiner",
         "phrase",
+        # A multi-word headword ("flexible hours") is honestly named by its head.
+        "noun phrase",
+        "verb phrase",
+        "adjective phrase",
+        "adverb phrase",
+        "prepositional phrase",
         "phrasal verb",
         "idiom",
         "abbreviation",
