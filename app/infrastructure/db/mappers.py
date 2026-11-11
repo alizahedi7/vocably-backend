@@ -127,6 +127,7 @@ def deck_to_entity(m: DeckModel) -> Deck:
         name=m.name,
         hue=m.hue,
         icon=m.icon,
+        language=m.language,
         created_at=m.created_at,
         updated_at=m.updated_at,
     )
@@ -137,6 +138,7 @@ def apply_deck(entity: Deck, m: DeckModel) -> None:
     m.name = entity.name
     m.hue = entity.hue
     m.icon = entity.icon
+    m.language = entity.language
 
 
 # ── Word ─────────────────────────────────────────────────────
@@ -404,6 +406,7 @@ def deck_build_job_to_entity(m: DeckBuildJobModel) -> DeckBuildJob:
         state=DeckBuildState(m.state),
         content_version=m.content_version,
         native_language=m.native_language,
+        language=m.language,
         register=m.register,
         category=m.category,
         strategies=tuple(SenseSelection(name) for name in m.strategies.split(",") if name),

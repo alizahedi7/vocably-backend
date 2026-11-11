@@ -182,7 +182,13 @@ class DeckBuildService:
             raise ValidationError("The template has no units to build.")
 
         deck = await self._decks.add(
-            Deck(user_id=owner_id, name=template.name, hue=template.hue, icon=template.icon)
+            Deck(
+                user_id=owner_id,
+                name=template.name,
+                hue=template.hue,
+                icon=template.icon,
+                language=template.language,
+            )
         )
         await self._members.add(DeckAccess.owner(deck.id, owner_id))
         # Metadata only — is_public stays false and published_at stays null.
@@ -208,6 +214,7 @@ class DeckBuildService:
             # version than the first.
             content_version=self._content_version,
             native_language=template.generation.native_language,
+            language=template.language,
             register=template.generation.register,
             category=template.category,
             strategies=template.generation.strategies,

@@ -60,6 +60,10 @@ class DeckBuildJobModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: one prompt version and half under another.
     content_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     native_language: Mapped[str] = mapped_column(String(64), nullable=False, default="Persian")
+    #: ISO 639-1 code of the headwords, copied from the template at plan time.
+    language: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="en", server_default="en"
+    )
     register: Mapped[str] = mapped_column(String(16), nullable=False, default="adult")
     #: Copied from the template at plan time, not re-read during the build.
     category: Mapped[str] = mapped_column(String(32), nullable=False, default="general")

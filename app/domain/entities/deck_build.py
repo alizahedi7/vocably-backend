@@ -74,6 +74,9 @@ class DeckBuildJob:
     #: the deck written by a different prompt than the first.
     content_version: int = 0
     native_language: str = "Persian"
+    #: ISO 639-1 code of the headwords. Decides the lexicon partition, whether
+    #: the model is told the term's language, and whether IPA is looked up.
+    language: str = "en"
     register: str = "adult"
     #: The deck's category, and the sense-selection ladder, copied from the
     #: template at plan time. Copied rather than re-read: the plan is already in

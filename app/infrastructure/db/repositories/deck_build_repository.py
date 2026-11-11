@@ -48,6 +48,7 @@ class SqlAlchemyDeckBuildRepository(DeckBuildRepository):
             state=job.state.value,
             content_version=job.content_version,
             native_language=job.native_language[:64],
+            language=job.language[:16],
             register=job.register[:16],
             category=job.category[:32],
             strategies=",".join(s.value for s in job.strategies)[:120],

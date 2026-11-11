@@ -196,6 +196,8 @@ class SqlAlchemyDeckDiscoveryRepository(DeckDiscoveryRepository):
             # not of whose list it sits in. A learner who saves 504 keeps
             # recognising it among their own decks.
             icon=source.icon,
+            # The words are still Spanish in a copy of a Spanish deck.
+            language=source.language,
             # The copy is the learner's own private deck. Publishing it again
             # is a separate, deliberate act — copies must not inherit a place
             # in Explore, or one popular deck would spawn a hundred listings.

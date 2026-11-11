@@ -21,6 +21,9 @@ class Deck:
     #: know falls back to the initial, so an unreleased icon degrades to what
     #: every learner-made deck already shows. Empty for those decks.
     icon: str = ""
+    #: ISO 639-1 code of the headwords. ``"en"`` for every deck a learner made;
+    #: a pre-built deck takes it from its template.
+    language: str = "en"
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
