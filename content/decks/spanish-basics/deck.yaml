@@ -1,0 +1,42 @@
+slug: spanish-basics
+version: "1.0.0"
+name: Spanish Basics
+name_fa: "اسپانیایی پایه"
+category: languages
+# Spanish/German headwords: the pipeline tells the model the term's language,
+# keeps the lexicon apart from English, and skips the English dictionary.
+language: es
+# One line, and it must stay one line: the Explore card is a fixed height, so
+# a longer description is silently truncated rather than given more room.
+description: "Your first 150 Spanish words, from hola to porque."
+description_fa: "۱۵۰ واژه‌ی نخست اسپانیایی، از hola تا porque."
+official: true
+# Rose red, clear of the IELTS deck's red.
+hue: 350
+# Drawn in place of the deck's initial by clients that ship the asset. A client
+# with no asset for this slug draws the initial instead, which is not an error.
+icon: es
+
+# No source. Compiled by Vocably. Nouns carry their article, because a Spanish noun's gender is learned with it or not at all.
+
+structure:
+  # Asserted, not derived: a word list that silently loses an entry is otherwise
+  # invisible until a learner notices a unit is short.
+  words_per_unit: 15
+  expected_units: 10
+  expected_words: 150
+
+generation:
+  native_language: Persian
+  register: adult
+  # No category prior applies here, so the ladder is pins, hints, then the
+  # commonest sense.
+  sense_selection: [explicit, hint, first]
+  enrichment: allowed
+  max_senses: 4
+
+publication:
+  # Never automatic. A build finishing is not a reason for unreviewed cards to
+  # appear in Explore.
+  review_required: true
+  publish: manual
