@@ -27,6 +27,7 @@ import yaml
 
 from app.domain.entities.deck_build import SenseHint
 from app.domain.entities.deck_template import (
+    DECK_LANGUAGES,
     SELECTABLE_STRATEGIES,
     DeckTemplate,
     GenerationConfig,
@@ -81,6 +82,7 @@ def load_template(slug: str, *, root: Path | None = None) -> DeckTemplate:
         hue=int(deck_doc.get("hue") or 262),
         icon=str(deck_doc.get("icon") or ""),
         official=bool(deck_doc.get("official", True)),
+        language=_parse_language(deck_doc.get("language")),
         source=_parse_source(deck_doc.get("source")),
         generation=_parse_generation(deck_doc.get("generation")),
         units=units,
@@ -192,6 +194,15 @@ def _check_term(term: str, unit_name: str) -> str:
     if len(cleaned) > MAX_TERM_CHARS:
         raise TemplateError(f"term {cleaned[:40]!r}… is too long to be a card front")
     return cleaned
+
+
+def _parse_language(raw: Any) -> str:
+    language = str(raw or "en").strip().casefold()
+    if language not in DECK_LANGUAGES:
+        raise TemplateError(
+            f"language {raw!r} is not supported — use one of {', '.join(sorted(DECK_LANGUAGES))}"
+        )
+    return language
 
 
 def _parse_source(raw: Any) -> TemplateSource:

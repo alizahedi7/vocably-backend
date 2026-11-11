@@ -48,6 +48,11 @@ DEFAULT_STRATEGIES: tuple[SenseSelection, ...] = (
 )
 
 
+#: Languages a deck's headwords may be written in (ISO 639-1). English is the
+#: default and the only one the dictionary, grounding and phonetics serve.
+DECK_LANGUAGES = frozenset({"en", "es", "de"})
+
+
 class TemplateError(ValueError):
     """A template that cannot be built from. Raised before anything is spent."""
 
@@ -111,6 +116,8 @@ class DeckTemplate:
     #: a slug no released client has an asset for renders as the initial too.
     icon: str = ""
     official: bool = True
+    #: ISO 639-1 code of the headwords — see :data:`DECK_LANGUAGES`.
+    language: str = "en"
     source: TemplateSource = field(default_factory=TemplateSource)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
     units: tuple[TemplateUnit, ...] = ()

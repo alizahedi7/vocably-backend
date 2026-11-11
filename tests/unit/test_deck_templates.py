@@ -160,6 +160,21 @@ def test_manual_selection_cannot_be_chosen_by_a_template(root: Path) -> None:
         load_template("sample", root=root)
 
 
+def test_a_template_with_no_language_is_english(root: Path) -> None:
+    assert load_template("sample", root=root).language == "en"
+
+
+def test_a_template_names_the_language_of_its_headwords(root: Path) -> None:
+    (root / "sample" / "deck.yaml").write_text(DECK_YAML + "language: es\n")
+    assert load_template("sample", root=root).language == "es"
+
+
+def test_an_unsupported_language_is_refused(root: Path) -> None:
+    (root / "sample" / "deck.yaml").write_text(DECK_YAML + "language: fr\n")
+    with pytest.raises(TemplateError, match="language 'fr' is not supported"):
+        load_template("sample", root=root)
+
+
 def test_a_missing_file_is_refused_by_name(tmp_path: Path) -> None:
     (tmp_path / "lonely").mkdir()
     (tmp_path / "lonely" / "deck.yaml").write_text(
