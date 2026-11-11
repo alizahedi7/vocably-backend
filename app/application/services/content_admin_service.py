@@ -76,8 +76,20 @@ class ContentAdminService:
 
     # ── Builds ────────────────────────────────────────────────
 
-    async def jobs(self, *, limit: int, offset: int) -> tuple[list[DeckBuildJob], int]:
-        return await self._builds.list_jobs(limit=limit, offset=offset)
+    async def jobs(self, *, limit: int, offset: int) -> tuple[list[tuple[DeckBuildJob, bool]], int]:
+        """A page of jobs, each beside whether its deck is in Explore right now.
+
+        Read from ``decks.is_public`` for the same reason :meth:`job` does: the
+        build's lifecycle does not track visibility.
+        """
+        jobs, total = await self._builds.list_jobs(limit=limit, offset=offset)
+        # shortcut: one PK lookup per row (page is capped at 100); batch it if
+        # the builds page ever grows past that.
+        rows = []
+        for job in jobs:
+            publication = await self._discovery.publication_of(job.deck_id) if job.deck_id else None
+            rows.append((job, publication.is_public if publication else False))
+        return rows, total
 
     async def job(self, job_id: UUID) -> BuildJobDetail:
         job = await self._builds.get_job(job_id)

@@ -323,6 +323,8 @@ async def test_build_detail_reports_whether_the_deck_is_in_explore(
     # Building never publishes — the deck stays private until somebody says so.
     before = await detail()
     assert before["deckIsPublic"] is False
+    listed = await client.get("/api/v1/admin/builds", headers=headers)
+    assert listed.json()["items"][0]["deckIsPublic"] is False
     assert before["deckPublishedAt"] is None
 
     published = await client.patch(
@@ -333,6 +335,10 @@ async def test_build_detail_reports_whether_the_deck_is_in_explore(
     live = await detail()
     assert live["deckIsPublic"] is True
     assert live["deckPublishedAt"] is not None
+    # The builds list says the same, so an admin can tell at a glance which
+    # pre-built decks are live without opening each one.
+    listed = await client.get("/api/v1/admin/builds", headers=headers)
+    assert listed.json()["items"][0]["deckIsPublic"] is True
 
     # Taking it back out clears the date rather than leaving one that reads as
     # live — this is the reverse action the screen offers for a published deck.
