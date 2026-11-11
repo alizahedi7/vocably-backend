@@ -7,9 +7,11 @@ served as that language — and nothing about an English deck changes.
 from __future__ import annotations
 
 from pathlib import Path
+from uuid import UUID
 
 import pytest
-from sqlalchemy import select
+from httpx import AsyncClient
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.infrastructure.db.models.deck import DeckModel
@@ -21,6 +23,7 @@ from app.infrastructure.templates.deck_template_loader import load_template
 
 from .conftest import UserFactory
 from .test_deck_build import ScriptedProvider, _service_with
+from .test_discovery import create_deck, publish
 
 SPANISH_DECK = """\
 slug: basics
@@ -112,3 +115,35 @@ async def test_a_copy_from_explore_keeps_the_language(
     async with session_factory() as session:
         stored = (await session.execute(select(DeckModel).where(DeckModel.id == copy.id))).scalar_one()
     assert stored.language == "es"
+
+
+async def test_the_api_reports_each_decks_language(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Additive everywhere a deck is described: the list, Explore and the preview."""
+    english = await create_deck(client, auth_headers, "Mine")
+    spanish = await create_deck(client, auth_headers, "Spanish Basics")
+    async with session_factory() as session:
+        await session.execute(
+            update(DeckModel).where(DeckModel.id == UUID(spanish)).values(language="es")
+        )
+        await session.commit()
+    await publish(session_factory, spanish)
+
+    created = await client.post(
+        "/api/v1/decks", headers=auth_headers, json={"name": "Another", "hue": 1}
+    )
+    assert created.json()["language"] == "en"
+
+    listed = await client.get("/api/v1/decks", headers=auth_headers)
+    languages = {d["id"]: d["language"] for d in listed.json()}
+    assert languages[english] == "en"
+    assert languages[spanish] == "es"
+
+    explore = await client.get("/api/v1/decks/public", headers=auth_headers)
+    assert [d["language"] for d in explore.json()["decks"]] == ["es"]
+
+    detail = await client.get(f"/api/v1/decks/public/{spanish}", headers=auth_headers)
+    assert detail.json()["language"] == "es"

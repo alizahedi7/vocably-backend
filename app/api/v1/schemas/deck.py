@@ -31,6 +31,8 @@ class DeckOut(BaseModel):
     #: ``initial`` as it always has. Not writable — it comes from the deck
     #: template a build was planned from.
     icon: str = ""
+    #: ISO 639-1 code of the headwords ("en", "es", "de"). Additive.
+    language: str = "en"
     initial: str
     created_at: datetime
 
@@ -40,6 +42,7 @@ class DeckWithStatsOut(BaseModel):
     name: str
     hue: int
     icon: str = ""
+    language: str = "en"
     initial: str
     #: Every card in the deck. The same number for every member.
     word_count: int
@@ -66,6 +69,7 @@ class DeckWithStatsOut(BaseModel):
             name=d.name,
             hue=d.hue,
             icon=d.icon,
+            language=d.language,
             initial=d.initial,
             word_count=view.word_count,
             started_count=view.started_count,

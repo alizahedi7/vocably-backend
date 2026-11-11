@@ -29,6 +29,8 @@ class PublicDeckOut(BaseModel):
     #: Slug of a bundled logo, empty for a learner's deck. Additive: a client
     #: that predates it draws the initial, exactly as it does today.
     icon: str = ""
+    #: ISO 639-1 code of the headwords ("en", "es", "de"). Additive.
+    language: str = "en"
     word_count: int
     author_name: str
     author_username: str
@@ -50,6 +52,7 @@ class PublicDeckOut(BaseModel):
             name=view.deck.name,
             hue=view.deck.hue,
             icon=view.deck.icon,
+            language=view.deck.language,
             word_count=view.word_count,
             author_name=view.author_name,
             author_username=view.author_username,
