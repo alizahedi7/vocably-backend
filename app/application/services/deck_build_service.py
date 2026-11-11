@@ -338,7 +338,11 @@ class DeckBuildService:
             return await self._finalise(job)
 
         unit_ids = await self._unit_map(job)
-        learner = LearnerContext(native_language=job.native_language)
+        learner = LearnerContext(
+            native_language=job.native_language,
+            # None for English, so an English build's prompts and keys are unchanged.
+            term_language=job.language if job.language != "en" else None,
+        )
         selector = self._selector_for(job)
 
         processed = done = failed = retrying = 0
@@ -382,7 +386,7 @@ class DeckBuildService:
         selector: SenseSelector,
         unit_ids: dict[int, UUID],
     ) -> None:
-        lexeme = await self._lexicon.find(item.source_term)
+        lexeme = await self._lexicon.find(item.source_term, language=job.language)
         reused = lexeme is not None and bool(lexeme.servable_senses(job.register))
 
         if not reused:
@@ -390,7 +394,9 @@ class DeckBuildService:
         if lexeme is None:
             raise ValidationError(f"No usable senses could be produced for {item.source_term!r}")
 
-        await self._fill_phonetic(lexeme)
+        if job.language == "en":
+            # The dictionary is English; its IPA for Spanish "pan" would be wrong.
+            await self._fill_phonetic(lexeme)
 
         senses = lexeme.servable_senses(job.register)
         choice = selector.select(senses, item.hint)
@@ -399,7 +405,7 @@ class DeckBuildService:
         # Not only when *nothing* was selectable: with `first` in the chain a
         # fallback always answers, so waiting for `None` would mean a pinned
         # sense that is genuinely missing silently became the wrong card.
-        if self._wants_enrichment(item, choice):
+        if self._wants_enrichment(job, item, choice):
             lexeme = await self._enrich(job, item, lexeme, learner)
             senses = lexeme.servable_senses(job.register)
             choice = selector.select(senses, item.hint)
@@ -456,13 +462,18 @@ class DeckBuildService:
         # The chain's lexicon layer has normally already written this; recording
         # again is a no-op thanks to the unique keys, and covers the case where
         # the lexicon layer is disabled but a build is running anyway.
-        await self._lexicon.record(
+        recorded = await self._lexicon.record(
             result,
             learner,
             source=SenseSource.DECK_BUILD,
             register=job.register,
+            language=job.language,
         )
-        return await self._lexicon.find(item.source_term)
+        if recorded is not None and job.language != "en":
+            # The model may answer "der Hund" as "Hund", which a re-read by the
+            # source term would miss. The card front is the source term anyway.
+            return recorded
+        return await self._lexicon.find(item.source_term, language=job.language)
 
     async def _enrich(
         self,
@@ -565,7 +576,13 @@ class DeckBuildService:
             deck_id=job.deck_id,
             created_by_user_id=job.created_by_user_id,
             unit_id=unit_ids.get(item.unit_position),
-            term=lexeme.display_term or item.source_term,
+            # A non-English card shows the template's spelling: "der Hund" keeps
+            # its article and capital, which the lexicon's display term may not.
+            term=(
+                item.source_term
+                if job.language != "en"
+                else lexeme.display_term or item.source_term
+            ),
             meaning=native.native_meaning if native else "",
             definition=sense.definition or None,
             example=sense.example or None,
@@ -680,7 +697,9 @@ class DeckBuildService:
 
     # ── Helpers ───────────────────────────────────────────────
 
-    def _wants_enrichment(self, item: DeckBuildItem, choice: SenseChoice | None) -> bool:
+    def _wants_enrichment(
+        self, job: DeckBuildJob, item: DeckBuildItem, choice: SenseChoice | None
+    ) -> bool:
         """Whether this word is worth one paid call for a sense it may not have.
 
         Three conditions, all necessary. The item must not have spent its one
@@ -689,6 +708,10 @@ class DeckBuildService:
         the deck did not care which sense it got, not that one is missing.
         """
         if item.enriched or self._enricher is None or item.hint.is_empty:
+            return False
+        if job.language != "en":
+            # The enrichment prompt is written for English words and English
+            # examples; an unconfident pick goes to review instead.
             return False
         # A confident strategy found what was asked for. Nothing to buy.
         return choice is None or not choice.strategy.is_confident
