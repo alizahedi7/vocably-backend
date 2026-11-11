@@ -68,7 +68,8 @@ async def _plan_spanish(
 ) -> DeckBuildJobModel:
     async with session_factory() as session:
         job = await _service_with(session, provider, None).plan(
-            load_template("basics", root=root), owner_id=owner_id  # type: ignore[arg-type]
+            load_template("basics", root=root),
+            owner_id=owner_id,  # type: ignore[arg-type]
         )
         await session.commit()
     async with session_factory() as session:
@@ -122,7 +123,9 @@ async def test_a_copy_from_explore_keeps_the_language(
     assert copy.language == "es"
 
     async with session_factory() as session:
-        stored = (await session.execute(select(DeckModel).where(DeckModel.id == copy.id))).scalar_one()
+        stored = (
+            await session.execute(select(DeckModel).where(DeckModel.id == copy.id))
+        ).scalar_one()
     assert stored.language == "es"
 
 

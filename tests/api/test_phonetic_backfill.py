@@ -205,10 +205,10 @@ async def test_words_in_a_non_english_deck_are_never_given_english_ipa(
     assert result.words_updated == 1
     async with session_factory() as session:
         rows = (
-            await session.execute(
-                select(WordModel.phonetic).where(WordModel.deck_id == spanish)
-            )
-        ).scalars().all()
+            (await session.execute(select(WordModel.phonetic).where(WordModel.deck_id == spanish)))
+            .scalars()
+            .all()
+        )
     assert rows == [None, None]
 
 
