@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.entities.word import Word
 from app.domain.repositories.word_repository import WordRepository
 from app.infrastructure.db import mappers
+from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.word import WordModel
 from app.infrastructure.db.models.word_progress import WordProgressModel
 
@@ -85,11 +86,14 @@ class SqlAlchemyWordRepository(WordRepository):
     #: before it did are still here, and an untrimmed duplicate would cost a
     #: second request for an answer already in hand.
     _TERM_KEY = func.trim(func.lower(WordModel.term))
+    #: The dictionary is English. Without this, Spanish "once" would be given
+    #: the IPA of English "once" — by the listing and, worse, by the write.
+    _IN_ENGLISH_DECK = WordModel.deck_id.in_(select(DeckModel.id).where(DeckModel.language == "en"))
 
     async def list_terms_missing_phonetic(self, limit: int) -> list[str]:
         stmt = (
             select(self._TERM_KEY)
-            .where(WordModel.phonetic.is_(None))
+            .where(WordModel.phonetic.is_(None), self._IN_ENGLISH_DECK)
             .group_by(self._TERM_KEY)
             # Random, not oldest-first. A term the dictionary has no entry for
             # stays NULL forever (an outage and a miss are indistinguishable
@@ -110,6 +114,7 @@ class SqlAlchemyWordRepository(WordRepository):
                 # Never clobber a transcription the card arrived with, and never
                 # re-answer a term another worker has already answered.
                 WordModel.phonetic.is_(None),
+                self._IN_ENGLISH_DECK,
             )
             .values(phonetic=phonetic)
         )
