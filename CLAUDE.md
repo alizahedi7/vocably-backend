@@ -1462,6 +1462,42 @@ is **never** asked for a transcription, `NULL` and `""` stay different, and a
 miss and an outage both leave `NULL` so one bad afternoon cannot permanently
 silence a set of cards.
 
+### A deck's language
+
+A template may say `language: es` or `language: de` (ISO 639-1; default `en`,
+anything else refused). Planning writes it to `decks.language` and
+`deck_build_jobs.language`, an Explore copy carries it, and `DeckOut`, the deck
+list, `PublicDeckOut` and the public preview report it as `language`. The
+headwords are in that language; definitions stay English and the headline stays
+the learner's native language.
+
+A non-English job sets `LearnerContext.term_language`, and everything that
+depends on the term's language reads it:
+
+- **The lexicon partition.** `lexemes` is unique on `(language, lemma)`, so
+  German "Gift" (poison) and Spanish "once" (eleven) never reuse the English
+  lexeme. `LexiconAIService` and `DeckBuildService` pass it to `find`/`record`.
+- **The prompt.** One line in the lookup *user* turn names the language and
+  asks for the spelling as given (`prompts.term_language_note`, both adapters).
+  A bare "gift" is otherwise detected as English.
+- **The cache key.** `LookupCacheKey.term_language` joins the digest when set, or
+  a build's Spanish "once" would be served to someone typing the English word.
+- **Grounding, IPA and enrichment are skipped.** The dictionary is English, so it
+  would ground "pan" in the English word and give it English IPA; the nightly
+  backfill only lists and writes words in `en` decks. The enrichment prompt is
+  written for English, so a non-English pick it would have topped up goes to
+  review. A non-English card's `phonetic` stays NULL.
+- **The card front is the template's spelling**, so "der Hund" keeps its article
+  and capital whatever the model's `term` was.
+
+**English stays byte-identical, and that is the constraint, not a nicety.**
+`None` and `"en"` add no prompt line, no digest component and no lexicon
+partition, so `PROMPT_VERSION` did not move and every cached card, lexeme and
+built deck is still a hit. `tests/unit/test_term_language.py` pins an English
+digest computed before the feature existed; if it moves, every English cache row
+is orphaned. A new language means an entry in `DECK_LANGUAGES` and
+`TERM_LANGUAGE_NAMES`, nothing else.
+
 ### Publishing is still a separate, deliberate act
 
 Nothing in this pipeline sets `decks.is_public`. A build creates a private deck
