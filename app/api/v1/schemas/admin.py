@@ -407,8 +407,18 @@ class BuildJobOut(_CamelModel):
         )
 
 
+class BuildJobRowOut(BuildJobOut):
+    """A builds-list row: the job plus whether its deck is in Explore now.
+
+    A subclass rather than a field on :class:`BuildJobOut`, which is also the
+    cancel response and the detail's ``job`` — neither of which reads it.
+    """
+
+    deck_is_public: bool = Field(serialization_alias="deckIsPublic")
+
+
 class BuildJobPageOut(_CamelModel):
-    items: list[BuildJobOut]
+    items: list[BuildJobRowOut]
     total: int
 
 

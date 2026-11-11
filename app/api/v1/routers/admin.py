@@ -47,6 +47,7 @@ from app.api.v1.schemas.admin import (
     BuildJobDetailOut,
     BuildJobOut,
     BuildJobPageOut,
+    BuildJobRowOut,
     LexemeOut,
     LexemePageOut,
     LexiconStatsOut,
@@ -240,8 +241,12 @@ async def builds(
     limit: int = Query(default=25, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> BuildJobPageOut:
-    jobs, total = await content.jobs(limit=limit, offset=offset)
-    return BuildJobPageOut(items=[BuildJobOut.from_entity(j) for j in jobs], total=total)
+    rows, total = await content.jobs(limit=limit, offset=offset)
+    items = [
+        BuildJobRowOut(**BuildJobOut.from_entity(job).model_dump(), deck_is_public=public)
+        for job, public in rows
+    ]
+    return BuildJobPageOut(items=items, total=total)
 
 
 @router.get("/builds/{job_id}", response_model=BuildJobDetailOut)
