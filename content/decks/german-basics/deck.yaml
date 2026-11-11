@@ -1,0 +1,42 @@
+slug: german-basics
+version: "1.0.0"
+name: German Basics
+name_fa: "آلمانی پایه"
+category: languages
+# Spanish/German headwords: the pipeline tells the model the term's language,
+# keeps the lexicon apart from English, and skips the English dictionary.
+language: de
+# One line, and it must stay one line: the Explore card is a fixed height, so
+# a longer description is silently truncated rather than given more room.
+description: "Your first 150 German words, from Hallo to weil."
+description_fa: "۱۵۰ واژه‌ی نخست آلمانی، از Hallo تا weil."
+official: true
+# Indigo, between the travel deck's sky blue and the 504 deck's violet.
+hue: 235
+# Drawn in place of the deck's initial by clients that ship the asset. A client
+# with no asset for this slug draws the initial instead, which is not an error.
+icon: de
+
+# No source. Compiled by Vocably. Nouns carry der/die/das and their capital letter: both are grammar in German, not style.
+
+structure:
+  # Asserted, not derived: a word list that silently loses an entry is otherwise
+  # invisible until a learner notices a unit is short.
+  words_per_unit: 15
+  expected_units: 10
+  expected_words: 150
+
+generation:
+  native_language: Persian
+  register: adult
+  # No category prior applies here, so the ladder is pins, hints, then the
+  # commonest sense.
+  sense_selection: [explicit, hint, first]
+  enrichment: allowed
+  max_senses: 4
+
+publication:
+  # Never automatic. A build finishing is not a reason for unreviewed cards to
+  # appear in Explore.
+  review_required: true
+  publish: manual
