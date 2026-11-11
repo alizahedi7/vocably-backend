@@ -392,3 +392,15 @@ def test_entry_ranks_senses_with_examples_first() -> None:
     )
     assert entry.top(2)[0].definition == "a common sense"
     assert entry.top(1) == [entry.senses[1]]
+
+
+async def test_a_term_declared_non_english_is_never_grounded() -> None:
+    """The dictionary is English: Spanish "pan" would get the English entry."""
+    provider = _RecordingProvider()
+    dictionary = _Dictionary(_entry("pan"))
+    spanish = LearnerContext(native_language="Persian", term_language="es")
+
+    await _service(provider, dictionary, _Translator()).look_up_meanings("pan", spanish)
+
+    assert dictionary.calls == []
+    assert provider.lookup_calls == ["pan"]

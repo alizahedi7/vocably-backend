@@ -118,7 +118,9 @@ class GroundedAIService(AIService):
         self._rewrite = rewrite_definitions
 
     async def look_up_meanings(self, term: str, learner: LearnerContext) -> LookupResult:
-        if not self._is_groundable(term):
+        # The dictionary is English: "pan" or "Gift" would be grounded in the
+        # English word that shares the spelling.
+        if learner.is_non_english_term or not self._is_groundable(term):
             return await self._inner.look_up_meanings(term, learner)
 
         entry = await self._safe_look_up(term)

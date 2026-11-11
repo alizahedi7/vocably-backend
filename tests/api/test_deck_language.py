@@ -14,11 +14,17 @@ from httpx import AsyncClient
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.application.ports.ai_service import LearnerContext
+from app.application.services.lexicon_service import LexiconService
+from app.domain.enums import SenseSource
+from app.infrastructure.ai.lexicon_ai_service import LexiconAIService
 from app.infrastructure.db.models.deck import DeckModel
 from app.infrastructure.db.models.deck_build import DeckBuildJobModel
+from app.infrastructure.db.models.lexicon import LexemeModel
 from app.infrastructure.db.repositories.deck_discovery_repository import (
     SqlAlchemyDeckDiscoveryRepository,
 )
+from app.infrastructure.db.repositories.lexicon_repository import SqlAlchemyLexiconRepository
 from app.infrastructure.templates.deck_template_loader import load_template
 
 from .conftest import UserFactory
@@ -115,6 +121,32 @@ async def test_a_copy_from_explore_keeps_the_language(
     async with session_factory() as session:
         stored = (await session.execute(select(DeckModel).where(DeckModel.id == copy.id))).scalar_one()
     assert stored.language == "es"
+
+
+async def test_the_lexicon_layer_keeps_a_spanish_word_apart_from_its_english_twin(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """English "once" is known; Spanish "once" (eleven) must still be bought, once."""
+    provider = ScriptedProvider()
+    async with session_factory() as session:
+        lexicon = LexiconService(SqlAlchemyLexiconRepository(session), content_version=7)
+        await lexicon.record(
+            await provider.look_up_meanings("once", LearnerContext(native_language="Persian")),
+            LearnerContext(native_language="Persian"),
+            source=SenseSource.LOOKUP,
+        )
+        provider.calls.clear()
+
+        chain = LexiconAIService(provider, lexicon)
+        spanish = LearnerContext(native_language="Persian", term_language="es")
+        await chain.look_up_meanings("once", spanish)
+        await chain.look_up_meanings("once", spanish)
+        await session.commit()
+
+    assert provider.calls == ["once"], "bought once for Spanish, then served from the lexicon"
+    async with session_factory() as session:
+        rows = (await session.execute(select(LexemeModel))).scalars().all()
+    assert sorted((r.language, r.lemma) for r in rows) == [("en", "once"), ("es", "once")]
 
 
 async def test_the_api_reports_each_decks_language(

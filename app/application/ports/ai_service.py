@@ -23,6 +23,21 @@ class LearnerContext:
     native_language: str = "English"
     age_range: str | None = None
     interests: Sequence[str] = field(default_factory=tuple)
+    #: ISO 639-1 code of the term, when the caller knows it — a Spanish deck
+    #: build does; a learner typing into the lookup box does not, and the model
+    #: detects it. ``None`` and ``"en"`` behave identically everywhere, so
+    #: English prompts, cache keys and lexemes stay byte-identical.
+    term_language: str | None = None
+
+    @property
+    def lexicon_language(self) -> str:
+        """The lexicon partition this term belongs to: ``"en"`` unless told otherwise."""
+        return self.term_language or "en"
+
+    @property
+    def is_non_english_term(self) -> bool:
+        """Whether the term is known to be in a language other than English."""
+        return self.lexicon_language != "en"
 
 
 class LookupStatus(StrEnum):
