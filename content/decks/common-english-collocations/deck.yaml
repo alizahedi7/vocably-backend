@@ -1,0 +1,39 @@
+slug: common-english-collocations
+version: "1.0.0"
+name: Common English Collocations
+name_fa: "هم‌آیندهای رایج انگلیسی"
+category: general
+# One line, and it must stay one line: the Explore card is a fixed height, so
+# a longer description is silently truncated rather than given more room.
+description: "Make a decision, take a break: words that go together."
+description_fa: "تصمیم گرفتن، استراحت کردن: واژه‌هایی که با هم می‌آیند."
+official: true
+# Purple, between the 504 deck's violet and the idioms deck's magenta but clear of both.
+hue: 290
+# Drawn in place of the deck's initial by clients that ship the asset. A client
+# with no asset for this slug draws the initial instead, which is not an error.
+icon: collocations
+
+# No source. Compiled by Vocably. Units are grouped by verb, so a learner meets ten "make" pairs together and stops saying "do a mistake".
+
+structure:
+  # Asserted, not derived: a word list that silently loses an entry is otherwise
+  # invisible until a learner notices a unit is short.
+  words_per_unit: 10
+  expected_units: 10
+  expected_words: 100
+
+generation:
+  native_language: Persian
+  register: adult
+  # No category prior applies here, so the ladder is pins, hints, then the
+  # commonest sense.
+  sense_selection: [explicit, hint, first]
+  enrichment: allowed
+  max_senses: 4
+
+publication:
+  # Never automatic. A build finishing is not a reason for unreviewed cards to
+  # appear in Explore.
+  review_required: true
+  publish: manual
