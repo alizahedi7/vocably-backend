@@ -1,0 +1,20 @@
+# The logo each official deck draws in place of its initial, keyed by the
+# `icon` slug a deck template names. Served whole by GET /api/v1/deck-logos,
+# so adding a deck's logo is a line here (and perhaps one .svg) in the same
+# pull request as its template — no client release.
+#
+#   label: a number or acronym, at most 6 characters, set as the deck's title.
+#   glyph: an .svg beside this file — one colour, square viewBox, no scripts.
+#          The client tints it; any fill in the file is ignored.
+"504": {label: "504"}
+"1100": {label: "1100"}
+awl: {label: AWL}
+ielts: {label: IELTS}
+abc: {label: ABC}
+es: {label: ES}
+de: {label: DE}
+idioms: {glyph: idioms.svg}
+travel: {glyph: travel.svg}
+phrasal: {glyph: phrasal.svg}
+collocations: {glyph: collocations.svg}
+confused: {glyph: confused.svg}

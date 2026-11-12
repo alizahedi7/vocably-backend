@@ -1405,24 +1405,43 @@ make deck-sync-meta slug=…   # re-applies presentation to a built deck, free
 
 ### The logo on a pre-built deck
 
-`decks.icon` names a logo the *client* ships, drawn in place of the deck's
-initial. Every deck in Explore drawing the same coloured letter is right for a
-deck a learner made and wrong for a course: "5" is what "504 Essential Words"
-reduces to, and a catalogue of anonymous squares reads as a list of strangers'
-folders.
+`decks.icon` is a slug, and `GET /api/v1/deck-logos` says what to draw for it,
+in place of the deck's initial. Every deck in Explore drawing the same coloured
+letter is right for a deck a learner made and wrong for a course: "5" is what
+"504 Essential Words" reduces to, and a catalogue of anonymous squares reads as
+a list of strangers' folders.
 
-- **A slug, never a URL, and never an image.** The badge is a fixed square that
-  must be right on the first frame — a network image arrives late and resizes
-  the card under the reader's thumb. The client draws it (`deck_logo.dart`), so
-  it costs no dependency and is sharp at 44 in the list and 72 on the hero.
-- **An unknown slug is not an error.** A client with no logo for the slug draws
-  the initial, exactly as it does today, so a template may name one before the
-  release that can draw it. Empty for every deck a learner built.
-- **Carried by a copy**, like `hue`: how a deck looks is a property of the deck,
-  not of whose list it sits in.
+- **The catalogue is in git, beside the templates** —
+  `content/deck-logos/logos.yaml` maps a slug to a `label` ("504", "IELTS", at
+  most six characters) or a `glyph` (a one-colour `.svg` in that directory). A
+  new deck's logo is a line there in the same pull request as its template, and
+  it reaches every device with the deploy. It used to be code in the client, so
+  a new deck drew an initial on Android until somebody cut a release.
+- **One document, never one image per deck.** The badge is a fixed square that
+  must be right on the first frame, and a network image arrives late. So the
+  whole catalogue is one small response — labels as text, glyphs as inline SVG
+  — which a client keeps from its last launch and draws from memory. That is
+  the first-frame argument that once ruled out a URL, kept; what changed is
+  where the drawing instructions live.
+- **A slug, still not a URL.** The deck payloads are unchanged: `icon` is the
+  key, the catalogue is the lookup. A copy carries the slug like `hue`, so it
+  needs no second column, and `deck-sync-meta` needs no new field.
+- **The client tints a glyph; the file's own colours are ignored.** That is
+  what keeps a logo on the deck's hue in light and dark. A glyph is therefore
+  one colour, by contract.
+- **A glyph is markup a client renders, so it is checked at load**
+  ([deck_logo_catalog.py](app/infrastructure/templates/deck_logo_catalog.py)):
+  one `<svg>`, square viewBox, at most 4 KB, and no script, style, handler or
+  reference of any kind. A catalogue that fails is a failing test, not a 500 —
+  `test_deck_logos.py` loads the shipped one.
+- **Public and cacheable.** No session: it is the same for everyone and a
+  client fetches it at launch. `Cache-Control: public, max-age=3600` plus an
+  `ETag` over the content, so the re-check is a 304.
+- **An unknown slug is not an error.** A slug with no entry draws the initial,
+  and `deck-validate` warns about it — nearly always a typo. Clients older than
+  the endpoint still draw the logos they shipped with.
 - Set from the template at plan time, or by `deck-sync-meta` for a deck already
-  built. Nothing was backfilled — the column is empty everywhere else, which is
-  what those decks already render.
+  built. Empty for every deck a learner built.
 
 **A pre-built deck's description must fit one line.** The Explore card is a
 fixed box and reserves exactly two lines for it: a longer description is

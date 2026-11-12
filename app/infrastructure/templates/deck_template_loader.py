@@ -38,6 +38,7 @@ from app.domain.entities.deck_template import (
     TemplateWord,
 )
 from app.domain.enums import SenseSelection
+from app.infrastructure.templates.deck_logo_catalog import deck_logo_catalog
 
 #: Where templates live, relative to the repository root.
 TEMPLATE_ROOT = Path("content/decks")
@@ -112,6 +113,13 @@ def validate_template(template: DeckTemplate) -> TemplateReport:
         warnings.append(
             "source.title is set but source.rights is empty — state what was taken from "
             "the source and what was not"
+        )
+    if template.icon and not deck_logo_catalog().has(template.icon):
+        # Not an error: the deck builds and draws its initial. But a slug with no
+        # catalogue entry is nearly always a typo, and nothing else would say so.
+        warnings.append(
+            f"icon {template.icon!r} has no entry in content/deck-logos/logos.yaml — "
+            "the deck will draw its initial"
         )
     if template.generation.enrichment and not any(
         word.hint.gloss or word.hint.is_pinned for _, _, word in template.words_in_order()
