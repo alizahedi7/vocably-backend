@@ -1,0 +1,39 @@
+slug: commonly-confused-words
+version: "1.0.0"
+name: Commonly Confused Words
+name_fa: "واژه‌هایی که اشتباه گرفته می‌شوند"
+category: general
+# One line, and it must stay one line: the Explore card is a fixed height, so
+# a longer description is silently truncated rather than given more room.
+description: "Affect or effect? Borrow or lend? Pairs learners mix up."
+description_fa: "affect یا effect؟ borrow یا lend؟ جفت‌هایی که قاطی می‌شوند."
+official: true
+# Olive yellow, clear of the phrasal-verb deck's gold.
+hue: 70
+# Drawn in place of the deck's initial by clients that ship the asset. A client
+# with no asset for this slug draws the initial instead, which is not an error.
+icon: confused
+
+# No source. Compiled by Vocably. Each unit is five pairs, and each pair sits side by side so the two words are studied together.
+
+structure:
+  # Asserted, not derived: a word list that silently loses an entry is otherwise
+  # invisible until a learner notices a unit is short.
+  words_per_unit: 10
+  expected_units: 10
+  expected_words: 100
+
+generation:
+  native_language: Persian
+  register: adult
+  # No category prior applies here, so the ladder is pins, hints, then the
+  # commonest sense.
+  sense_selection: [explicit, hint, first]
+  enrichment: allowed
+  max_senses: 4
+
+publication:
+  # Never automatic. A build finishing is not a reason for unreviewed cards to
+  # appear in Explore.
+  review_required: true
+  publish: manual

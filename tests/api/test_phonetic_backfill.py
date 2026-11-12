@@ -184,6 +184,34 @@ async def test_one_lookup_answers_for_every_learners_copy_of_the_word(
     assert set((await phonetics_by_term(session_factory)).values()) == {"/rʌn/"}
 
 
+async def test_words_in_a_non_english_deck_are_never_given_english_ipa(
+    session_factory: async_sessionmaker[AsyncSession], make_user: UserFactory
+) -> None:
+    """Spanish "once" (eleven) must not inherit English "once"'s /wʌns/."""
+    english = await seed_words(session_factory, make_user, ["once"])
+    spanish = uuid.uuid4()
+    async with session_factory() as session:
+        owner = (await session.get(DeckModel, english)).user_id  # type: ignore[union-attr]
+        session.add(DeckModel(id=spanish, user_id=owner, name="Español", language="es"))
+        await session.flush()
+        for term in ("once", "pan"):
+            session.add(WordModel(deck_id=spanish, term=term, meaning="—"))
+        await session.commit()
+    dictionary = FakeDictionary({"once": entry("once", "/wʌns/"), "pan": entry("pan", "/pæn/")})
+
+    result = await run_backfill(session_factory, dictionary)
+
+    assert dictionary.asked == ["once"]
+    assert result.words_updated == 1
+    async with session_factory() as session:
+        rows = (
+            (await session.execute(select(WordModel.phonetic).where(WordModel.deck_id == spanish)))
+            .scalars()
+            .all()
+        )
+    assert rows == [None, None]
+
+
 async def test_a_transcription_that_arrived_with_the_card_is_never_overwritten(
     session_factory: async_sessionmaker[AsyncSession], make_user: UserFactory
 ) -> None:

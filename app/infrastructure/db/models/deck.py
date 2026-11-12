@@ -24,6 +24,10 @@ class DeckModel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: Slug of a logo the client ships as an asset — set from a deck template,
     #: empty for a deck a learner built. See ``Deck.icon``.
     icon: Mapped[str] = mapped_column(String(40), default="", nullable=False)
+    #: ISO 639-1 code of the headwords. See ``Deck.language``.
+    language: Mapped[str] = mapped_column(
+        String(16), default="en", server_default="en", nullable=False
+    )
 
     # ── Explore ──────────────────────────────────────────────
     #: Whether the deck is listed for anyone to browse and copy. Writable by

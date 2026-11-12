@@ -136,7 +136,7 @@ class LexiconAIService(AIService):
 
     async def _read(self, term: str, learner: LearnerContext, register: str) -> LookupResult | None:
         try:
-            lexeme = await self._lexicon.find(term)
+            lexeme = await self._lexicon.find(term, language=learner.lexicon_language)
             if lexeme is None:
                 return None
             return await self._lexicon.as_lookup_result(
@@ -156,19 +156,17 @@ class LexiconAIService(AIService):
                 learner,
                 source=SenseSource.LOOKUP,
                 register=register,
+                language=learner.lexicon_language,
             )
         except Exception:
             logger.warning("lexicon write failed; result served unrecorded", exc_info=True)
 
     @staticmethod
     def _flight_key(term: str, learner: LearnerContext, register: str) -> str:
-        return ":".join(
-            (
-                normalize_lookup_input(term),
-                learner.native_language.casefold(),
-                register,
-            )
-        )
+        parts = [normalize_lookup_input(term), learner.native_language.casefold(), register]
+        if learner.is_non_english_term:
+            parts.append(learner.lexicon_language)
+        return ":".join(parts)
 
 
 def _register_for(learner: LearnerContext) -> str:

@@ -101,7 +101,9 @@ class LookupCacheKey:
     * ``prompt_version`` — see :data:`~app.infrastructure.ai.prompts.PROMPT_VERSION`.
 
     The detected language of the term is deliberately absent: the prompt derives
-    it from the input, so it is a function of ``normalized_input`` already.
+    it from the input, so it is a function of ``normalized_input`` already. A
+    *declared* language is different — it changes the prompt — which is why
+    ``term_language`` is in the key when it is set.
 
     ``LearnerContext.interests`` is deliberately absent too, and it is the one
     real trade in this design. Interests theme the examples, so including them
@@ -116,6 +118,11 @@ class LookupCacheKey:
     native_language: str
     age_bucket: CacheAgeBucket
     prompt_version: int
+    #: Set only when the caller *told* the model the term's language and it is
+    #: not English (a Spanish deck build). Empty otherwise, and then absent from
+    #: the digest, so every English key is the digest it always was — while a
+    #: Spanish build's "once" can never be served to someone typing English.
+    term_language: str = ""
 
     @property
     def is_aliasable(self) -> bool:
@@ -130,14 +137,15 @@ class LookupCacheKey:
         matters once terms arrive in every script the app supports. The plain
         columns are stored alongside it for debugging and analytics.
         """
-        raw = "\x1f".join(
-            (
-                str(self.prompt_version),
-                self.native_language.casefold(),
-                self.age_bucket.value,
-                self.normalized_input,
-            )
-        )
+        parts = [
+            str(self.prompt_version),
+            self.native_language.casefold(),
+            self.age_bucket.value,
+            self.normalized_input,
+        ]
+        if self.term_language:
+            parts.append(self.term_language)
+        raw = "\x1f".join(parts)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def for_term(self, term: str) -> LookupCacheKey:
@@ -151,6 +159,7 @@ class LookupCacheKey:
             native_language=self.native_language,
             age_bucket=self.age_bucket,
             prompt_version=self.prompt_version,
+            term_language=self.term_language,
         )
 
 
@@ -164,6 +173,7 @@ def build_lookup_cache_key(
         native_language=learner.native_language,
         age_bucket=CacheAgeBucket.from_age_range(learner.age_range),
         prompt_version=prompt_version,
+        term_language=learner.lexicon_language if learner.is_non_english_term else "",
     )
 
 
