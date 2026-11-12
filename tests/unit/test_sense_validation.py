@@ -9,6 +9,8 @@ queue becomes the whole deck.
 
 from __future__ import annotations
 
+import pytest
+
 from app.application.ports.ai_service import MeaningSuggestion
 from app.domain.services.sense_validation import (
     SenseValidator,
@@ -72,6 +74,13 @@ def test_a_part_of_speech_that_is_a_sentence_is_rejected() -> None:
 def test_a_phrase_type_is_a_grammatical_name() -> None:
     """A model labelling "flexible hours" a noun phrase is right, not explaining itself."""
     outcome = validator().validate([sense(part_of_speech="Noun phrase")])
+    assert not outcome.rejected and outcome.accepted
+
+
+@pytest.mark.parametrize("pos", ["numeral", "particle", "adverbial phrase"])
+def test_a_non_english_word_class_is_a_grammatical_name(pos: str) -> None:
+    """Spanish "nueve" is a numeral and German "ja" a particle; neither is a model error."""
+    outcome = validator().validate([sense(part_of_speech=pos)])
     assert not outcome.rejected and outcome.accepted
 
 
