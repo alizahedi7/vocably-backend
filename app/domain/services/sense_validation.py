@@ -51,6 +51,10 @@ VALID_PARTS_OF_SPEECH = frozenset(
         "adjective phrase",
         "adverb phrase",
         "prepositional phrase",
+        "adverbial phrase",
+        # Spanish "nueve" and German "ja" are not English word classes, and are not errors.
+        "numeral",
+        "particle",
         "phrasal verb",
         "idiom",
         "abbreviation",
