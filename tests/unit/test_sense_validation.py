@@ -77,7 +77,9 @@ def test_a_phrase_type_is_a_grammatical_name() -> None:
     assert not outcome.rejected and outcome.accepted
 
 
-@pytest.mark.parametrize("pos", ["numeral", "particle", "adverbial phrase"])
+@pytest.mark.parametrize(
+    "pos", ["numeral", "particle", "adverbial phrase", "modal verb", "auxiliary verb"]
+)
 def test_a_non_english_word_class_is_a_grammatical_name(pos: str) -> None:
     """Spanish "nueve" is a numeral and German "ja" a particle; neither is a model error."""
     outcome = validator().validate([sense(part_of_speech=pos)])

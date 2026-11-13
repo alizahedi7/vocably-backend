@@ -55,6 +55,9 @@ VALID_PARTS_OF_SPEECH = frozenset(
         # Spanish "nueve" and German "ja" are not English word classes, and are not errors.
         "numeral",
         "particle",
+        # German "können" and "sein" are named by their class, not by "verb".
+        "modal verb",
+        "auxiliary verb",
         "phrasal verb",
         "idiom",
         "abbreviation",
