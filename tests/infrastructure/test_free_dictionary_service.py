@@ -266,3 +266,58 @@ async def test_missing_pronunciation_is_empty_not_an_error(
     assert entry is not None
     assert entry.phonetic == ""
     assert entry.senses, "a missing pronunciation must not discard the senses"
+
+
+# ── Examples ──────────────────────────────────────────────────
+
+_QUOTATION = (
+    "Because of this, British airports primarily act as giant wealth extractors. "
+    "― The Independent, Heathrow expansion, 23 june 2018."
+)
+
+
+def _with_example(example: str) -> list[dict[str, object]]:
+    return [
+        {
+            "word": "airport",
+            "meanings": [
+                {
+                    "partOfSpeech": "noun",
+                    "definitions": [{"definition": "A place for aircraft.", "example": example}],
+                }
+            ],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("example", [_QUOTATION, "word " * 80])
+async def test_a_quotation_or_an_overlong_example_is_dropped(example: str) -> None:
+    """Copied onto a card it failed the length cap, and "airport" never built."""
+    entry = await _service(lambda r: httpx.Response(200, json=_with_example(example))).look_up(
+        "airport"
+    )
+
+    assert entry is not None
+    assert entry.senses[0].definition == "A place for aircraft."
+    assert entry.senses[0].example == ""
+
+
+@pytest.mark.asyncio
+async def test_a_quotation_already_in_the_cache_is_dropped_on_read() -> None:
+    """Entries cached before the filter outlive the deploy by their TTL."""
+    redis = _FakeRedis()
+    cache = DictionaryCache(redis)
+    entry = await _service(lambda r: httpx.Response(200, json=_with_example("ok"))).look_up(
+        "airport"
+    )
+    assert entry is not None
+    await cache.set("airport", entry)
+    key = next(iter(redis.store))
+    redis.store[key] = redis.store[key].replace('"example": "ok"', f'"example": "{_QUOTATION}"')
+    assert _QUOTATION in redis.store[key]
+
+    cached = await _service(lambda r: httpx.Response(500), cache=cache).look_up("airport")
+
+    assert cached is not None
+    assert cached.senses[0].example == ""
