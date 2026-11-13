@@ -32,6 +32,7 @@ from app.application.ports.dictionary_service import (
     DictionaryService,
 )
 from app.core.logging import get_logger
+from app.domain.services.sense_validation import MAX_EXAMPLE_CHARS
 
 logger = get_logger("vocably.dictionary")
 
@@ -146,12 +147,25 @@ class FreeDictionaryService(DictionaryService):
                         DictionarySense(
                             definition=text,
                             part_of_speech=part_of_speech,
-                            example=str(definition.get("example") or "").strip(),
+                            example=_usage_example(definition.get("example")),
                         )
                     )
         if not senses:
             return None
         return DictionaryEntry(term=term, senses=senses, phonetic=phonetic)
+
+
+def _usage_example(raw: Any) -> str:
+    """The dictionary's example, or "" when it is a quotation rather than one.
+
+    The API mirrors Wiktionary, whose "example" is sometimes a sourced citation —
+    a newspaper paragraph ending "― The Independent, 23 June 2018". On a card it
+    is the wrong register, and over the length cap it rejects the whole sense,
+    so a word with one sense could never be built. No example is a review flag;
+    a quotation is a failed build.
+    """
+    text = str(raw or "").strip()
+    return "" if "―" in text or len(text) > MAX_EXAMPLE_CHARS else text
 
 
 def _phonetic_of(entry: dict[str, Any]) -> str:
@@ -239,7 +253,10 @@ class DictionaryCache:
             entry=DictionaryEntry(
                 term=payload["term"],
                 phonetic=payload.get("phonetic", ""),
-                senses=[DictionarySense(**s) for s in payload.get("senses", [])],
+                senses=[
+                    DictionarySense(**{**s, "example": _usage_example(s.get("example"))})
+                    for s in payload.get("senses", [])
+                ],
             )
         )
 
