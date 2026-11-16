@@ -76,9 +76,22 @@ services:
       READER_REDIS_URL: redis://redis:6379/4
     # This is the only service that migrates; worker and beat deliberately do
     # not, so a deploy never runs two migration attempts concurrently.
+    #
+    # --forwarded-allow-ips: uvicorn trusts X-Forwarded-For only from
+    #   127.0.0.1 by default, and Caddy is another container — so every client
+    #   looked like Caddy, and the per-IP OTP limit (20/hour) was one bucket
+    #   shared by everyone signing up. '*' is safe only because this service
+    #   publishes no port: Caddy is the sole thing that can reach it, and Caddy
+    #   overwrites the header with the real peer.
+    # --timeout-keep-alive: above Caddy's upstream idle timeout, so Caddy never
+    #   reuses a connection uvicorn has just closed (a sporadic 502 under load).
+    # Workers come from WEB_CONCURRENCY in .env (default 1). Each process is
+    #   ~110 MiB and its own DB pool; see docs/load-testing.md before raising it.
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+             uvicorn app.main:app --host 0.0.0.0 --port 8000
+             --forwarded-allow-ips='*' --timeout-keep-alive 130
+             --timeout-graceful-shutdown 30"
 
   # Executes background tasks. Safe to scale to more replicas.
   worker:
