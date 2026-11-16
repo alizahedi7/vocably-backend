@@ -144,7 +144,11 @@ from app.infrastructure.email.console_email_otp_sender import (
 from app.infrastructure.email.lettermint_email_otp_sender import LetterMintEmailOTPSender
 from app.infrastructure.nlp.simplemma_lemmatizer import SimplemmaLemmatizer
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+# ``scope="function"``: commit before the response is sent. At FastAPI's default
+# ("request") scope the commit ran after it, so a client could be told 201 for a
+# row it could not yet read (a 404 on the next call, seen under load) — or for a
+# row whose commit then failed and was rolled back.
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 
 # ── Repositories ─────────────────────────────────────────────
