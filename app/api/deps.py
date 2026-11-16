@@ -67,6 +67,7 @@ from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.domain.repositories.xp_repository import XpRepository
+from app.infrastructure.ai.connection_releasing_ai_service import ConnectionReleasingAIService
 from app.infrastructure.ai.factory import (
     configured_model,
     effective_prompt_version,
@@ -341,8 +342,15 @@ def get_ai_service(
     repository are bound to the request-scoped session, while the provider
     adapter stays process-wide so its connection pool is reused. The wrappers are
     plain objects: building them per request costs nothing and opens nothing.
+
+    The provider is wrapped so the session gives its connection back before
+    each call out — see ``ConnectionReleasingAIService``.
     """
-    return lookup_chain(session, lexicon, provider=provider)
+    return lookup_chain(session, lexicon, provider=_releasing(provider, session))
+
+
+def _releasing(provider: object, session: AsyncSession) -> AIService:
+    return cast(AIService, ConnectionReleasingAIService(provider, session.commit))
 
 
 AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
@@ -495,7 +503,7 @@ def get_reader_service(
     it to count calls counts the reader's too. The two reader-only questions go
     to the raw provider, cast to their protocols as grounding casts it.
     """
-    chain: AIService = lookup_chain(session, lexicon, provider=provider)
+    chain: AIService = lookup_chain(session, lexicon, provider=_releasing(provider, session))
     hot = reader_hot_cache()
     if hot is not None:
         chain = HotCachingAIService(chain, hot, prompt_version=effective_prompt_version())
@@ -507,7 +515,10 @@ def get_reader_service(
         meanings=SqlAlchemySentenceMeaningRepository(session),
         ai=chain,
         explainer=cast(ContextualMeaningProvider, raw),
-        translator=cast(PassageTranslator, raw),
+        # Not the explainer: it runs beside the lookup task, and a commit
+        # concurrent with that task's queries is refused. ``release`` covers it.
+        translator=cast(PassageTranslator, _releasing(raw, session)),
+        release=session.commit,
         lemmatizer=_lemmatizer(),
         memo=hot,
         prompt_version=effective_prompt_version(),
