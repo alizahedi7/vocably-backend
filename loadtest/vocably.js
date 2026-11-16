@@ -40,7 +40,9 @@ export const options = {
     http_req_failed: ['rate<0.01'],
     'http_req_duration{kind:read}': ['p(95)<300', 'p(99)<800'],
     'http_req_duration{kind:write}': ['p(95)<500', 'p(99)<1200'],
-    'http_req_duration{kind:reader}': ['p(95)<300', 'p(99)<800'],
+    // A tap is a cache read, except the first tap on a sentence, which asks the
+    // model what the word means there. So: fast at the median, AI-bounded at p95.
+    'http_req_duration{kind:reader}': ['med<300', `p(95)<${AI_P95_MS}`],
     'http_req_duration{kind:ai}': [`p(95)<${AI_P95_MS}`],
     checks: ['rate>0.99'],
   },

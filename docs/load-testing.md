@@ -92,9 +92,12 @@ Each iteration ends with 1–3 s of think time, so 1,000 VUs is roughly 450 requ
 
 | Bucket | p95 | p99 |
 |---|---|---|
-| read, reader | < 300 ms | < 800 ms |
+| read | < 300 ms | < 800 ms |
+| reader | median < 300 ms; p95 < `AI_P95_MS` | — |
 | write | < 500 ms | < 1.2 s |
 | ai | < `AI_P95_MS` (default 4 s = stub latency + slack) | — |
+
+The reader bucket is judged differently because a tap is a cache read *except* the first tap on a sentence, which asks the model what the word means there.
 
 Overall, errors must stay under 1% and checks must pass for more than 99%.
 
@@ -141,9 +144,18 @@ Local runs: a 16-core laptop, Postgres 16 in Docker, stub latency 2 s, `DEBUG=fa
 | 300 VUs, 2 min hold | 4 workers | 113 | 9.6 ms | 13.9 ms | 2.02 s | 0 |
 | ramp to 1000 VUs, 2 min hold | 4 workers | 332 | 88 ms | 101 ms | 2.24 s | 0 / 86,842 |
 
+**Staging-shaped run** (the production compose shape on a laptop, every container pinned to the same two cores, `WEB_CONCURRENCY=2`, stub latency 2.5 s, one warmed book):
+
+| Run | req/s | read p95 | write p95 | reader median / p95 | ai p95 | errors |
+|---|---|---|---|---|---|---|
+| baseline, 50 VUs | 26 | 15 ms | 26 ms | 9 ms / 2.67 s | 2.53 s | 0 / 4,527 |
+| launch, 300 VUs, 10 min hold | 137 | 31 ms | 43 ms | 8 ms / 32 ms | 2.55 s | 2 / 115,756 |
+
+Every threshold passed on the launch run. The API peaked at about 125% of its two cores' 200%, Postgres at 34% of one, and the pool never went past 21 connections with at most 7 idle in transaction. The baseline's reader p95 is the first-tap model call; by the launch run the sampled sentences were memoised.
+
 **What the numbers say:**
 
 - **Workers are the launch gate.** The code fixes (findings 1–3) keep the app correct under load: no errors, no pool exhaustion, AI latency isolated. Capacity, though, is CPU, one core per process.
 - **Peak load stays within the database's limits.** At 1,000 VUs Postgres held 46 connections, well under `max_connections` 100, so the pool settings have room.
 - **Size the box by CPU.** About 100 req/s per core, and ~110 MiB RAM per worker. Launch (300 VUs) needs ≥ 2 workers, and peak (1,000 VUs) about 4, so launch needs ≥ 2 vCPUs, and peak about 4 vCPUs and 2 GiB.
-- **Not yet covered locally:** the reader bucket. No book was ingested on the laptop; run it on staging.
+- **Still not covered:** a run through Caddy and TLS on a real second host, and the 1,000-VU profile on two cores.
