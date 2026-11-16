@@ -123,8 +123,7 @@ services:
       # it is money.
       LEXICON_REDIS_URL: redis://redis:6379/3
       READER_REDIS_URL: redis://redis:6379/4
-    # Memory, not CPU, is the binding constraint on this VPS: a single process
-    # running this app measures ~110 MiB, against under 1 GiB of RAM shared
+    # A single process running this app measures ~110 MiB, on a host shared
     # with Postgres, Caddy, the API and the admin dashboard. Prefork spawns
     # `concurrency` children *on top of* the parent, so --concurrency=1 means
     # two processes, and each extra one costs another ~110 MiB. Raise it only
@@ -140,11 +139,10 @@ services:
     # rather than by the kernel's OOM killer, which would be free to pick
     # Postgres or the API instead — turning a task bug into an outage.
     #
-    # The three caps here (96 + 256 + 128 MiB) are deliberately sized so that
-    # even all three services at their ceiling, on top of the ~240 MiB the
-    # existing stack uses, stays clear of this box's 957 MiB with room for the
-    # OS and Postgres' page cache. This VPS has no swap, so "worst case still
-    # fits" has to be true by construction rather than by luck.
+    # The three caps here (96 + 256 + 128 MiB) were sized for a 1 GiB host
+    # with no swap, where "worst case still fits" had to be true by
+    # construction. The host has since grown; the caps stay, because their
+    # job is to contain a runaway task, not to ration memory.
     mem_limit: 256m
 
   # Emits scheduled tasks. MUST stay at exactly one replica: beat is a clock,

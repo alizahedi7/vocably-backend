@@ -1,8 +1,7 @@
 # Load readiness: audit, fixes, and the load-test playbook
 
-Target: 200–300 concurrent users at launch, 1,000 at peak, on the production
-VPS (≈1 GiB RAM, no swap; Postgres, Redis, Caddy, API, Celery worker and beat
-on one host).
+Target: 200–300 concurrent users at launch, 1,000 at peak, on one production
+host running Postgres, Redis, Caddy, the API, and the Celery worker and beat.
 
 ## 1. Audit findings
 
@@ -127,7 +126,7 @@ docker compose -f docker-compose.prod.yml logs -f api | grep -iE "timeout|error|
 | API container at ~100% of one core while DB and Redis idle | one process | `WEB_CONCURRENCY=2` (needs ≥2 vCPUs and ~120 MiB free per worker) |
 | DB CPU high, slow queries | the database | `pg_stat_statements` top 10 by total time |
 | Only the `ai` bucket is slow | gateway latency | expected; check that the other buckets stay green, which is the point of finding 1 |
-| `free -m` near zero, OOM kills | RAM on this VPS | do not add workers; move to a 2 GiB box first |
+| `free -m` near zero, OOM kills | RAM | do not add workers; add memory first |
 
 **Before release:** run `launch` green twice and `stress` once, then record the saturation point and its cause here.
 
@@ -146,5 +145,5 @@ Local runs: a 16-core laptop, Postgres 16 in Docker, stub latency 2 s, `DEBUG=fa
 
 - **Workers are the launch gate.** The code fixes (findings 1–3) keep the app correct under load: no errors, no pool exhaustion, AI latency isolated. Capacity, though, is CPU, one core per process.
 - **Peak load stays within the database's limits.** At 1,000 VUs Postgres held 46 connections, well under `max_connections` 100, so the pool settings have room.
-- **Size the box by CPU.** About 100 req/s per core, and ~110 MiB RAM per worker. Launch (300 VUs) needs ≥ 2 workers, and peak (1,000 VUs) about 4, so the current 1 GiB VPS is enough for launch only if it has ≥ 2 vCPUs. For peak, use 4 vCPUs and 2 GiB.
+- **Size the box by CPU.** About 100 req/s per core, and ~110 MiB RAM per worker. Launch (300 VUs) needs ≥ 2 workers, and peak (1,000 VUs) about 4, so launch needs ≥ 2 vCPUs, and peak about 4 vCPUs and 2 GiB.
 - **Not yet covered locally:** the reader bucket. No book was ingested on the laptop; run it on staging.
