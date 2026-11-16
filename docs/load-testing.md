@@ -153,9 +153,21 @@ Local runs: a 16-core laptop, Postgres 16 in Docker, stub latency 2 s, `DEBUG=fa
 
 Every threshold passed on the launch run. The API peaked at about 125% of its two cores' 200%, Postgres at 34% of one, and the pool never went past 21 connections with at most 7 idle in transaction. The baseline's reader p95 is the first-tap model call; by the launch run the sampled sentences were memoised.
 
+**Stress run on the same two-core stack** (ramp 300 → 600 → 1,000 VUs):
+
+| VUs (approx.) | req/s | read p50 / p95 | ai p95 | 500s |
+|---|---|---|---|---|
+| 300 | 190 | 7 ms / 24 ms | 2.5 s | 0 |
+| 400 | 240 | 13 ms / 180 ms | 2.8 s | 0 |
+| 500 | 270 | 130 ms / 430 ms | 3.2 s | 0 |
+| 600 | 300 | 240 ms / 730 ms | 3.5 s | 0 |
+| 1,000 | 295 | 1.4 s / 4.3 s | 8 s | ~11 a minute |
+
+Two cores saturate at about 300 req/s. Thresholds hold to roughly 400–450 VUs; past 600 throughput stops rising and latency absorbs the rest. The limit is API CPU (170% of 200%) while Postgres sat under half a core. The only errors were 33 pool timeouts (0.02% of 172,451 requests) at 1,000 VUs: a symptom of the starved event loop holding connections longer, not of a small pool, so raising `DB_POOL_SIZE` would not help. It degrades by slowing down, and recovered as soon as load fell.
+
 **What the numbers say:**
 
 - **Workers are the launch gate.** The code fixes (findings 1–3) keep the app correct under load: no errors, no pool exhaustion, AI latency isolated. Capacity, though, is CPU, one core per process.
 - **Peak load stays within the database's limits.** At 1,000 VUs Postgres held 46 connections, well under `max_connections` 100, so the pool settings have room.
 - **Size the box by CPU.** About 100 req/s per core, and ~110 MiB RAM per worker. Launch (300 VUs) needs ≥ 2 workers, and peak (1,000 VUs) about 4, so launch needs ≥ 2 vCPUs, and peak about 4 vCPUs and 2 GiB.
-- **Still not covered:** a run through Caddy and TLS on a real second host, and the 1,000-VU profile on two cores.
+- **Still not covered:** a run through Caddy and TLS on a real second host.
