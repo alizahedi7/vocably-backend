@@ -216,6 +216,10 @@ class Settings(BaseSettings):
     ai_provider: Literal["stub", "anthropic", "avalai", "gapgpt", "tabitoken", "agentrouter"] = (
         "stub"
     )
+    #: Seconds the ``stub`` provider sleeps per call. A load test's sandbox: it
+    #: costs nothing, yet holds a request as long as a real gateway would, which
+    #: is what exposes pool and concurrency limits. Ignored by real gateways.
+    ai_stub_latency_seconds: float = Field(default=0.0, ge=0, le=60)
     #: Ordered, comma-separated gateways to try when ``AI_PROVIDER`` fails, e.g.
     #: ``AI_FALLBACK_PROVIDERS=gapgpt``. Empty means no failover, and
     #: is the default because a fallback naming an unfunded account buys nothing
