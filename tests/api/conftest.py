@@ -120,6 +120,8 @@ def _fresh_shared_limiters() -> Iterator[None]:
         settings.ai_feedback_per_user_per_hour,
         settings.reader_lookups_per_user_per_hour,
         settings.passage_translations_per_user_per_hour,
+        settings.ai_lookups_per_user_per_hour,
+        settings.ai_stories_per_user_per_hour,
     )
     settings.joins_per_ip_per_hour = 0
     settings.joins_per_user_per_hour = 0
@@ -128,6 +130,8 @@ def _fresh_shared_limiters() -> Iterator[None]:
     settings.ai_feedback_per_user_per_hour = 0
     settings.reader_lookups_per_user_per_hour = 0
     settings.passage_translations_per_user_per_hour = 0
+    settings.ai_lookups_per_user_per_hour = 0
+    settings.ai_stories_per_user_per_hour = 0
     yield
     (
         settings.joins_per_ip_per_hour,
@@ -137,6 +141,8 @@ def _fresh_shared_limiters() -> Iterator[None]:
         settings.ai_feedback_per_user_per_hour,
         settings.reader_lookups_per_user_per_hour,
         settings.passage_translations_per_user_per_hour,
+        settings.ai_lookups_per_user_per_hour,
+        settings.ai_stories_per_user_per_hour,
     ) = previous
     deps._hourly_shared_limiter.cache_clear()
     deps._link_cooldown_limiter.cache_clear()

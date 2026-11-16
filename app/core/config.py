@@ -425,6 +425,12 @@ class Settings(BaseSettings):
     #: Paragraph translations per learner per hour. A paragraph is ~50x the
     #: tokens of a word, and a chapter's worth is a translation service.
     passage_translations_per_user_per_hour: int = 120
+    #: ``/ai/lookup`` per learner per hour. Most are cache hits, but every new
+    #: string is a provider call, so like reader taps this is a spend ceiling.
+    ai_lookups_per_user_per_hour: int = 300
+    #: ``/ai/story`` per learner per hour. Stories are never cached, so every
+    #: call is a full-length generation.
+    ai_stories_per_user_per_hour: int = 20
 
     # ── Deck build pipeline ───────────────────────────────────
     #: Words one ``vocably.ai.build_deck`` run resolves before re-queuing itself.

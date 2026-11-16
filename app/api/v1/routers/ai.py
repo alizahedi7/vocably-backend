@@ -9,6 +9,8 @@ from app.api.deps import (
     CurrentUser,
     FeedbackServiceDep,
     enforce_ai_feedback_limit,
+    enforce_ai_lookup_limit,
+    enforce_ai_story_limit,
 )
 from app.api.v1.schemas.ai import LookupIn, LookupOut, StoryOut
 from app.api.v1.schemas.feedback import AIFeedbackIn, AIFeedbackOut
@@ -17,7 +19,7 @@ from app.domain.entities.feedback import AIRating
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
-@router.post("/lookup", response_model=LookupOut)
+@router.post("/lookup", response_model=LookupOut, dependencies=[Depends(enforce_ai_lookup_limit)])
 async def look_up_meanings(
     payload: LookupIn,
     current_user: CurrentUser,
@@ -36,7 +38,7 @@ async def look_up_meanings(
     return LookupOut.from_dto(await ai.look_up_meanings(current_user.id, payload.term))
 
 
-@router.post("/story", response_model=StoryOut)
+@router.post("/story", response_model=StoryOut, dependencies=[Depends(enforce_ai_story_limit)])
 async def generate_story(current_user: CurrentUser, ai: AIStudioServiceDep) -> StoryOut:
     """Generate a short practice story from the user's mastered words."""
     story = await ai.generate_story(current_user.id)

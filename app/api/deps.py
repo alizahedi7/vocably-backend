@@ -763,6 +763,24 @@ async def enforce_passage_translation_limit(current_user: CurrentUser) -> None:
         raise RateLimitedError("Too many translations just now. Please try again shortly.")
 
 
+async def enforce_ai_lookup_limit(current_user: CurrentUser) -> None:
+    """Cap card lookups per user: the same spend ceiling reader taps have."""
+    limit = settings.ai_lookups_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"ai-lookup:{current_user.id}", limit):
+        raise RateLimitedError("Too many lookups just now. Please try again shortly.")
+
+
+async def enforce_ai_story_limit(current_user: CurrentUser) -> None:
+    """Cap stories per user. Never cached, so each one is a full generation."""
+    limit = settings.ai_stories_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"ai-story:{current_user.id}", limit):
+        raise RateLimitedError("That's a lot of stories. Try again in a little while.")
+
+
 async def enforce_otp_request_ip_limit(request: Request) -> None:
     """Cap OTP requests per client IP so one caller can't drain the SMS budget.
 
