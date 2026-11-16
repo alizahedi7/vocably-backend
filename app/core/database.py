@@ -17,6 +17,11 @@ engine = create_async_engine(
     settings.sqlalchemy_database_uri,
     echo=settings.debug and not settings.is_production,
     pool_pre_ping=True,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_timeout=settings.db_pool_timeout_seconds,
+    # Below any idle-connection cutoff between here and Postgres.
+    pool_recycle=1800,
     future=True,
 )
 
