@@ -61,7 +61,7 @@ def raw_ai_provider() -> AIService:
 
     chain = settings.provider_chain
     if not chain:
-        return StubAIService()
+        return StubAIService(latency_seconds=settings.ai_stub_latency_seconds)
     if len(chain) == 1:
         # No wrapper when there is nothing to fall over to: one gateway behind a
         # failover loop is the same gateway plus a layer of logs.

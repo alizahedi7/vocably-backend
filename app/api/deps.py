@@ -67,6 +67,7 @@ from app.domain.repositories.user_repository import UserRepository
 from app.domain.repositories.word_progress_repository import WordProgressRepository
 from app.domain.repositories.word_repository import WordRepository
 from app.domain.repositories.xp_repository import XpRepository
+from app.infrastructure.ai.connection_releasing_ai_service import ConnectionReleasingAIService
 from app.infrastructure.ai.factory import (
     configured_model,
     effective_prompt_version,
@@ -144,7 +145,11 @@ from app.infrastructure.email.console_email_otp_sender import (
 from app.infrastructure.email.lettermint_email_otp_sender import LetterMintEmailOTPSender
 from app.infrastructure.nlp.simplemma_lemmatizer import SimplemmaLemmatizer
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+# ``scope="function"``: commit before the response is sent. At FastAPI's default
+# ("request") scope the commit ran after it, so a client could be told 201 for a
+# row it could not yet read (a 404 on the next call, seen under load) — or for a
+# row whose commit then failed and was rolled back.
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 
 # ── Repositories ─────────────────────────────────────────────
@@ -337,8 +342,15 @@ def get_ai_service(
     repository are bound to the request-scoped session, while the provider
     adapter stays process-wide so its connection pool is reused. The wrappers are
     plain objects: building them per request costs nothing and opens nothing.
+
+    The provider is wrapped so the session gives its connection back before
+    each call out — see ``ConnectionReleasingAIService``.
     """
-    return lookup_chain(session, lexicon, provider=provider)
+    return lookup_chain(session, lexicon, provider=_releasing(provider, session))
+
+
+def _releasing(provider: object, session: AsyncSession) -> AIService:
+    return cast(AIService, ConnectionReleasingAIService(provider, session.commit))
 
 
 AIServiceDep = Annotated[AIService, Depends(get_ai_service)]
@@ -491,7 +503,7 @@ def get_reader_service(
     it to count calls counts the reader's too. The two reader-only questions go
     to the raw provider, cast to their protocols as grounding casts it.
     """
-    chain: AIService = lookup_chain(session, lexicon, provider=provider)
+    chain: AIService = lookup_chain(session, lexicon, provider=_releasing(provider, session))
     hot = reader_hot_cache()
     if hot is not None:
         chain = HotCachingAIService(chain, hot, prompt_version=effective_prompt_version())
@@ -503,7 +515,10 @@ def get_reader_service(
         meanings=SqlAlchemySentenceMeaningRepository(session),
         ai=chain,
         explainer=cast(ContextualMeaningProvider, raw),
-        translator=cast(PassageTranslator, raw),
+        # Not the explainer: it runs beside the lookup task, and a commit
+        # concurrent with that task's queries is refused. ``release`` covers it.
+        translator=cast(PassageTranslator, _releasing(raw, session)),
+        release=session.commit,
         lemmatizer=_lemmatizer(),
         memo=hot,
         prompt_version=effective_prompt_version(),
@@ -746,6 +761,24 @@ async def enforce_passage_translation_limit(current_user: CurrentUser) -> None:
         return
     if not await _hourly_shared_limiter().allow(f"reader-passage:{current_user.id}", limit):
         raise RateLimitedError("Too many translations just now. Please try again shortly.")
+
+
+async def enforce_ai_lookup_limit(current_user: CurrentUser) -> None:
+    """Cap card lookups per user: the same spend ceiling reader taps have."""
+    limit = settings.ai_lookups_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"ai-lookup:{current_user.id}", limit):
+        raise RateLimitedError("Too many lookups just now. Please try again shortly.")
+
+
+async def enforce_ai_story_limit(current_user: CurrentUser) -> None:
+    """Cap stories per user. Never cached, so each one is a full generation."""
+    limit = settings.ai_stories_per_user_per_hour
+    if limit <= 0:
+        return
+    if not await _hourly_shared_limiter().allow(f"ai-story:{current_user.id}", limit):
+        raise RateLimitedError("That's a lot of stories. Try again in a little while.")
 
 
 async def enforce_otp_request_ip_limit(request: Request) -> None:

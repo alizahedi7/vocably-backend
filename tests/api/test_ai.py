@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
 from httpx import AsyncClient
+
+from app.core.config import settings
 
 
 async def test_lookup_requires_authentication(client: AsyncClient) -> None:
@@ -148,3 +151,20 @@ async def test_story_uses_learned_words(client: AsyncClient, auth_headers: dict[
     body = response.json()
     assert sorted(body["words_used"]) == sorted(terms)
     assert all(term in body["text"] for term in terms)
+
+
+async def test_lookups_and_stories_are_rate_limited_per_user(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every new string is a paid provider call, and a story always is."""
+    monkeypatch.setattr(settings, "ai_lookups_per_user_per_hour", 1)
+    monkeypatch.setattr(settings, "ai_stories_per_user_per_hour", 1)
+    lookup = {"term": "run"}
+    assert (await client.post("/api/v1/ai/lookup", headers=auth_headers, json=lookup)).is_success
+    blocked = await client.post("/api/v1/ai/lookup", headers=auth_headers, json=lookup)
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"]
+
+    # The slot is spent before the handler runs, so a refused story counts too.
+    assert (await client.post("/api/v1/ai/story", headers=auth_headers)).status_code == 422
+    assert (await client.post("/api/v1/ai/story", headers=auth_headers)).status_code == 429

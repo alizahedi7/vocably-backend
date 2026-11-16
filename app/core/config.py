@@ -108,6 +108,16 @@ class Settings(BaseSettings):
     postgres_db: str = "vocably"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
+    #: Connections per API process: ``(pool_size + max_overflow) x WEB_CONCURRENCY``
+    #: must stay under Postgres' ``max_connections`` (100) minus the worker,
+    #: beat and an operator's psql. A request holds one only while it queries —
+    #: never across an AI call — so 20 serves hundreds of concurrent users.
+    db_pool_size: int = Field(default=10, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+    #: How long a request waits for a connection before failing. SQLAlchemy's
+    #: 30 s default turns pool exhaustion into a wall of hung requests that the
+    #: client retries; failing fast surfaces it and sheds load instead.
+    db_pool_timeout_seconds: float = Field(default=10.0, gt=0)
 
     # ── Auth adapters ─────────────────────────────────────────
     otp_length: int = 6
@@ -206,6 +216,10 @@ class Settings(BaseSettings):
     ai_provider: Literal["stub", "anthropic", "avalai", "gapgpt", "tabitoken", "agentrouter"] = (
         "stub"
     )
+    #: Seconds the ``stub`` provider sleeps per call. A load test's sandbox: it
+    #: costs nothing, yet holds a request as long as a real gateway would, which
+    #: is what exposes pool and concurrency limits. Ignored by real gateways.
+    ai_stub_latency_seconds: float = Field(default=0.0, ge=0, le=60)
     #: Ordered, comma-separated gateways to try when ``AI_PROVIDER`` fails, e.g.
     #: ``AI_FALLBACK_PROVIDERS=gapgpt``. Empty means no failover, and
     #: is the default because a fallback naming an unfunded account buys nothing
@@ -411,6 +425,12 @@ class Settings(BaseSettings):
     #: Paragraph translations per learner per hour. A paragraph is ~50x the
     #: tokens of a word, and a chapter's worth is a translation service.
     passage_translations_per_user_per_hour: int = 120
+    #: ``/ai/lookup`` per learner per hour. Most are cache hits, but every new
+    #: string is a provider call, so like reader taps this is a spend ceiling.
+    ai_lookups_per_user_per_hour: int = 300
+    #: ``/ai/story`` per learner per hour. Stories are never cached, so every
+    #: call is a full-length generation.
+    ai_stories_per_user_per_hour: int = 20
 
     # ── Deck build pipeline ───────────────────────────────────
     #: Words one ``vocably.ai.build_deck`` run resolves before re-queuing itself.

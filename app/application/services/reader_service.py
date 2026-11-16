@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import unicodedata
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -137,6 +138,7 @@ class ReaderService:
         reader_prompt_version: int,
         provider: str = "",
         model: str = "",
+        release: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._books = books
         self._progress = progress
@@ -151,6 +153,7 @@ class ReaderService:
         self._reader_prompt_version = reader_prompt_version
         self._provider = provider
         self._model = model
+        self._release = release
 
     # ── Books ─────────────────────────────────────────────────
 
@@ -207,29 +210,35 @@ class ReaderService:
         learner = _learner_context(user)
         lemma = self._lemmatizer.lemma(surface, language="en") or surface
 
-        # The lookup starts first and runs whatever happens below.
-        lookup = asyncio.create_task(self._look_up_term(lemma, surface, learner))
+        # The remembered meaning is read before the lookup task starts, and stored
+        # only after it ends: while it runs, that task is the only user of the
+        # request's session, which is what lets it hand the connection back
+        # before a provider call (``ConnectionReleasingAIService``).
         meaning: ContextualMeaning | None = None
+        if sentence:
+            meaning = await self._remembered_meaning(surface, sentence, learner, from_book)
+        lookup = asyncio.create_task(self._look_up_term(lemma, surface, learner))
         asking: asyncio.Task[ContextualMeaning | None] | None = None
         try:
-            if sentence:
-                meaning = await self._remembered_meaning(surface, sentence, learner, from_book)
-                if meaning is None:
-                    # A warm lookup answers inside the wait, and then a one-sense
-                    # word or a decisive sentence costs no call. A cold one does
-                    # not, and the model is asked alongside it.
-                    done, _ = await asyncio.wait({lookup}, timeout=WARM_LOOKUP_WAIT_SECONDS)
-                    if lookup in done:
-                        result = lookup.result()
-                        local = choose_locally(result.term, sentence, result.suggestions)
-                        if local is not None:
-                            return self._view(result, learner, surface, lemma, sentence, local)
-                    asking = asyncio.create_task(
-                        self._ask_meaning(surface, sentence, learner, from_book)
-                    )
+            if sentence and meaning is None:
+                # A warm lookup answers inside the wait, and then a one-sense
+                # word or a decisive sentence costs no call. A cold one does
+                # not, and the model is asked alongside it.
+                done, _ = await asyncio.wait({lookup}, timeout=WARM_LOOKUP_WAIT_SECONDS)
+                if lookup in done:
+                    result = lookup.result()
+                    local = choose_locally(result.term, sentence, result.suggestions)
+                    if local is not None:
+                        return self._view(result, learner, surface, lemma, sentence, local)
+                asking = asyncio.create_task(self._ask_meaning(surface, sentence, learner))
             result = await lookup
             if asking is not None:
+                if self._release is not None and not asking.done():
+                    # The model is still being asked and the session is idle.
+                    await self._release()
                 meaning = await asking
+                if meaning is not None and from_book:
+                    await self._keep_meaning(surface, sentence, learner, meaning)
         except BaseException:
             for task in (lookup, asking):
                 if task is not None and not task.done():
@@ -335,7 +344,7 @@ class ReaderService:
         return None
 
     async def _ask_meaning(
-        self, surface: str, sentence: str, learner: LearnerContext, from_book: bool
+        self, surface: str, sentence: str, learner: LearnerContext
     ) -> ContextualMeaning | None:
         """Ask the model, and remember the answer. ``None`` on an outage: money
         and latency, never correctness, so the caller falls back to the most
@@ -350,26 +359,30 @@ class ReaderService:
                 surface, sentence, learner.native_language, self._reader_prompt_version
             )
             await self._memo.put_meaning(key, meaning)
-        if from_book:
-            try:
-                await self._meanings.put(
-                    SentenceMeaning(
-                        sentence_hash=_sha256(sentence),
-                        word=surface,
-                        native_language=learner.native_language,
-                        prompt_version=self._reader_prompt_version,
-                        lemma=meaning.lemma,
-                        part_of_speech=meaning.part_of_speech,
-                        context=meaning.context,
-                        definition=meaning.definition,
-                        native_meaning=meaning.native_meaning,
-                        provider=meaning.provider or self._provider,
-                        model=meaning.model or self._model,
-                    )
-                )
-            except Exception:  # noqa: BLE001
-                logger.warning("sentence meaning write failed; served unstored", exc_info=True)
         return meaning
+
+    async def _keep_meaning(
+        self, surface: str, sentence: str, learner: LearnerContext, meaning: ContextualMeaning
+    ) -> None:
+        """The durable store for a book's sentence. A failure is served unstored."""
+        try:
+            await self._meanings.put(
+                SentenceMeaning(
+                    sentence_hash=_sha256(sentence),
+                    word=surface,
+                    native_language=learner.native_language,
+                    prompt_version=self._reader_prompt_version,
+                    lemma=meaning.lemma,
+                    part_of_speech=meaning.part_of_speech,
+                    context=meaning.context,
+                    definition=meaning.definition,
+                    native_meaning=meaning.native_meaning,
+                    provider=meaning.provider or self._provider,
+                    model=meaning.model or self._model,
+                )
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("sentence meaning write failed; served unstored", exc_info=True)
 
     async def _resolve_sentence(
         self,
