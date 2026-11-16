@@ -1166,6 +1166,27 @@ older guards, so a test asserting on one of them must name its own field —
 and uses the `production_settings()` helper for the positive ones, precisely so a
 test can never pass on a different validator's message.
 
+### Under load: two session rules
+
+Both were found by load-testing, and neither shows in a test that sends one
+request at a time. Audit, k6 suite and playbook: [load-testing.md](docs/load-testing.md).
+
+- **The session commits before the response is sent** — `SessionDep` is
+  `Depends(get_session, scope="function")`. At FastAPI's default scope the
+  commit ran *after* the response: a client was told 201 for a deck the next
+  request 404'd, or for a row whose commit then failed.
+  `test_session_commit_order.py` pins the order.
+- **No pooled connection is held across an AI call.** The provider at the
+  bottom of the lookup chain, and the reader's translator, are wrapped in
+  `ConnectionReleasingAIService`, which commits the request's session before
+  each call — the deck builder's "no transaction across the network" rule, now
+  on the request path. Without it a burst of cold lookups emptied the pool and
+  stalled every route. The wrapper needs the session to be **idle** while the
+  call runs, which is why the reader's explainer is not wrapped (it runs beside
+  the lookup task) and `ReaderService` reads its sentence memo before that task
+  starts and writes it after, releasing explicitly in between.
+  `test_ai_connection_release.py` (Postgres) fails if it regresses.
+
 ### The docs surface is off in production
 
 `EXPOSE_DOCS` gates Swagger UI, ReDoc and `openapi.json` together; unset it
