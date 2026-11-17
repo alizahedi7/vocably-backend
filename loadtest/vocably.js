@@ -4,7 +4,7 @@
 //   k6 run -e BASE_URL=https://staging.example -e PROFILE=launch loadtest/vocably.js
 //
 // PROFILE: baseline (50 VUs, 2 min) | launch (300 VUs, 10 min) |
-//          stress (ramp to 1000) | ai-live (10 VUs on a REAL gateway, AI only)
+//          stress (ramp to 1000) | ai-live (AI_VUS, default 10, on a REAL gateway, AI only)
 // See docs/load-testing.md for the staging env this expects.
 
 import http from 'k6/http';
@@ -28,7 +28,7 @@ const PROFILES = {
   stress: { executor: 'ramping-vus', stages: [
     { duration: '2m', target: 300 }, { duration: '3m', target: 600 },
     { duration: '3m', target: 1000 }, { duration: '3m', target: 1000 }, { duration: '1m', target: 0 } ] },
-  'ai-live': { executor: 'constant-vus', vus: 10, duration: '2m', env: { AI_ONLY: '1' } },
+  'ai-live': { executor: 'constant-vus', vus: parseInt(__ENV.AI_VUS || '10', 10), duration: '2m', env: { AI_ONLY: '1' } },
 };
 
 export const options = {
