@@ -33,7 +33,9 @@ const PROFILES = {
 
 export const options = {
   setupTimeout: '10m',
-  scenarios: { [PROFILE]: Object.assign({ gracefulRampDown: '30s' }, PROFILES[PROFILE]) },
+  // No shared options: ramping-vus defaults to a 30s graceful ramp-down, and
+  // constant-vus (ai-live) refuses that field outright.
+  scenarios: { [PROFILE]: PROFILES[PROFILE] },
   // Per-bucket latency budgets. The stress profile is expected to break these —
   // the point there is to read WHERE it broke, so it does not abort.
   thresholds: {
