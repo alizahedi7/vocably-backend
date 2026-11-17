@@ -97,9 +97,9 @@ services:
     #   ~110 MiB and its own DB pool; see docs/load-testing.md before raising it.
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000
-             --forwarded-allow-ips='*' --timeout-keep-alive 130
-             --timeout-graceful-shutdown 30"
+      uvicorn app.main:app --host 0.0.0.0 --port 8000
+      --forwarded-allow-ips='*' --timeout-keep-alive 130
+      --timeout-graceful-shutdown 30"
 
   # Executes background tasks. Safe to scale to more replicas.
   worker:
