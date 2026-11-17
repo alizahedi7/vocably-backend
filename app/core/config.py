@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     project_name: str = "Vocably"
     environment: Environment = "development"
     debug: bool = True
+    #: Log one line per request (uvicorn's access log: client address, route,
+    #: status). Off by default; the production compose file turns it on and
+    #: rotates the container's log so it cannot fill the disk.
+    access_log: bool = False
     api_v1_prefix: str = "/api/v1"
     #: Swagger UI, ReDoc and openapi.json. Off in production by default, on
     #: everywhere else. The spec is a complete machine-readable map of every

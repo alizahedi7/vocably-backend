@@ -28,8 +28,10 @@ def configure_logging() -> None:
     root.addHandler(handler)
     root.setLevel(level)
 
-    # Tame noisy libraries.
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # One line per request is noise on a laptop and evidence in production:
+    # without it a failed request under load cannot be traced to a route.
+    if not settings.access_log:
+        logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     _CONFIGURED = True
 
 

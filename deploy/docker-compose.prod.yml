@@ -42,6 +42,13 @@ services:
   api:
     image: ghcr.io/alizahedi7/vocably-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    # The access log is one line per request; without a cap the default
+    # json-file driver grows until the disk is full.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
     depends_on:
       db:
         condition: service_healthy
@@ -53,6 +60,7 @@ services:
     environment:
       ENVIRONMENT: production
       DEBUG: "false"
+      ACCESS_LOG: "true"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-vocably}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-vocably}
       CELERY_BROKER_URL: redis://redis:6379/0
       # Same Redis, separate logical databases. Both default to
