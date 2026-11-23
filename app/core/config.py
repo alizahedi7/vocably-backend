@@ -270,12 +270,12 @@ class Settings(BaseSettings):
     #: Ceiling per lookup/story response. Generous enough for 4 full card backs.
     avalai_max_tokens: int = 4096
 
-    #: GapGPT (https://gapgpt.app), also OpenAI-protocol. Measured on 2026-08-17
+    #: GapGPT (https://gapgpt.ir), also OpenAI-protocol. Measured on 2026-08-17
     #: at ~4x AvalAI's median latency and ~3.5x its cost for identical output
     #: quality, which is why it is the fallback rather than the primary — but it
     #: was the *more reliable* of the two in 2026-07, so it earns its place.
     gapgpt_api_key: str = ""
-    gapgpt_base_url: str = "https://api.gapgpt.app/v1"
+    gapgpt_base_url: str = "https://api.gapgpt.ir/v1"
     gapgpt_model: str = ""
     gapgpt_timeout_seconds: float = 30.0
     gapgpt_max_tokens: int = 4096

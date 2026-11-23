@@ -37,7 +37,7 @@ class AvalAIProvider(OpenAICompatibleAIService):
 
 
 class GapGPTProvider(OpenAICompatibleAIService):
-    """GapGPT (https://gapgpt.app), likewise OpenAI-protocol.
+    """GapGPT (https://gapgpt.ir), likewise OpenAI-protocol.
 
     Note for operators, established by measurement rather than documentation:
     GapGPT **pre-authorises ``max_tokens`` × price before running the request**.
@@ -49,7 +49,7 @@ class GapGPTProvider(OpenAICompatibleAIService):
     """
 
     name = "gapgpt"
-    default_base_url = "https://api.gapgpt.app/v1"
+    default_base_url = "https://api.gapgpt.ir/v1"
 
 
 #: The exact client string tabitoken and agentrouter gate on. Without it both
